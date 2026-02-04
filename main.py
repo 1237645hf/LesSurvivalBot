@@ -15,14 +15,14 @@ import httpx
 
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
-    raise ValueError("TOKEN не найден в переменных окружения Render! Добавь его в Settings → Environment Variables")
+    raise ValueError("TOKEN не найден в переменных окружения Render!")
 
 BASE_URL = os.getenv("RENDER_EXTERNAL_URL")
 WEBHOOK_PATH = f"/bot/{TOKEN}"
 WEBHOOK_URL = f"{BASE_URL}{WEBHOOK_PATH}" if BASE_URL else None
 
 logging.basicConfig(level=logging.INFO)
-logging.info(f"Бот стартует с TOKEN: {TOKEN[:10]}... (скрыто для безопасности)")
+logging.info(f"Бот стартует с TOKEN: {TOKEN[:10]}...")
 logging.info(f"BASE_URL: {BASE_URL}")
 
 bot = Bot(token=TOKEN)
@@ -30,17 +30,17 @@ dp = Dispatcher()
 app = FastAPI(title="Forest Survival Telegram Bot")
 
 # ──────────────────────────────────────────────────────────────────────────────
-# SELF-PING каждые 5 минут
+# SELF-PING
 # ──────────────────────────────────────────────────────────────────────────────
 
 PING_INTERVAL_SECONDS = 300
 
 async def self_ping_task():
     if not BASE_URL:
-        logging.info("Self-ping НЕ запущен — нет RENDER_EXTERNAL_URL")
+        logging.info("Self-ping НЕ запущен")
         return
     ping_url = f"{BASE_URL}/ping"
-    logging.info(f"Self-ping запущен: каждые 5 мин → {ping_url}")
+    logging.info(f"Self-ping: каждые 5 мин → {ping_url}")
     while True:
         try:
             async with httpx.AsyncClient() as client:
@@ -54,7 +54,7 @@ async def self_ping_task():
         await asyncio.sleep(PING_INTERVAL_SECONDS)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Простая игровая логика
+# Игра
 # ──────────────────────────────────────────────────────────────────────────────
 
 class Game:
@@ -66,16 +66,17 @@ class Game:
         self.log = ["🌲 Ты проснулся в лесу. Что будешь делать?"]
 
     def get_ui(self):
+        # ТОЛЬКО ОДНО состояние — без повторений!
         return (
             f"❤️ HP: {self.hp}   🍖 Голод: {self.hunger}   💧 Жажда: {self.thirst}\n"
             f"⚡ Очки действий: {self.ap}\n"
-            "━" * 36 + "\n" +
-            "\n".join(f"> {line}" for line in self.log[-4:]) + "\n" +
-            "━" * 36
+            "━" * 40 + "\n" +
+            "\n".join(f"> {line}" for line in self.log[-5:]) + "\n" +
+            "━" * 40
         )
 
 games = {}
-last_ui_message_id = {}  # user_id → message_id последнего UI-сообщения
+last_ui_msg_id = {}  # user_id → message_id последнего сообщения с UI
 
 main_keyboard = ReplyKeyboardMarkup(
     keyboard=[
@@ -97,19 +98,19 @@ async def cmd_start(message: Message):
     games[uid] = Game()
 
     await message.answer(
-        "🌲 Добро пожаловать в лес выживания!\n\nВыбери действие кнопками ниже ↓",
+        "🌲 Добро пожаловать в лес выживания!\nВыбери действие кнопками ↓",
         reply_markup=main_keyboard
     )
 
-    # Отправляем первое состояние и сохраняем ID
+    # Первое состояние
     ui_msg = await message.answer(games[uid].get_ui(), reply_markup=main_keyboard)
-    last_ui_message_id[uid] = ui_msg.message_id
+    last_ui_msg_id[uid] = ui_msg.message_id
 
 @dp.message()
 async def any_message(message: Message):
     uid = message.from_user.id
     if uid not in games:
-        await message.answer("Напиши /start чтобы начать игру")
+        await message.answer("Напиши /start")
         return
 
     game = games[uid]
@@ -119,38 +120,44 @@ async def any_message(message: Message):
     if "1" in text or "чащу" in text:
         if game.ap > 0:
             game.ap -= 1
-            game.log.append("🔍 Ты пошёл в чащу... (пока заглушка)")
+            game.log.append("🔍 Ты пошёл в чащу... (заглушка)")
             action_taken = True
         else:
             game.log.append("❌ Ты слишком устал!")
-            action_taken = True  # всё равно обновляем, чтобы показать "устал"
+            action_taken = True
     elif "3" in text or "пить" in text:
-        game.log.append("💧 Ты напился... жажда -20")
+        game.log.append("💧 Напился... жажда -20")
         game.thirst = max(0, game.thirst - 20)
         action_taken = True
     elif "4" in text or "спать" in text:
-        game.log.append("🌙 Ты поспал... силы восстановлены, но голод +15")
+        game.log.append("🌙 Поспал... силы + , голод +15")
         game.ap = 5
         game.hunger += 15
         action_taken = True
+    elif "5" in text or "мудрец" in text:
+        game.log.append("🧙 Мудрец не пришёл... (заглушка)")
+        action_taken = True
+    elif "6" in text or "сбежать" in text:
+        game.log.append("🚁 Побег не удался... (заглушка)")
+        action_taken = True
     else:
-        await message.answer("Нажми кнопку с номером действия!", reply_markup=main_keyboard)
+        await message.answer("Нажми кнопку с номером!", reply_markup=main_keyboard)
         return
 
     if action_taken:
-        # Удаляем предыдущее сообщение с состоянием (если оно существует)
-        if uid in last_ui_message_id:
+        # Удаляем старое состояние, если оно есть
+        if uid in last_ui_msg_id:
             try:
-                await bot.delete_message(chat_id=message.chat.id, message_id=last_ui_message_id[uid])
-            except Exception:
-                pass  # если сообщение уже удалено или ошибка — просто продолжаем
+                await bot.delete_message(message.chat.id, last_ui_msg_id[uid])
+            except:
+                pass  # если уже удалено — ок
 
-        # Отправляем новое состояние
-        new_ui_msg = await message.answer(game.get_ui(), reply_markup=main_keyboard)
-        last_ui_message_id[uid] = new_ui_msg.message_id
+        # Отправляем новое
+        new_msg = await message.answer(game.get_ui(), reply_markup=main_keyboard)
+        last_ui_msg_id[uid] = new_msg.message_id
 
 # ──────────────────────────────────────────────────────────────────────────────
-# FastAPI маршруты
+# FastAPI
 # ──────────────────────────────────────────────────────────────────────────────
 
 @app.get("/ping")
@@ -176,25 +183,21 @@ async def on_startup():
             await bot.delete_webhook(drop_pending_updates=True)
             logging.info("Старый webhook удалён")
         except Exception as e:
-            logging.warning(f"delete_webhook не сработал: {e}")
-
+            logging.warning(f"delete_webhook: {e}")
         try:
             await bot.set_webhook(WEBHOOK_URL)
-            logging.info(f"Webhook успешно установлен: {WEBHOOK_URL}")
+            logging.info(f"Webhook установлен: {WEBHOOK_URL}")
         except Exception as e:
-            logging.error(f"Ошибка установки webhook: {e}")
-    else:
-        logging.warning("WEBHOOK_URL не сформирован")
-
+            logging.error(f"set_webhook ошибка: {e}")
     asyncio.create_task(self_ping_task())
 
 @app.on_event("shutdown")
 async def on_shutdown():
     try:
         await bot.delete_webhook(drop_pending_updates=True)
-        logging.info("Webhook удалён при остановке")
+        logging.info("Webhook удалён")
     except Exception as e:
-        logging.warning(f"shutdown delete_webhook: {e}")
+        logging.warning(f"shutdown: {e}")
 
 if __name__ == "__main__":
     import uvicorn
