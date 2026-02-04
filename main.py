@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import time
+import random
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse
 from aiogram import Bot, Dispatcher
@@ -15,7 +16,7 @@ import httpx
 
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
-    raise ValueError("TOKEN не найден! Добавь в Environment Variables на Render")
+    raise ValueError("TOKEN не найден в переменных окружения Render!")
 
 BASE_URL = os.getenv("RENDER_EXTERNAL_URL")
 WEBHOOK_PATH = f"/bot/{TOKEN}"
@@ -61,21 +62,27 @@ class Game:
         self.hunger = 30
         self.thirst = 30
         self.ap = 5
+        self.karma = 0  # добавили карму для побега
         self.log = ["🌲 Ты проснулся в лесу. Что будешь делать?"]
+        self.inventory = ["Спички 🔥", "Вилка 🍴"]  # простой список инвентаря
 
     def get_ui(self):
-        # ТОЛЬКО ОДИН блок состояния — без повторений!
-        ui_text = (
+        # ТОЛЬКО ОДИН блок состояния
+        return (
             f"❤️ HP: {self.hp}   🍖 Голод: {self.hunger}   💧 Жажда: {self.thirst}\n"
-            f"⚡ Очки действий: {self.ap}\n"
+            f"⚡ Очки действий: {self.ap}   ⚖️ Карма: {self.karma}\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             + "\n".join(f"> {line}" for line in self.log[-5:]) + "\n"
             + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         )
-        return ui_text
+
+    def get_inventory_text(self):
+        if not self.inventory:
+            return "🎒 Инвентарь пуст"
+        return "🎒 Инвентарь:\n" + "\n".join(f"• {item}" for item in self.inventory)
 
 games = {}
-last_ui_msg_id = {}  # user_id → message_id последнего UI
+last_ui_msg_id = {}
 
 main_keyboard = ReplyKeyboardMarkup(
     keyboard=[
@@ -97,7 +104,7 @@ async def cmd_start(message: Message):
     games[uid] = Game()
 
     await message.answer(
-        "🌲 Добро пожаловать в лес выживания!\nВыбери действие ↓",
+        "🌲 Добро пожаловать в лес выживания!\nВыбери действие кнопками ↓",
         reply_markup=main_keyboard
     )
 
@@ -121,10 +128,14 @@ async def any_message(message: Message):
             game.log.append("🔍 Ты пошёл в чащу... нашёл кору! (заглушка)")
             action_taken = True
         else:
-            game.log.append("❌ Устал — нужно поспать")
+            game.log.append("❌ Ты слишком устал!")
             action_taken = True
+    elif "2" in text or "инвентарь" in text:
+        await message.answer(game.get_inventory_text(), reply_markup=main_keyboard)
+        # Не обновляем основное состояние — просто показываем инвентарь
+        return
     elif "3" in text or "пить" in text:
-        game.log.append("💧 Напился из ручья... жажда -20")
+        game.log.append("💧 Напился... жажда -20")
         game.thirst = max(0, game.thirst - 20)
         action_taken = True
     elif "4" in text or "спать" in text:
@@ -133,24 +144,42 @@ async def any_message(message: Message):
         game.hunger += 15
         action_taken = True
     elif "5" in text or "мудрец" in text:
-        game.log.append("🧙 Мудрец молчит... нужно больше кармы (заглушка)")
+        game.log.append("🧙 Мудрец молчит... (заглушка)")
         action_taken = True
     elif "6" in text or "сбежать" in text:
-        game.log.append("🚁 Побег провалился... пока остаёмся в лесу")
-        action_taken = True
+        # Шанс побега: 10% + 1% за каждые 10 кармы
+        chance = 10 + (game.karma // 10)
+        if random.randint(1, 100) <= chance:
+            await message.answer(
+                "🚁 ПОБЕДА! Ты успешно сбежал из леса!\n\n"
+                "Игра окончена. Нажми /start чтобы начать заново.",
+                reply_markup=main_keyboard
+            )
+            # Можно удалить игру, чтобы не продолжалась
+            if uid in games:
+                del games[uid]
+            if uid in last_ui_msg_id:
+                try:
+                    await bot.delete_message(message.chat.id, last_ui_msg_id[uid])
+                except:
+                    pass
+            return
+        else:
+            game.log.append("Побег не удался... остаёмся в лесу")
+            action_taken = True
     else:
         await message.answer("Нажми кнопку с номером действия!", reply_markup=main_keyboard)
         return
 
     if action_taken:
-        # Удаляем старое сообщение с UI
+        # Удаляем старое UI
         if uid in last_ui_msg_id:
             try:
                 await bot.delete_message(message.chat.id, last_ui_msg_id[uid])
-            except Exception:
+            except:
                 pass
 
-        # Отправляем новое состояние
+        # Отправляем новое
         new_msg = await message.answer(game.get_ui(), reply_markup=main_keyboard)
         last_ui_msg_id[uid] = new_msg.message_id
 
