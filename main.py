@@ -168,11 +168,10 @@ async def process_callback(callback: types.CallbackQuery):
             game.add_log("🔍 Ты пошёл в чащу... нашёл кору!")
             action_taken = True
         else:
-            game.add_log("❌ Ты слишком устал!")
+            game.add_log("🏕 У тебя нет сил и нужно отдохнуть")
             action_taken = True
     elif data == "action_2":
         inv_msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
-        # Можно сохранить id этого сообщения, если хочешь потом редактировать
         await callback.answer()
         return
     elif data == "action_3":
@@ -211,7 +210,6 @@ async def process_callback(callback: types.CallbackQuery):
         game.add_log("Выкинул предмет... инвентарь стал легче (заглушка)")
         action_taken = True
     elif data == "inv_back":
-        # Возвращаемся к основному состоянию
         await callback.message.edit_text(game.get_ui(), reply_markup=main_inline_kb)
         await callback.answer()
         return
