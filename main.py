@@ -29,7 +29,7 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 app = FastAPI(title="Forest Survival Bot")
 
-last_request_time = {}  # для кулдауна
+last_request_time = {}  # кулдаун
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 2. SELF-PING
@@ -39,23 +39,32 @@ PING_INTERVAL_SECONDS = 300
 
 async def self_ping_task():
     if not BASE_URL:
-        logging.info("Self-ping отключён")
         return
     ping_url = f"{BASE_URL}/ping"
-    logging.info(f"Self-ping запущен (каждые 5 мин → {ping_url})")
+    logging.info(f"Self-ping каждые 5 мин → {ping_url}")
     while True:
         try:
             async with httpx.AsyncClient() as client:
                 r = await client.get(ping_url, timeout=10)
                 if r.status_code == 200:
                     logging.info(f"[SELF-PING] OK → {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        except Exception as e:
-            logging.error(f"[SELF-PING] ошибка: {e}")
+        except:
+            pass
         await asyncio.sleep(PING_INTERVAL_SECONDS)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 3. КЛАСС ИГРЫ
 # ──────────────────────────────────────────────────────────────────────────────
+
+class Item:
+    def __init__(self, name, icon, desc, weight=1, slot=None, armor=0, uses=1):
+        self.name = name
+        self.icon = icon
+        self.desc = desc
+        self.weight = weight
+        self.slot = slot  # None, "head", "torso", "back", "hands", "legs", "feet", "trinket"
+        self.armor = armor
+        self.uses = uses  # для фляги и т.п.
 
 class Game:
     def __init__(self):
@@ -64,55 +73,84 @@ class Game:
         self.thirst = 30
         self.ap = 5
         self.karma = 0
-        self.log = ["🌲 Ты проснулся в лесу. Что будешь делать?"]
-        self.inventory = ["Спички 🔥", "Вилка 🍴", "Кусок коры 🪵"]
+        self.day = 1
+        self.water_bottle = None  # фляга (если найдена)
+        self.log = ["🌲 Ты проснулся в лесу. День 1. Погода: Ясно"]
+        self.inventory = [
+            Item("Спички", "🔥", "Можно разжечь костёр", 1),
+            Item("Вилка", "🍴", "Оружие или инструмент", 1, slot=None),
+            Item("Кусок коры", "🪵", "Можно использовать для крафта", 2),
+        ]
+        self.equipment = {
+            "head": None,
+            "torso": None,
+            "back": None,
+            "hands": None,
+            "legs": None,
+            "feet": None,
+            "trinket": None,  # для фляги и безделушек
+        }
+        self.max_weight = 20  # можно увеличивать рюкзаками
 
     def add_log(self, text):
         self.log.append(text)
         if len(self.log) > 15:
             self.log = self.log[-15:]
 
+    def get_weight(self):
+        return sum(item.weight for item in self.inventory)
+
     def get_ui(self):
+        equipped = []
+        for slot, item in self.equipment.items():
+            if item:
+                equipped.append(f"{slot.capitalize()}: {item.name}")
+            else:
+                equipped.append(f"{slot.capitalize()}: Свободно")
+
+        weather = random.choices(["Ясно", "Пасмурно", "Дождь"], weights=[70, 20, 10])[0]
+
         return (
+            f"День {self.day} | Погода: {weather}\n"
             f"❤️ HP: {self.hp}   🍖 Голод: {self.hunger}   💧 Жажда: {self.thirst}\n"
             f"⚡ Очки действий: {self.ap}   ⚖️ Карма: {self.karma}\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🎒 Вес: {self.get_weight()}/{self.max_weight}\n"
+            f"{'-'*40}\n"
+            + "\n".join(equipped) + "\n"
+            f"{'-'*40}\n"
             + "\n".join(f"> {line}" for line in self.log) + "\n"
-            + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            f"{'-'*40}"
         )
 
     def get_inventory_text(self):
-        return "🎒 Инвентарь:\n" + "\n".join(f"• {item}" for item in self.inventory) if self.inventory else "🎒 Инвентарь пуст"
+        if not self.inventory:
+            return "🎒 Инвентарь пуст"
+        return "🎒 Инвентарь:\n" + "\n".join(f"• {item.icon} {item.name} ({item.weight} кг) - {item.desc}" for item in self.inventory)
 
 games = {}
-last_ui_msg_id = {}  # user_id → message_id состояния игры
+last_ui_msg_id = {}
 
-# Основные inline-кнопки (под состоянием игры)
+# Основные inline-кнопки
 main_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="1 В чащу 🌲", callback_data="action_1")],
     [
-        InlineKeyboardButton(text="1 В чащу 🌲", callback_data="action_1"),
         InlineKeyboardButton(text="2 Инвентарь 🎒", callback_data="action_2"),
+        InlineKeyboardButton(text="Крафт 🛠", callback_data="action_craft"),
     ],
-    [
-        InlineKeyboardButton(text="3 Пить воду 💧", callback_data="action_3"),
-        InlineKeyboardButton(text="4 Спать 🌙", callback_data="action_4"),
-    ],
-    [
-        InlineKeyboardButton(text="5 Позвать мудреца 🧙", callback_data="action_5"),
-        InlineKeyboardButton(text="6 Сбежать 🚁", callback_data="action_6"),
-    ],
+    [InlineKeyboardButton(text="3 Пить воду 💧", callback_data="action_3")],
+    [InlineKeyboardButton(text="4 Спать 🌙", callback_data="action_4")],
+    [InlineKeyboardButton(text="5 Позвать мудреца 🧙", callback_data="action_5")],
+    [InlineKeyboardButton(text="6 Сбежать 🚁", callback_data="action_6")],
 ])
 
-# Inline-кнопки для инвентаря (отдельное сообщение)
+# Кнопки инвентаря
 inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
     [
         InlineKeyboardButton(text="Осмотреть 👁️", callback_data="inv_inspect"),
         InlineKeyboardButton(text="Использовать 🛠️", callback_data="inv_use"),
         InlineKeyboardButton(text="Выкинуть 🗑️", callback_data="inv_drop"),
     ],
-    [
-        InlineKeyboardButton(text="Назад ←", callback_data="inv_back"),
-    ],
+    [InlineKeyboardButton(text="Назад ←", callback_data="inv_back")],
 ])
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -123,7 +161,7 @@ inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
 async def cmd_start(message: Message):
     uid = message.from_user.id
 
-    # Очистка предыдущих сообщений бота
+    # Очистка чата
     try:
         history = await bot.get_chat_history(message.chat.id, limit=30)
         for msg in history:
@@ -135,9 +173,7 @@ async def cmd_start(message: Message):
 
     games[uid] = Game()
 
-    await message.answer(
-        "🌲 Добро пожаловать в лес выживания!\n\nВыбери действие ниже ↓"
-    )
+    await message.answer("🌲 Добро пожаловать в лес выживания!\n\nВыбери действие ниже ↓")
 
     ui_msg = await message.answer(games[uid].get_ui(), reply_markup=main_inline_kb)
     last_ui_msg_id[uid] = ui_msg.message_id
@@ -147,7 +183,6 @@ async def process_callback(callback: types.CallbackQuery):
     uid = callback.from_user.id
     now = time.time()
 
-    # Кулдаун 1 секунда
     if uid in last_request_time and now - last_request_time[uid] < 1.0:
         await callback.answer("Подожди секунду!")
         return
@@ -171,7 +206,7 @@ async def process_callback(callback: types.CallbackQuery):
             game.add_log("🏕 У тебя нет сил и нужно отдохнуть")
             action_taken = True
     elif data == "action_2":
-        inv_msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
+        await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
         await callback.answer()
         return
     elif data == "action_3":
@@ -179,9 +214,10 @@ async def process_callback(callback: types.CallbackQuery):
         game.thirst = max(0, game.thirst - 20)
         action_taken = True
     elif data == "action_4":
-        game.add_log("🌙 Поспал... восстановил действия, голод +15")
+        game.day += 1
         game.ap = 5
         game.hunger += 15
+        game.add_log(f"🌙 День {game.day}. Выспался, но проголодался.")
         action_taken = True
     elif data == "action_5":
         game.add_log("🧙 Мудрец дал совет... +5 кармы")
@@ -190,24 +226,22 @@ async def process_callback(callback: types.CallbackQuery):
     elif data == "action_6":
         chance = 10 + (game.karma // 10)
         if random.randint(1, 100) <= chance:
-            await callback.message.answer(
-                "🚁 ПОБЕДА! Ты сбежал из леса!\n\nНапиши /start для новой игры."
-            )
+            await callback.message.answer("🚁 ПОБЕДА! Ты сбежал!\n\n/start — новая игра")
             games.pop(uid, None)
             last_ui_msg_id.pop(uid, None)
             await callback.answer("Победа!")
             return
         else:
-            game.add_log("Побег не удался... остаёмся в лесу")
+            game.add_log("Побег не удался...")
             action_taken = True
     elif data == "inv_inspect":
-        game.add_log("Осмотрел инвентарь... ничего интересного (заглушка)")
+        game.add_log("Осмотрел инвентарь... (заглушка)")
         action_taken = True
     elif data == "inv_use":
-        game.add_log("Использовал предмет... эффект пока не реализован")
+        game.add_log("Использовал предмет... (заглушка)")
         action_taken = True
     elif data == "inv_drop":
-        game.add_log("Выкинул предмет... инвентарь стал легче (заглушка)")
+        game.add_log("Выкинул предмет... (заглушка)")
         action_taken = True
     elif data == "inv_back":
         await callback.message.edit_text(game.get_ui(), reply_markup=main_inline_kb)
@@ -215,10 +249,7 @@ async def process_callback(callback: types.CallbackQuery):
         return
 
     if action_taken:
-        await callback.message.edit_text(
-            game.get_ui(),
-            reply_markup=main_inline_kb
-        )
+        await callback.message.edit_text(game.get_ui(), reply_markup=main_inline_kb)
         await callback.answer()
 
 # ──────────────────────────────────────────────────────────────────────────────
