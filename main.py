@@ -29,8 +29,10 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 app = FastAPI(title="Forest Survival Bot")
 
+last_request_time = {}  # user_id → время последнего действия (для кулдауна)
+
 # ──────────────────────────────────────────────────────────────────────────────
-# 2. SELF-PING (защита от засыпания на Render)
+# 2. SELF-PING (защита от засыпания на Render free)
 # ──────────────────────────────────────────────────────────────────────────────
 
 PING_INTERVAL_SECONDS = 300
@@ -82,14 +84,12 @@ class Game:
         )
 
     def get_inventory_text(self):
-        return "🎒 Инвентарь:\n" + "\n".join(f"• {item}" for item in self.inventory) if self.inventory else "🎒 Инвентарь пуст"
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 4. ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
-# ──────────────────────────────────────────────────────────────────────────────
+        if not self.inventory:
+            return "🎒 Инвентарь пуст"
+        return "🎒 Инвентарь:\n" + "\n".join(f"• {item}" for item in self.inventory)
 
 games = {}
-last_ui_msg_id = {}   # user_id → message_id последнего сообщения с состоянием
+last_ui_msg_id = {}  # user_id → message_id последнего состояния
 
 main_keyboard = ReplyKeyboardMarkup(
     keyboard=[
@@ -102,22 +102,23 @@ main_keyboard = ReplyKeyboardMarkup(
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 5. ХЕНДЛЕРЫ
+# 4. ХЕНДЛЕРЫ
 # ──────────────────────────────────────────────────────────────────────────────
 
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     uid = message.from_user.id
 
-    # Удаляем все предыдущие сообщения бота в чате (кроме самой команды /start)
+    # Очистка предыдущих сообщений бота в чате (кроме самой команды /start)
     try:
-        chat_history = await bot.get_chat_history(message.chat.id, limit=30)
-        for msg in chat_history:
+        # Получаем последние 30 сообщений
+        history = await bot.get_chat_history(message.chat.id, limit=30)
+        for msg in history:
             if msg.from_user and msg.from_user.id == (await bot.get_me()).id:
-                if msg.message_id != message.message_id:  # не удаляем саму команду /start
+                if msg.message_id != message.message_id:  # не удаляем саму команду
                     await bot.delete_message(message.chat.id, msg.message_id)
     except Exception as e:
-        logging.warning(f"Очистка чата не удалась: {e}")
+        logging.warning(f"Очистка чата при /start не удалась: {e}")
 
     # Создаём новую игру
     games[uid] = Game()
@@ -135,6 +136,14 @@ async def cmd_start(message: Message):
 @dp.message()
 async def any_message(message: Message):
     uid = message.from_user.id
+    now = time.time()
+
+    # Кулдаун 1 секунда между действиями от одного пользователя
+    if uid in last_request_time and now - last_request_time[uid] < 1.0:
+        logging.debug(f"Спам от {uid} — игнорируем")
+        return
+    last_request_time[uid] = now
+
     if uid not in games:
         await message.answer("Напиши /start чтобы начать игру")
         return
@@ -185,17 +194,15 @@ async def any_message(message: Message):
         return
 
     if action_taken:
-        try:
-            await bot.edit_message_text(
-                chat_id=message.chat.id,
-                message_id=last_ui_msg_id[uid],
-                text=game.get_ui(),
-                reply_markup=main_keyboard
-            )
-        except Exception as e:
-            logging.warning(f"edit_message_text failed: {e}")
-            new_msg = await message.answer(game.get_ui(), reply_markup=main_keyboard)
-            last_ui_msg_id[uid] = new_msg.message_id
+        # Удаляем старое сообщение и отправляем новое (из-за ошибки с edit + ReplyKeyboard)
+        if uid in last_ui_msg_id:
+            try:
+                await bot.delete_message(chat_id=message.chat.id, message_id=last_ui_msg_id[uid])
+            except Exception as e:
+                logging.warning(f"Удаление старого UI не удалось: {e}")
+
+        new_msg = await message.answer(game.get_ui(), reply_markup=main_keyboard)
+        last_ui_msg_id[uid] = new_msg.message_id
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 6. FASTAPI МАРШРУТЫ
