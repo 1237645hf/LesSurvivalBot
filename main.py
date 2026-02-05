@@ -85,10 +85,10 @@ class Game:
         return "🎒 Инвентарь:\n" + "\n".join(f"• {item}" for item in self.inventory) if self.inventory else "🎒 Инвентарь пуст"
 
 games = {}
-last_ui_msg_id = {}  # user_id → message_id состояния
+last_ui_msg_id = {}  # user_id → message_id состояния игры
 
-# Inline-клавиатура (одна для всех состояний игры)
-inline_kb = InlineKeyboardMarkup(inline_keyboard=[
+# Основные inline-кнопки (под состоянием игры)
+main_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
     [
         InlineKeyboardButton(text="1 В чащу 🌲", callback_data="action_1"),
         InlineKeyboardButton(text="2 Инвентарь 🎒", callback_data="action_2"),
@@ -103,6 +103,18 @@ inline_kb = InlineKeyboardMarkup(inline_keyboard=[
     ],
 ])
 
+# Inline-кнопки для инвентаря (отдельное сообщение)
+inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
+    [
+        InlineKeyboardButton(text="Осмотреть 👁️", callback_data="inv_inspect"),
+        InlineKeyboardButton(text="Использовать 🛠️", callback_data="inv_use"),
+        InlineKeyboardButton(text="Выкинуть 🗑️", callback_data="inv_drop"),
+    ],
+    [
+        InlineKeyboardButton(text="Назад ←", callback_data="inv_back"),
+    ],
+])
+
 # ──────────────────────────────────────────────────────────────────────────────
 # 4. ХЕНДЛЕРЫ
 # ──────────────────────────────────────────────────────────────────────────────
@@ -111,7 +123,7 @@ inline_kb = InlineKeyboardMarkup(inline_keyboard=[
 async def cmd_start(message: Message):
     uid = message.from_user.id
 
-    # Очистка чата (удаляем предыдущие сообщения бота)
+    # Очистка предыдущих сообщений бота
     try:
         history = await bot.get_chat_history(message.chat.id, limit=30)
         for msg in history:
@@ -124,11 +136,10 @@ async def cmd_start(message: Message):
     games[uid] = Game()
 
     await message.answer(
-        "🌲 Добро пожаловать в лес выживания!\n\nВыбери действие ниже ↓",
-        reply_markup=inline_kb
+        "🌲 Добро пожаловать в лес выживания!\n\nВыбери действие ниже ↓"
     )
 
-    ui_msg = await message.answer(games[uid].get_ui(), reply_markup=inline_kb)
+    ui_msg = await message.answer(games[uid].get_ui(), reply_markup=main_inline_kb)
     last_ui_msg_id[uid] = ui_msg.message_id
 
 @dp.callback_query()
@@ -160,7 +171,8 @@ async def process_callback(callback: types.CallbackQuery):
             game.add_log("❌ Ты слишком устал!")
             action_taken = True
     elif data == "action_2":
-        await callback.message.answer(game.get_inventory_text())
+        inv_msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
+        # Можно сохранить id этого сообщения, если хочешь потом редактировать
         await callback.answer()
         return
     elif data == "action_3":
@@ -189,11 +201,25 @@ async def process_callback(callback: types.CallbackQuery):
         else:
             game.add_log("Побег не удался... остаёмся в лесу")
             action_taken = True
+    elif data == "inv_inspect":
+        game.add_log("Осмотрел инвентарь... ничего интересного (заглушка)")
+        action_taken = True
+    elif data == "inv_use":
+        game.add_log("Использовал предмет... эффект пока не реализован")
+        action_taken = True
+    elif data == "inv_drop":
+        game.add_log("Выкинул предмет... инвентарь стал легче (заглушка)")
+        action_taken = True
+    elif data == "inv_back":
+        # Возвращаемся к основному состоянию
+        await callback.message.edit_text(game.get_ui(), reply_markup=main_inline_kb)
+        await callback.answer()
+        return
 
     if action_taken:
         await callback.message.edit_text(
             game.get_ui(),
-            reply_markup=inline_kb
+            reply_markup=main_inline_kb
         )
         await callback.answer()
 
