@@ -11,49 +11,50 @@ from aiogram.filters import CommandStart
 import httpx
 
 # ──────────────────────────────────────────────────────────────────────────────
-# НАСТРОЙКИ
+# 1. ИМПОРТЫ И НАСТРОЙКИ
 # ──────────────────────────────────────────────────────────────────────────────
 
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
-    raise ValueError("TOKEN не найден в переменных окружения Render!")
+    raise ValueError("TOKEN не найден в Environment Variables Render!")
 
 BASE_URL = os.getenv("RENDER_EXTERNAL_URL")
 WEBHOOK_PATH = f"/bot/{TOKEN}"
 WEBHOOK_URL = f"{BASE_URL}{WEBHOOK_PATH}" if BASE_URL else None
 
 logging.basicConfig(level=logging.INFO)
-logging.info(f"Бот стартует с TOKEN: {TOKEN[:10]}...")
-logging.info(f"BASE_URL: {BASE_URL}")
+logging.info(f"Бот запущен. TOKEN: {TOKEN[:10]}... BASE_URL: {BASE_URL}")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 app = FastAPI(title="Forest Survival Bot")
 
 # ──────────────────────────────────────────────────────────────────────────────
-# SELF-PING каждые 5 минут
+# 2. SELF-PING (защита от засыпания на Render)
 # ──────────────────────────────────────────────────────────────────────────────
 
 PING_INTERVAL_SECONDS = 300
 
 async def self_ping_task():
     if not BASE_URL:
-        logging.info("Self-ping НЕ запущен")
+        logging.info("Self-ping отключён (локальный запуск)")
         return
     ping_url = f"{BASE_URL}/ping"
-    logging.info(f"Self-ping каждые 5 мин → {ping_url}")
+    logging.info(f"Self-ping запущен (каждые 5 мин → {ping_url})")
     while True:
         try:
             async with httpx.AsyncClient() as client:
-                r = await client.get(ping_url, timeout=10.0)
+                r = await client.get(ping_url, timeout=10)
                 if r.status_code == 200:
                     logging.info(f"[SELF-PING] OK → {time.strftime('%Y-%m-%d %H:%M:%S')}")
+                else:
+                    logging.warning(f"[SELF-PING] статус {r.status_code}")
         except Exception as e:
-            logging.error(f"[SELF-PING] ошибка: {str(e)}")
+            logging.error(f"[SELF-PING] ошибка: {e}")
         await asyncio.sleep(PING_INTERVAL_SECONDS)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Игра
+# 3. КЛАСС ИГРЫ
 # ──────────────────────────────────────────────────────────────────────────────
 
 class Game:
@@ -81,12 +82,14 @@ class Game:
         )
 
     def get_inventory_text(self):
-        if not self.inventory:
-            return "🎒 Инвентарь пуст"
-        return "🎒 Инвентарь:\n" + "\n".join(f"• {item}" for item in self.inventory)
+        return "🎒 Инвентарь:\n" + "\n".join(f"• {item}" for item in self.inventory) if self.inventory else "🎒 Инвентарь пуст"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 4. ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+# ──────────────────────────────────────────────────────────────────────────────
 
 games = {}
-last_ui_msg_id = {}  # user_id → message_id последнего состояния
+last_ui_msg_id = {}   # user_id → message_id последнего сообщения с состоянием
 
 main_keyboard = ReplyKeyboardMarkup(
     keyboard=[
@@ -99,19 +102,33 @@ main_keyboard = ReplyKeyboardMarkup(
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Хендлеры
+# 5. ХЕНДЛЕРЫ
 # ──────────────────────────────────────────────────────────────────────────────
 
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     uid = message.from_user.id
+
+    # Удаляем все предыдущие сообщения бота в чате (кроме самой команды /start)
+    try:
+        chat_history = await bot.get_chat_history(message.chat.id, limit=30)
+        for msg in chat_history:
+            if msg.from_user and msg.from_user.id == (await bot.get_me()).id:
+                if msg.message_id != message.message_id:  # не удаляем саму команду /start
+                    await bot.delete_message(message.chat.id, msg.message_id)
+    except Exception as e:
+        logging.warning(f"Очистка чата не удалась: {e}")
+
+    # Создаём новую игру
     games[uid] = Game()
 
+    # Приветствие
     await message.answer(
-        "🌲 Добро пожаловать в лес выживания!\nВыбери действие кнопками ниже ↓",
+        "🌲 Добро пожаловать в лес выживания!\n\nВыбери действие кнопками ниже ↓",
         reply_markup=main_keyboard
     )
 
+    # Отправляем состояние
     ui_msg = await message.answer(games[uid].get_ui(), reply_markup=main_keyboard)
     last_ui_msg_id[uid] = ui_msg.message_id
 
@@ -119,7 +136,7 @@ async def cmd_start(message: Message):
 async def any_message(message: Message):
     uid = message.from_user.id
     if uid not in games:
-        await message.answer("Напиши /start")
+        await message.answer("Напиши /start чтобы начать игру")
         return
 
     game = games[uid]
@@ -136,41 +153,35 @@ async def any_message(message: Message):
             action_taken = True
     elif "2" in text or "инвентарь" in text:
         await message.answer(game.get_inventory_text(), reply_markup=main_keyboard)
-        return  # не трогаем основное состояние
+        return
     elif "3" in text or "пить" in text:
-        game.add_log("💧 Напился из ручья... жажда -20")
+        game.add_log("💧 Напился... жажда -20")
         game.thirst = max(0, game.thirst - 20)
         action_taken = True
     elif "4" in text or "спать" in text:
-        game.add_log("🌙 Поспал... восстановил действия, но голод +15")
+        game.add_log("🌙 Поспал... восстановил действия, голод +15")
         game.ap = 5
         game.hunger += 15
         action_taken = True
     elif "5" in text or "мудрец" in text:
-        game.add_log("🧙 Мудрец дал тебе совет... +5 кармы")
+        game.add_log("🧙 Мудрец дал совет... +5 кармы")
         game.karma += 5
         action_taken = True
     elif "6" in text or "сбежать" in text:
-        chance = 10 + (game.karma // 10)  # шанс 10% + бонус от кармы
+        chance = 10 + (game.karma // 10)
         if random.randint(1, 100) <= chance:
             await message.answer(
-                "🚁 ПОБЕДА! Ты успешно сбежал из леса!\n\n"
-                "Игра окончена. Напиши /start, чтобы начать заново.",
+                "🚁 ПОБЕДА! Ты сбежал из леса!\n\nНапиши /start для новой игры.",
                 reply_markup=main_keyboard
             )
-            if uid in games:
-                del games[uid]
-            if uid in last_ui_msg_id:
-                try:
-                    await bot.delete_message(message.chat.id, last_ui_msg_id[uid])
-                except:
-                    pass
+            games.pop(uid, None)
+            last_ui_msg_id.pop(uid, None)
             return
         else:
             game.add_log("Побег не удался... остаёмся в лесу")
             action_taken = True
     else:
-        await message.answer("Выбери действие кнопкой!", reply_markup=main_keyboard)
+        await message.answer("Нажми кнопку с номером!", reply_markup=main_keyboard)
         return
 
     if action_taken:
@@ -182,13 +193,12 @@ async def any_message(message: Message):
                 reply_markup=main_keyboard
             )
         except Exception as e:
-            logging.warning(f"edit_message_text не удалось: {e}")
-            # если редактирование провалилось — отправляем новое
+            logging.warning(f"edit_message_text failed: {e}")
             new_msg = await message.answer(game.get_ui(), reply_markup=main_keyboard)
             last_ui_msg_id[uid] = new_msg.message_id
 
 # ──────────────────────────────────────────────────────────────────────────────
-# FastAPI маршруты
+# 6. FASTAPI МАРШРУТЫ
 # ──────────────────────────────────────────────────────────────────────────────
 
 @app.get("/ping")
@@ -207,26 +217,40 @@ async def webhook(request: Request):
         logging.error(f"Webhook error: {e}")
         raise HTTPException(status_code=500)
 
+# ──────────────────────────────────────────────────────────────────────────────
+# 7. STARTUP И SHUTDOWN
+# ──────────────────────────────────────────────────────────────────────────────
+
 @app.on_event("startup")
 async def on_startup():
     if WEBHOOK_URL:
         try:
             await bot.delete_webhook(drop_pending_updates=True)
-        except:
-            pass
+            logging.info("Старый webhook удалён")
+        except Exception as e:
+            logging.warning(f"delete_webhook: {e}")
+
         try:
             await bot.set_webhook(WEBHOOK_URL)
-            logging.info(f"Webhook установлен: {WEBHOOK_URL}")
+            logging.info(f"Webhook успешно установлен: {WEBHOOK_URL}")
         except Exception as e:
             logging.error(f"Ошибка установки webhook: {e}")
+    else:
+        logging.error("BASE_URL не найден → webhook не установлен!")
+
     asyncio.create_task(self_ping_task())
 
 @app.on_event("shutdown")
 async def on_shutdown():
     try:
         await bot.delete_webhook(drop_pending_updates=True)
-    except:
-        pass
+        logging.info("Webhook удалён")
+    except Exception as e:
+        logging.warning(f"shutdown delete_webhook: {e}")
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 8. ЗАПУСК
+# ──────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import uvicorn
