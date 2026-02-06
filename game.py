@@ -1,4 +1,5 @@
 import random
+from state import games, last_ui_msg_id, last_inv_msg_id
 
 class Item:
     def __init__(self, name, icon, desc, weight=1, slot=None, armor=0, uses=1):
