@@ -1,5 +1,3 @@
-# game.py - Логика игры, классы
-
 import random
 
 class Item:
@@ -8,7 +6,7 @@ class Item:
         self.icon = icon
         self.desc = desc
         self.weight = weight
-        self.slot = slot  # None, "head", "torso", "back", "hands", "legs", "feet", "trinket"
+        self.slot = slot
         self.armor = armor
         self.uses = uses
 
@@ -19,7 +17,7 @@ class Game:
         self.thirst = 60
         self.ap = 5
         self.karma = 0
-        self.search_progress = 0  # для сигнала
+        self.search_progress = 0
         self.day = 1
         self.log = ["🌲 Ты проснулся в лесу. Что будешь делать?"]
         self.inventory = [
@@ -64,7 +62,3 @@ class Game:
         if self.hp <= 0:
             return True
         return False
-
-    def do_craft(self, i1, i2):
-        # Заглушка для крафта (расширяй рецепты здесь)
-        pass  # Добавь логику как в наброске
