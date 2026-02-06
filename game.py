@@ -1,3 +1,5 @@
+# game.py - Логика игры, классы
+
 import random
 
 class Item:
@@ -6,7 +8,7 @@ class Item:
         self.icon = icon
         self.desc = desc
         self.weight = weight
-        self.slot = slot
+        self.slot = slot  # None, "head", "torso", "back", "hands", "legs", "feet", "trinket"
         self.armor = armor
         self.uses = uses
 
@@ -41,6 +43,9 @@ class Game:
         if len(self.log) > 20:
             self.log = self.log[-20:]
 
+    def get_weight(self):
+        return sum(item.weight for item in self.inventory if item)
+
     def get_ui(self):
         return (
             f"❤️ {self.hp}   🍖 {self.hunger}   💧 {self.thirst}  ⚡ {self.ap}   ☀️ {self.day}\n"
@@ -51,3 +56,15 @@ class Game:
 
     def get_inventory_text(self):
         return "🎒 Инвентарь:\n" + "\n".join(f"• {item.icon} {item.name} ({item.weight} кг) - {item.desc}" for item in self.inventory) if self.inventory else "🎒 Инвентарь пуст"
+
+    def check_death(self):
+        if self.hunger > 120 or self.thirst > 120:
+            self.hp -= 15
+            self.add_log("😵 Слишком голоден / хочешь пить! Теряешь здоровье.")
+        if self.hp <= 0:
+            return True
+        return False
+
+    def do_craft(self, i1, i2):
+        # Заглушка для крафта (расширяй рецепты здесь)
+        pass  # Добавь логику как в наброске
