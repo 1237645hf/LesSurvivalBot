@@ -8,10 +8,6 @@ from aiogram.types import Update
 from handlers import cmd_start, process_callback
 from utils import self_ping_task
 
-# ──────────────────────────────────────────────────────────────────────────────
-# НАСТРОЙКИ
-# ──────────────────────────────────────────────────────────────────────────────
-
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
     raise ValueError("TOKEN не найден!")
@@ -26,7 +22,7 @@ logging.info(f"Бот запущен | TOKEN: {TOKEN[:10]}... | BASE_URL: {BASE_
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Регистрируем хендлеры
+# Регистрация хендлеров
 dp.message.register(cmd_start, CommandStart())
 dp.callback_query.register(process_callback)
 
@@ -53,25 +49,21 @@ async def on_startup():
     if WEBHOOK_URL:
         try:
             await bot.delete_webhook(drop_pending_updates=True)
-            logging.info("Старый webhook удалён")
-        except Exception as e:
-            logging.warning(f"delete_webhook: {e}")
-
+        except:
+            pass
         try:
             await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
             logging.info(f"Webhook установлен: {WEBHOOK_URL}")
         except Exception as e:
             logging.error(f"set_webhook failed: {e}")
-
     asyncio.create_task(self_ping_task())
 
 @app.on_event("shutdown")
 async def on_shutdown():
     try:
         await bot.delete_webhook(drop_pending_updates=True)
-        logging.info("Webhook удалён")
-    except Exception as e:
-        logging.warning(f"shutdown delete_webhook: {e}")
+    except:
+        pass
 
 if __name__ == "__main__":
     import uvicorn
