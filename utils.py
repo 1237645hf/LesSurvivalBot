@@ -1,15 +1,19 @@
-from aiogram import types, bot
-import random
+import logging
+from aiogram import types, Bot
 
-async def clear_chat(chat_id):
+async def clear_chat(chat_id: int):
     try:
-        history = await bot.get_chat_history(chat_id, limit=30)
+        history = await Bot.get_chat_history(chat_id, limit=30)
         for msg in history:
-            if msg.from_user and msg.from_user.id == (await bot.get_me()).id:
-                if msg.message_id != message.message_id:  # не удаляем /start
-                    await bot.delete_message(chat_id, msg.message_id)
+            if msg.from_user and msg.from_user.id == (await Bot.get_me()).id:
+                if msg.message_id != message.message_id:
+                    await Bot.delete_message(chat_id, msg.message_id)
     except Exception as e:
         logging.warning(f"Очистка чата не удалась: {e}")
 
 def get_pogoda():
     return random.choices(["Ясно", "Пасмурно", "Дождь"], weights=[70, 20, 10])[0]
+
+async def self_ping_task():
+    # (твой код self-ping, можно перенести сюда или оставить в main.py)
+    pass
