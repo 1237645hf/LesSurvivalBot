@@ -1,52 +1,33 @@
-
 from aiogram import types
 from aiogram.filters import CommandStart
 from game import Game
-from utils import clear_chat, get_pogoda
-from aiogram import dp, bot
-from xai import games, last_ui_msg_id
+from utils import clear_chat
+from main import games, last_ui_msg_id, last_inv_msg_id
 
-# Inline-кнопки
 main_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [
-        InlineKeyboardButton(text="В чащу 🌲", callback_data="action_1"),
-        InlineKeyboardButton(text="Инвентарь 🎒", callback_data="action_2"),
-    ],
-    [
-        InlineKeyboardButton(text="Пить воду 💧", callback_data="action_3"),
-        InlineKeyboardButton(text="Спать 🌙", callback_data="action_4"),
-    ],
-    [
-        InlineKeyboardButton(text="📱ловить сигнал📱", callback_data="action_5"),
-        InlineKeyboardButton(text="Сбежать 🚁", callback_data="action_6"),
-    ],
+    [InlineKeyboardButton(text="В чащу 🌲", callback_data="action_1")],
+    [InlineKeyboardButton(text="Инвентарь 🎒", callback_data="action_2")],
+    [InlineKeyboardButton(text="Пить воду 💧", callback_data="action_3")],
+    [InlineKeyboardButton(text="Спать 🌙", callback_data="action_4")],
+    [InlineKeyboardButton(text="📱ловить сигнал📱", callback_data="action_5")],
+    [InlineKeyboardButton(text="Сбежать 🚁", callback_data="action_6")],
 ])
 
 inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [
-        InlineKeyboardButton(text="Осмотреть 👁️", callback_data="inv_inspect"),
-        InlineKeyboardButton(text="Использовать 🛠️", callback_data="inv_use"),
-        InlineKeyboardButton(text="Выкинуть 🗑️", callback_data="inv_drop"),
-    ],
-    [
-        InlineKeyboardButton(text="Крафт 🛠️", callback_data="inv_craft"),
-        InlineKeyboardButton(text="Персонаж 👤", callback_data="inv_character"),
-    ],
-    [
-        InlineKeyboardButton(text="Назад ←", callback_data="inv_back"),
-    ],
+    [InlineKeyboardButton(text="Осмотреть 👁️", callback_data="inv_inspect")],
+    [InlineKeyboardButton(text="Использовать 🛠️", callback_data="inv_use")],
+    [InlineKeyboardButton(text="Выкинуть 🗑️", callback_data="inv_drop")],
+    [InlineKeyboardButton(text="Крафт 🛠️", callback_data="inv_craft")],
+    [InlineKeyboardButton(text="Персонаж 👤", callback_data="inv_character")],
+    [InlineKeyboardButton(text="Назад ←", callback_data="inv_back")],
 ])
 
-start_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
+start_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="🫡 Я готов 🫡", callback_data="start_game")],
 ])
 
-# ──────────────────────────────────────────────────────────────────────────────
-# ХЕНДЛЕРЫ
-# ──────────────────────────────────────────────────────────────────────────────
-
 @dp.message(CommandStart())
-async def cmd_start(message: Message):
+async def cmd_start(message: types.Message):
     uid = message.from_user.id
     await clear_chat(message.chat.id)
 
@@ -60,7 +41,7 @@ async def cmd_start(message: Message):
         "☀️ 100 - игровой день\n\n"
         "⚖️ Карма - единственный параметр способный тебе помочь выбраться из леса.\n\n"
         "Попробуй выжить, друг....",
-        reply_markup=start_inline_kb
+        reply_markup=start_kb
     )
 
 @dp.callback_query()
@@ -95,25 +76,33 @@ async def process_callback(callback: types.CallbackQuery):
     if data == "action_1":
         if game.ap > 0:
             game.ap -= 1
-            game.hunger += 7  # голод +7
-            game.thirst += 8  # жажда +8
+            game.hunger = max(0, game.hunger - 7)
+            game.thirst = max(0, game.thirst - 8)
             game.add_log("🔍 Ты пошёл в чащу... нашёл кору!")
             action_taken = True
         else:
             game.add_log("🏕 У тебя нет сил и нужно отдохнуть")
             action_taken = True
     elif data == "action_2":
-        await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
+        if uid in last_ui_msg_id:
+            try:
+                await bot.delete_message(callback.message.chat.id, last_ui_msg_id[uid])
+                del last_ui_msg_id[uid]
+            except:
+                pass
+
+        inv_msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
+        last_inv_msg_id[uid] = inv_msg.message_id
         await callback.answer()
         return
     elif data == "action_3":
-        game.add_log("💧 Напился... жажда +20")
         game.thirst = min(100, game.thirst + 20)
+        game.add_log("💧 Напился... жажда +20")
         action_taken = True
     elif data == "action_4":
         game.day += 1
         game.ap = 5
-        game.hunger = max(0, game.hunger -15)
+        game.hunger = max(0, game.hunger - 15)
         game.add_log(f"🌙 День {game.day}. Выспался, голод -15")
         action_taken = True
     elif data == "action_5":
@@ -155,11 +144,17 @@ async def process_callback(callback: types.CallbackQuery):
         game.add_log("Персонаж... (заглушка)")
         action_taken = True
     elif data == "inv_back":
-        await callback.message.edit_text(game.get_ui(), reply_markup=main_inline_kb)
+        if uid in last_inv_msg_id:
+            try:
+                await bot.delete_message(callback.message.chat.id, last_inv_msg_id[uid])
+                del last_inv_msg_id[uid]
+            except:
+                pass
+
+        ui_msg = await callback.message.answer(game.get_ui(), reply_markup=main_inline_kb)
+        last_ui_msg_id[uid] = ui_msg.message_id
         await callback.answer()
         return
-
-    game.check_death()  # проверка смерти
 
     if action_taken:
         await callback.message.edit_text(
