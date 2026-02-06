@@ -1,12 +1,12 @@
+
 from aiogram import types
-from game import Game
-from utils import get_pogoda, clear_chat
 from aiogram.filters import CommandStart
+from game import Game
+from utils import clear_chat, get_pogoda
+from aiogram import dp, bot
+from xai import games, last_ui_msg_id
 
-games = {}
-last_ui_msg_id = {}
-
-# Основные inline-кнопки (без цифр)
+# Inline-кнопки
 main_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
     [
         InlineKeyboardButton(text="В чащу 🌲", callback_data="action_1"),
@@ -22,7 +22,21 @@ main_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
     ],
 ])
 
-# Кнопки для старта игры
+inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
+    [
+        InlineKeyboardButton(text="Осмотреть 👁️", callback_data="inv_inspect"),
+        InlineKeyboardButton(text="Использовать 🛠️", callback_data="inv_use"),
+        InlineKeyboardButton(text="Выкинуть 🗑️", callback_data="inv_drop"),
+    ],
+    [
+        InlineKeyboardButton(text="Крафт 🛠️", callback_data="inv_craft"),
+        InlineKeyboardButton(text="Персонаж 👤", callback_data="inv_character"),
+    ],
+    [
+        InlineKeyboardButton(text="Назад ←", callback_data="inv_back"),
+    ],
+])
+
 start_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="🫡 Я готов 🫡", callback_data="start_game")],
 ])
@@ -63,9 +77,7 @@ async def process_callback(callback: types.CallbackQuery):
 
     if data == "start_game":
         games[uid] = Game()
-        await callback.message.edit_text(
-            "Игра началась!\n\nВыбери действие ниже ↓"
-        )
+        await callback.message.edit_text("Игра началась!\n\nВыбери действие ниже ↓")
 
         ui_msg = await callback.message.answer(games[uid].get_ui(), reply_markup=main_inline_kb)
         last_ui_msg_id[uid] = ui_msg.message_id
@@ -83,6 +95,8 @@ async def process_callback(callback: types.CallbackQuery):
     if data == "action_1":
         if game.ap > 0:
             game.ap -= 1
+            game.hunger += 7  # голод +7
+            game.thirst += 8  # жажда +8
             game.add_log("🔍 Ты пошёл в чащу... нашёл кору!")
             action_taken = True
         else:
@@ -93,8 +107,8 @@ async def process_callback(callback: types.CallbackQuery):
         await callback.answer()
         return
     elif data == "action_3":
-        game.add_log("💧 Напился... жажда -20")
-        game.thirst = max(0, game.thirst - 20)
+        game.add_log("💧 Напился... жажда +20")
+        game.thirst = min(100, game.thirst + 20)
         action_taken = True
     elif data == "action_4":
         game.day += 1
@@ -103,9 +117,17 @@ async def process_callback(callback: types.CallbackQuery):
         game.add_log(f"🌙 День {game.day}. Выспался, голод -15")
         action_taken = True
     elif data == "action_5":
-        game.add_log("🧙 Мудрец дал совет... +5 кармы")
-        game.karma += 5
-        action_taken = True
+        if game.ap > 0:
+            game.ap -= 1
+            if random.randint(1, 2) == 1:
+                game.search_progress += 5
+                game.add_log("📱 Поймал сигнал... +5 к поиску маршрута")
+            else:
+                game.add_log("📱 Сигнал не пойман...")
+            action_taken = True
+        else:
+            game.add_log("🏕 У тебя нет сил и нужно отдохнуть")
+            action_taken = True
     elif data == "action_6":
         chance = 10 + (game.karma // 10)
         if random.randint(1, 100) <= chance:
@@ -126,10 +148,18 @@ async def process_callback(callback: types.CallbackQuery):
     elif data == "inv_drop":
         game.add_log("Выкинул предмет... (заглушка)")
         action_taken = True
+    elif data == "inv_craft":
+        game.add_log("Крафт... (заглушка)")
+        action_taken = True
+    elif data == "inv_character":
+        game.add_log("Персонаж... (заглушка)")
+        action_taken = True
     elif data == "inv_back":
         await callback.message.edit_text(game.get_ui(), reply_markup=main_inline_kb)
         await callback.answer()
         return
+
+    game.check_death()  # проверка смерти
 
     if action_taken:
         await callback.message.edit_text(
@@ -137,48 +167,3 @@ async def process_callback(callback: types.CallbackQuery):
             reply_markup=main_inline_kb
         )
         await callback.answer()
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 5. FASTAPI МАРШРУТЫ И ЖИЗНЕННЫЙ ЦИКЛ
-# ──────────────────────────────────────────────────────────────────────────────
-
-@app.get("/ping")
-@app.get("/health")
-async def health_check():
-    return PlainTextResponse("OK", status_code=200)
-
-@app.post(WEBHOOK_PATH)
-async def webhook(request: Request):
-    try:
-        body = await request.json()
-        update = Update.model_validate(body, context={"bot": bot})
-        await dp.feed_update(bot, update)
-        return {"ok": True}
-    except Exception as e:
-        logging.error(f"Webhook error: {e}")
-        raise HTTPException(status_code=500)
-
-@app.on_event("startup")
-async def on_startup():
-    if WEBHOOK_URL:
-        try:
-            await bot.delete_webhook(drop_pending_updates=True)
-        except:
-            pass
-        try:
-            await bot.set_webhook(WEBHOOK_URL)
-            logging.info(f"Webhook установлен: {WEBHOOK_URL}")
-        except Exception as e:
-            logging.error(f"set_webhook failed: {e}")
-    asyncio.create_task(self_ping_task())
-
-@app.on_event("shutdown")
-async def on_shutdown():
-    try:
-        await bot.delete_webhook(drop_pending_updates=True)
-    except:
-        pass
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
