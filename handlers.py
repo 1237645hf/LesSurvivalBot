@@ -2,7 +2,7 @@ from aiogram import types
 from aiogram.filters import CommandStart
 from game import Game
 from utils import clear_chat
-from main import games, last_ui_msg_id, last_inv_msg_id
+from state import games, last_ui_msg_id, last_inv_msg_id, last_request_time
 
 main_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="В чащу 🌲", callback_data="action_1")],
