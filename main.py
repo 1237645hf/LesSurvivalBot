@@ -24,7 +24,7 @@ WEBHOOK_PATH = f"/bot/{TOKEN}"
 WEBHOOK_URL = f"{BASE_URL}{WEBHOOK_PATH}" if BASE_URL else None
 
 logging.basicConfig(level=logging.INFO)
-logging.info(f"Бот запущен | TOKEN: {TOKEN[:10]}... | BASE_URL: {BASE_URL}")
+logging.info(f"Бот запущен. TOKEN: {TOKEN[:10]}... BASE_URL: {BASE_URL}")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -40,30 +40,24 @@ PING_INTERVAL_SECONDS = 300
 
 async def self_ping_task():
     if not BASE_URL:
-        logging.info("Self-ping отключён (локальный запуск)")
+        logging.info("Self-ping отключён")
         return
-
     ping_url = f"{BASE_URL}/ping"
     logging.info(f"Self-ping запущен (каждые 5 мин → {ping_url})")
-
     while True:
         try:
             async with httpx.AsyncClient() as client:
                 r = await client.get(ping_url, timeout=10)
                 if r.status_code == 200:
                     logging.info(f"[SELF-PING] OK → {time.strftime('%Y-%m-%d %H:%M:%S')}")
-                    
-                    # Авто-переустановка webhook каждые 5 минут (страховка от потери после перезапуска)
+                    # Авто-переустановка webhook
                     try:
                         await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
-                        logging.info(f"Webhook переустановлен автоматически: {WEBHOOK_URL}")
+                        logging.info(f"Webhook переустановлен: {WEBHOOK_URL}")
                     except Exception as e:
-                        logging.warning(f"Ошибка авто-переустановки webhook: {e}")
-                else:
-                    logging.warning(f"[SELF-PING] статус {r.status_code}")
+                        logging.warning(f"Авто-переустановка webhook: {e}")
         except Exception as e:
             logging.error(f"[SELF-PING] ошибка: {e}")
-        
         await asyncio.sleep(PING_INTERVAL_SECONDS)
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -73,53 +67,61 @@ async def self_ping_task():
 class Game:
     def __init__(self):
         self.hp = 100
-        self.hunger = 30
-        self.thirst = 30
+        self.hunger = 20  # начальный 20
+        self.thirst = 60  # начальный 60
         self.ap = 5
         self.karma = 0
+        self.search_progress = 0  # для сигнала
+        self.day = 1
         self.log = ["🌲 Ты проснулся в лесу. Что будешь делать?"]
         self.inventory = ["Спички 🔥", "Вилка 🍴", "Кусок коры 🪵"]
 
     def add_log(self, text):
         self.log.append(text)
-        if len(self.log) > 15:
-            self.log = self.log[-15:]
+        if len(self.log) > 5:  # сократили до 5 для высоты UI
+            self.log = self.log[-5:]
 
     def get_ui(self):
         return (
-            f"❤️ HP: {self.hp}   🍖 Голод: {self.hunger}   💧 Жажда: {self.thirst}\n"
-            f"⚡ Очки действий: {self.ap}   ⚖️ Карма: {self.karma}\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"❤️ {self.hp}   🍖 {self.hunger}   💧 {self.thirst}  ⚡ {self.ap}   ☀️ {self.day}\n"
+            "━━━━━━━━━━━━━━━━━━━\n"
             + "\n".join(f"> {line}" for line in self.log) + "\n"
-            + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            "━━━━━━━━━━━━━━━━━━━"
         )
 
     def get_inventory_text(self):
         return "🎒 Инвентарь:\n" + "\n".join(f"• {item}" for item in self.inventory) if self.inventory else "🎒 Инвентарь пуст"
 
 games = {}
-last_ui_msg_id = {}  # user_id → message_id состояния
+last_ui_msg_id = {}  # user_id → message_id главного UI
+last_inv_msg_id = {}  # user_id → message_id инвентаря (для удаления)
 
+# Основные inline-кнопки (без цифр)
 main_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
     [
-        InlineKeyboardButton(text="1 В чащу 🌲", callback_data="action_1"),
-        InlineKeyboardButton(text="2 Инвентарь 🎒", callback_data="action_2"),
+        InlineKeyboardButton(text="В чащу 🌲", callback_data="action_1"),
+        InlineKeyboardButton(text="Инвентарь 🎒", callback_data="action_2"),
     ],
     [
-        InlineKeyboardButton(text="3 Пить воду 💧", callback_data="action_3"),
-        InlineKeyboardButton(text="4 Спать 🌙", callback_data="action_4"),
+        InlineKeyboardButton(text="Пить воду 💧", callback_data="action_3"),
+        InlineKeyboardButton(text="Спать 🌙", callback_data="action_4"),
     ],
     [
-        InlineKeyboardButton(text="5 Позвать мудреца 🧙", callback_data="action_5"),
-        InlineKeyboardButton(text="6 Сбежать 🚁", callback_data="action_6"),
+        InlineKeyboardButton(text="📱ловить сигнал📱", callback_data="action_5"),
+        InlineKeyboardButton(text="Сбежать 🚁", callback_data="action_6"),
     ],
 ])
 
+# Кнопки инвентаря
 inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
     [
         InlineKeyboardButton(text="Осмотреть 👁️", callback_data="inv_inspect"),
         InlineKeyboardButton(text="Использовать 🛠️", callback_data="inv_use"),
         InlineKeyboardButton(text="Выкинуть 🗑️", callback_data="inv_drop"),
+    ],
+    [
+        InlineKeyboardButton(text="Крафт 🛠️", callback_data="inv_craft"),
+        InlineKeyboardButton(text="Персонаж 👤", callback_data="inv_character"),
     ],
     [
         InlineKeyboardButton(text="Назад ←", callback_data="inv_back"),
@@ -133,7 +135,6 @@ inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     uid = message.from_user.id
-    logging.info(f"/start от пользователя {uid}")
 
     # Очистка предыдущих сообщений бота
     try:
@@ -153,18 +154,15 @@ async def cmd_start(message: Message):
 
     ui_msg = await message.answer(games[uid].get_ui(), reply_markup=main_inline_kb)
     last_ui_msg_id[uid] = ui_msg.message_id
-    logging.info(f"Создана новая игра для {uid}")
 
 @dp.callback_query()
 async def process_callback(callback: types.CallbackQuery):
     uid = callback.from_user.id
     now = time.time()
-    logging.info(f"Получен callback от {uid}: data={callback.data}")
 
     # Кулдаун 1 секунда
     if uid in last_request_time and now - last_request_time[uid] < 1.0:
         await callback.answer("Подожди секунду!")
-        logging.debug(f"Кулдаун для {uid}")
         return
     last_request_time[uid] = now
 
@@ -186,7 +184,13 @@ async def process_callback(callback: types.CallbackQuery):
             game.add_log("🏕 У тебя нет сил и нужно отдохнуть")
             action_taken = True
     elif data == "action_2":
-        await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
+        # Удаляем главное окно
+        if uid in last_ui_msg_id:
+            await bot.delete_message(callback.message.chat.id, last_ui_msg_id[uid])
+            del last_ui_msg_id[uid]
+
+        inv_msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
+        last_inv_msg_id[uid] = inv_msg.message_id
         await callback.answer()
         return
     elif data == "action_3":
@@ -223,28 +227,22 @@ async def process_callback(callback: types.CallbackQuery):
         game.add_log("Выкинул предмет... (заглушка)")
         action_taken = True
     elif data == "inv_back":
-        await callback.message.edit_text(game.get_ui(), reply_markup=main_inline_kb)
+        # Удаляем инвентарь
+        if uid in last_inv_msg_id:
+            await bot.delete_message(callback.message.chat.id, last_inv_msg_id[uid])
+            del last_inv_msg_id[uid]
+
+        # Отправляем новое главное окно
+        ui_msg = await callback.message.answer(game.get_ui(), reply_markup=main_inline_kb)
+        last_ui_msg_id[uid] = ui_msg.message_id
         await callback.answer()
         return
 
     if action_taken:
-        try:
-            await callback.message.edit_text(
-                game.get_ui(),
-                reply_markup=main_inline_kb
-            )
-            logging.info(f"Состояние обновлено для {uid}")
-        except Exception as e:
-            logging.error(f"Ошибка редактирования сообщения: {e}")
-            try:
-                new_msg = await callback.message.answer(game.get_ui(), reply_markup=main_inline_kb)
-                last_ui_msg_id[uid] = new_msg.message_id
-                logging.info(f"Отправлено новое сообщение вместо редактирования для {uid}")
-            except Exception as e2:
-                logging.error(f"Ошибка отправки нового сообщения: {e2}")
-
-        # Чистим память после каждого действия
-        gc.collect()
+        await callback.message.edit_text(
+            game.get_ui(),
+            reply_markup=main_inline_kb
+        )
         await callback.answer()
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -261,7 +259,6 @@ async def webhook(request: Request):
     try:
         body = await request.json()
         update = Update.model_validate(body, context={"bot": bot})
-        logging.info(f"Получен новый Update id={update.update_id}")
         await dp.feed_update(bot, update)
         return {"ok": True}
     except Exception as e:
@@ -273,29 +270,22 @@ async def on_startup():
     if WEBHOOK_URL:
         try:
             await bot.delete_webhook(drop_pending_updates=True)
-            logging.info("Старый webhook удалён")
-        except Exception as e:
-            logging.warning(f"delete_webhook: {e}")
-
+        except:
+            pass
         try:
-            await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
+            await bot.set_webhook(WEBHOOK_URL)
             logging.info(f"Webhook установлен: {WEBHOOK_URL}")
         except Exception as e:
             logging.error(f"set_webhook failed: {e}")
-    else:
-        logging.error("BASE_URL не найден → webhook не установлен!")
-
     asyncio.create_task(self_ping_task())
 
 @app.on_event("shutdown")
 async def on_shutdown():
     try:
         await bot.delete_webhook(drop_pending_updates=True)
-        logging.info("Webhook удалён")
     except:
         pass
 
 if __name__ == "__main__":
     import uvicorn
-    import gc  # для очистки памяти
     uvicorn.run(app, host="0.0.0.0", port=8000)
