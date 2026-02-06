@@ -1,5 +1,5 @@
 import logging
-from aiogram import types, Bot
+from aiogram import Bot
 
 async def clear_chat(chat_id: int):
     try:
@@ -11,9 +11,6 @@ async def clear_chat(chat_id: int):
     except Exception as e:
         logging.warning(f"Очистка чата не удалась: {e}")
 
-def get_pogoda():
-    return random.choices(["Ясно", "Пасмурно", "Дождь"], weights=[70, 20, 10])[0]
-
 async def self_ping_task():
-    # (твой код self-ping, можно перенести сюда или оставить в main.py)
+    # (перенеси сюда свой код self-ping, если хочешь)
     pass
