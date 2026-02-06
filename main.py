@@ -3,6 +3,7 @@ import logging
 import os
 import time
 import random
+import gc  # для очистки памяти
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse
 from aiogram import Bot, Dispatcher, types
@@ -23,48 +24,51 @@ WEBHOOK_PATH = f"/bot/{TOKEN}"
 WEBHOOK_URL = f"{BASE_URL}{WEBHOOK_PATH}" if BASE_URL else None
 
 logging.basicConfig(level=logging.INFO)
-logging.info(f"Бот запущен. TOKEN: {TOKEN[:10]}... BASE_URL: {BASE_URL}")
+logging.info(f"Бот запущен | TOKEN: {TOKEN[:10]}... | BASE_URL: {BASE_URL}")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 app = FastAPI(title="Forest Survival Bot")
 
-last_request_time = {}  # кулдаун
+last_request_time = {}  # для кулдауна
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 2. SELF-PING
+# 2. SELF-PING + АВТО-ПЕРЕУСТАНОВКА WEBHOOK
 # ──────────────────────────────────────────────────────────────────────────────
 
 PING_INTERVAL_SECONDS = 300
 
 async def self_ping_task():
     if not BASE_URL:
+        logging.info("Self-ping отключён (локальный запуск)")
         return
+
     ping_url = f"{BASE_URL}/ping"
-    logging.info(f"Self-ping каждые 5 мин → {ping_url}")
+    logging.info(f"Self-ping запущен (каждые 5 мин → {ping_url})")
+
     while True:
         try:
             async with httpx.AsyncClient() as client:
                 r = await client.get(ping_url, timeout=10)
                 if r.status_code == 200:
                     logging.info(f"[SELF-PING] OK → {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        except:
-            pass
+                    
+                    # Авто-переустановка webhook каждые 5 минут (страховка от потери после перезапуска)
+                    try:
+                        await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
+                        logging.info(f"Webhook переустановлен автоматически: {WEBHOOK_URL}")
+                    except Exception as e:
+                        logging.warning(f"Ошибка авто-переустановки webhook: {e}")
+                else:
+                    logging.warning(f"[SELF-PING] статус {r.status_code}")
+        except Exception as e:
+            logging.error(f"[SELF-PING] ошибка: {e}")
+        
         await asyncio.sleep(PING_INTERVAL_SECONDS)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 3. КЛАСС ИГРЫ
 # ──────────────────────────────────────────────────────────────────────────────
-
-class Item:
-    def __init__(self, name, icon, desc, weight=1, slot=None, armor=0, uses=1):
-        self.name = name
-        self.icon = icon
-        self.desc = desc
-        self.weight = weight
-        self.slot = slot  # None, "head", "torso", "back", "hands", "legs", "feet", "trinket"
-        self.armor = armor
-        self.uses = uses  # для фляги и т.п.
 
 class Game:
     def __init__(self):
@@ -73,84 +77,53 @@ class Game:
         self.thirst = 30
         self.ap = 5
         self.karma = 0
-        self.day = 1
-        self.water_bottle = None  # фляга (если найдена)
-        self.log = ["🌲 Ты проснулся в лесу. День 1. Погода: Ясно"]
-        self.inventory = [
-            Item("Спички", "🔥", "Можно разжечь костёр", 1),
-            Item("Вилка", "🍴", "Оружие или инструмент", 1, slot=None),
-            Item("Кусок коры", "🪵", "Можно использовать для крафта", 2),
-        ]
-        self.equipment = {
-            "head": None,
-            "torso": None,
-            "back": None,
-            "hands": None,
-            "legs": None,
-            "feet": None,
-            "trinket": None,  # для фляги и безделушек
-        }
-        self.max_weight = 20  # можно увеличивать рюкзаками
+        self.log = ["🌲 Ты проснулся в лесу. Что будешь делать?"]
+        self.inventory = ["Спички 🔥", "Вилка 🍴", "Кусок коры 🪵"]
 
     def add_log(self, text):
         self.log.append(text)
         if len(self.log) > 15:
             self.log = self.log[-15:]
 
-    def get_weight(self):
-        return sum(item.weight for item in self.inventory)
-
     def get_ui(self):
-        equipped = []
-        for slot, item in self.equipment.items():
-            if item:
-                equipped.append(f"{slot.capitalize()}: {item.name}")
-            else:
-                equipped.append(f"{slot.capitalize()}: Свободно")
-
-        weather = random.choices(["Ясно", "Пасмурно", "Дождь"], weights=[70, 20, 10])[0]
-
         return (
-            f"День {self.day} | Погода: {weather}\n"
             f"❤️ HP: {self.hp}   🍖 Голод: {self.hunger}   💧 Жажда: {self.thirst}\n"
             f"⚡ Очки действий: {self.ap}   ⚖️ Карма: {self.karma}\n"
-            f"🎒 Вес: {self.get_weight()}/{self.max_weight}\n"
-            f"{'-'*40}\n"
-            + "\n".join(equipped) + "\n"
-            f"{'-'*40}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             + "\n".join(f"> {line}" for line in self.log) + "\n"
-            f"{'-'*40}"
+            + "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         )
 
     def get_inventory_text(self):
-        if not self.inventory:
-            return "🎒 Инвентарь пуст"
-        return "🎒 Инвентарь:\n" + "\n".join(f"• {item.icon} {item.name} ({item.weight} кг) - {item.desc}" for item in self.inventory)
+        return "🎒 Инвентарь:\n" + "\n".join(f"• {item}" for item in self.inventory) if self.inventory else "🎒 Инвентарь пуст"
 
 games = {}
-last_ui_msg_id = {}
+last_ui_msg_id = {}  # user_id → message_id состояния
 
-# Основные inline-кнопки
 main_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="1 В чащу 🌲", callback_data="action_1")],
     [
+        InlineKeyboardButton(text="1 В чащу 🌲", callback_data="action_1"),
         InlineKeyboardButton(text="2 Инвентарь 🎒", callback_data="action_2"),
-        InlineKeyboardButton(text="Крафт 🛠", callback_data="action_craft"),
     ],
-    [InlineKeyboardButton(text="3 Пить воду 💧", callback_data="action_3")],
-    [InlineKeyboardButton(text="4 Спать 🌙", callback_data="action_4")],
-    [InlineKeyboardButton(text="5 Позвать мудреца 🧙", callback_data="action_5")],
-    [InlineKeyboardButton(text="6 Сбежать 🚁", callback_data="action_6")],
+    [
+        InlineKeyboardButton(text="3 Пить воду 💧", callback_data="action_3"),
+        InlineKeyboardButton(text="4 Спать 🌙", callback_data="action_4"),
+    ],
+    [
+        InlineKeyboardButton(text="5 Позвать мудреца 🧙", callback_data="action_5"),
+        InlineKeyboardButton(text="6 Сбежать 🚁", callback_data="action_6"),
+    ],
 ])
 
-# Кнопки инвентаря
 inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
     [
         InlineKeyboardButton(text="Осмотреть 👁️", callback_data="inv_inspect"),
         InlineKeyboardButton(text="Использовать 🛠️", callback_data="inv_use"),
         InlineKeyboardButton(text="Выкинуть 🗑️", callback_data="inv_drop"),
     ],
-    [InlineKeyboardButton(text="Назад ←", callback_data="inv_back")],
+    [
+        InlineKeyboardButton(text="Назад ←", callback_data="inv_back"),
+    ],
 ])
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -160,8 +133,9 @@ inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     uid = message.from_user.id
+    logging.info(f"/start от пользователя {uid}")
 
-    # Очистка чата
+    # Очистка предыдущих сообщений бота
     try:
         history = await bot.get_chat_history(message.chat.id, limit=30)
         for msg in history:
@@ -173,18 +147,24 @@ async def cmd_start(message: Message):
 
     games[uid] = Game()
 
-    await message.answer("🌲 Добро пожаловать в лес выживания!\n\nВыбери действие ниже ↓")
+    await message.answer(
+        "🌲 Добро пожаловать в лес выживания!\n\nВыбери действие ниже ↓"
+    )
 
     ui_msg = await message.answer(games[uid].get_ui(), reply_markup=main_inline_kb)
     last_ui_msg_id[uid] = ui_msg.message_id
+    logging.info(f"Создана новая игра для {uid}")
 
 @dp.callback_query()
 async def process_callback(callback: types.CallbackQuery):
     uid = callback.from_user.id
     now = time.time()
+    logging.info(f"Получен callback от {uid}: data={callback.data}")
 
+    # Кулдаун 1 секунда
     if uid in last_request_time and now - last_request_time[uid] < 1.0:
         await callback.answer("Подожди секунду!")
+        logging.debug(f"Кулдаун для {uid}")
         return
     last_request_time[uid] = now
 
@@ -214,10 +194,9 @@ async def process_callback(callback: types.CallbackQuery):
         game.thirst = max(0, game.thirst - 20)
         action_taken = True
     elif data == "action_4":
-        game.day += 1
+        game.add_log("🌙 Поспал... восстановил действия, голод +15")
         game.ap = 5
         game.hunger += 15
-        game.add_log(f"🌙 День {game.day}. Выспался, но проголодался.")
         action_taken = True
     elif data == "action_5":
         game.add_log("🧙 Мудрец дал совет... +5 кармы")
@@ -249,7 +228,23 @@ async def process_callback(callback: types.CallbackQuery):
         return
 
     if action_taken:
-        await callback.message.edit_text(game.get_ui(), reply_markup=main_inline_kb)
+        try:
+            await callback.message.edit_text(
+                game.get_ui(),
+                reply_markup=main_inline_kb
+            )
+            logging.info(f"Состояние обновлено для {uid}")
+        except Exception as e:
+            logging.error(f"Ошибка редактирования сообщения: {e}")
+            try:
+                new_msg = await callback.message.answer(game.get_ui(), reply_markup=main_inline_kb)
+                last_ui_msg_id[uid] = new_msg.message_id
+                logging.info(f"Отправлено новое сообщение вместо редактирования для {uid}")
+            except Exception as e2:
+                logging.error(f"Ошибка отправки нового сообщения: {e2}")
+
+        # Чистим память после каждого действия
+        gc.collect()
         await callback.answer()
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -266,6 +261,7 @@ async def webhook(request: Request):
     try:
         body = await request.json()
         update = Update.model_validate(body, context={"bot": bot})
+        logging.info(f"Получен новый Update id={update.update_id}")
         await dp.feed_update(bot, update)
         return {"ok": True}
     except Exception as e:
@@ -277,22 +273,29 @@ async def on_startup():
     if WEBHOOK_URL:
         try:
             await bot.delete_webhook(drop_pending_updates=True)
-        except:
-            pass
+            logging.info("Старый webhook удалён")
+        except Exception as e:
+            logging.warning(f"delete_webhook: {e}")
+
         try:
-            await bot.set_webhook(WEBHOOK_URL)
+            await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
             logging.info(f"Webhook установлен: {WEBHOOK_URL}")
         except Exception as e:
             logging.error(f"set_webhook failed: {e}")
+    else:
+        logging.error("BASE_URL не найден → webhook не установлен!")
+
     asyncio.create_task(self_ping_task())
 
 @app.on_event("shutdown")
 async def on_shutdown():
     try:
         await bot.delete_webhook(drop_pending_updates=True)
+        logging.info("Webhook удалён")
     except:
         pass
 
 if __name__ == "__main__":
     import uvicorn
+    import gc  # для очистки памяти
     uvicorn.run(app, host="0.0.0.0", port=8000)
