@@ -10,6 +10,8 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.types import Update, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart
 import httpx
+from pymongo import MongoClient
+from pymongo.errors import ConfigurationError, OperationFailure
 
 # ──────────────────────────────────────────────────────────────────────────────
 # НАСТРОЙКИ
@@ -23,43 +25,36 @@ BASE_URL = os.getenv("RENDER_EXTERNAL_URL")
 WEBHOOK_PATH = f"/bot/{TOKEN}"
 WEBHOOK_URL = f"{BASE_URL}{WEBHOOK_PATH}" if BASE_URL else None
 
+MONGO_URI = os.getenv("MONGO_URI")
+if not MONGO_URI:
+    raise ValueError("MONGO_URI не найден в Environment Variables Render!")
+
 logging.basicConfig(level=logging.INFO)
 logging.info(f"Бот запущен. TOKEN: {TOKEN[:10]}... BASE_URL: {BASE_URL}")
+logging.info(f"MONGO_URI: {MONGO_URI[:30]}...")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 app = FastAPI(title="Forest Survival Bot")
 
-last_request_time = {}  # кулдаун
-last_ui_msg_id = {}  # user_id → message_id главного UI
-last_inv_msg_id = {}  # user_id → message_id инвентаря
+last_request_time = {}   # кулдаун
+last_ui_msg_id = {}      # user_id → message_id главного UI
+last_inv_msg_id = {}     # user_id → message_id инвентаря
 
 # ──────────────────────────────────────────────────────────────────────────────
-# SELF-PING + АВТО-ПЕРЕУСТАНОВКА WEBHOOK
+# ПОДКЛЮЧЕНИЕ К MONGODB
 # ──────────────────────────────────────────────────────────────────────────────
 
-PING_INTERVAL_SECONDS = 300
-
-async def self_ping_task():
-    if not BASE_URL:
-        logging.info("Self-ping отключён")
-        return
-    ping_url = f"{BASE_URL}/ping"
-    logging.info(f"Self-ping запущен (каждые 5 мин → {ping_url})")
-    while True:
-        try:
-            async with httpx.AsyncClient() as client:
-                r = await client.get(ping_url, timeout=10)
-                if r.status_code == 200:
-                    logging.info(f"[SELF-PING] OK → {time.strftime('%Y-%m-%d %H:%M:%S')}")
-                    try:
-                        await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
-                        logging.info(f"Webhook переустановлен: {WEBHOOK_URL}")
-                    except Exception as e:
-                        logging.warning(f"Авто-переустановка webhook: {e}")
-        except Exception as e:
-            logging.error(f"[SELF-PING] ошибка: {e}")
-        await asyncio.sleep(PING_INTERVAL_SECONDS)
+try:
+    mongo_client = MongoClient(MONGO_URI)
+    db = mongo_client['forest_game']           # имя базы данных
+    players_collection = db['players']         # коллекция игроков
+    # Простая проверка подключения
+    mongo_client.server_info()
+    logging.info("MongoDB подключён успешно")
+except (ConfigurationError, OperationFailure) as e:
+    logging.error(f"Ошибка подключения к MongoDB: {e}")
+    raise RuntimeError("Не удалось подключиться к MongoDB")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # КЛАСС ИГРЫ
@@ -76,6 +71,7 @@ class Game:
         self.day = 1
         self.log = ["🌲 Ты проснулся в лесу. Что будешь делать?"]
         self.inventory = ["Спички 🔥", "Вилка 🍴", "Кусок коры 🪵"]
+        # Скоро добавим: self.weather = "clear"  (для следующей итерации)
 
     def add_log(self, text):
         self.log.append(text)
@@ -93,7 +89,30 @@ class Game:
     def get_inventory_text(self):
         return "🎒 Инвентарь:\n" + "\n".join(f"• {item}" for item in self.inventory) if self.inventory else "🎒 Инвентарь пуст"
 
-games = {}
+# ──────────────────────────────────────────────────────────────────────────────
+# ФУНКЦИИ СОХРАНЕНИЯ / ЗАГРУЗКИ
+# ──────────────────────────────────────────────────────────────────────────────
+
+def load_game(uid: int) -> Game | None:
+    try:
+        data = players_collection.find_one({"_id": uid})
+        if data and "game_data" in data:
+            game = Game()
+            game.__dict__.update(data["game_data"])
+            return game
+    except Exception as e:
+        logging.error(f"Ошибка загрузки игрока {uid}: {e}")
+    return None
+
+def save_game(uid: int, game: Game):
+    try:
+        players_collection.update_one(
+            {"_id": uid},
+            {"$set": {"game_data": game.__dict__}},
+            upsert=True
+        )
+    except Exception as e:
+        logging.error(f"Ошибка сохранения игрока {uid}: {e}")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # КНОПКИ
@@ -129,7 +148,7 @@ start_kb = InlineKeyboardMarkup(inline_keyboard=[
 async def cmd_start(message: Message):
     uid = message.from_user.id
 
-    # Очистка чата
+    # Очистка старых сообщений бота (опционально, можно убрать если лимиты API беспокоят)
     try:
         history = await bot.get_chat_history(message.chat.id, limit=30)
         for msg in history:
@@ -164,22 +183,25 @@ async def process_callback(callback: types.CallbackQuery):
 
     data = callback.data
 
+    # Загрузка игры (если ещё не загружена в памяти)
+    if uid not in games:
+        loaded_game = load_game(uid)
+        games[uid] = loaded_game if loaded_game else Game()
+
+    game = games[uid]
+    action_taken = False
+
     if data == "start_game":
+        # Если новая игра — перезаписываем
         games[uid] = Game()
+        save_game(uid, games[uid])
+
         await callback.message.edit_text("Игра началась!\n\nВыбери действие ниже ↓")
 
         ui_msg = await callback.message.answer(games[uid].get_ui(), reply_markup=main_inline_kb)
         last_ui_msg_id[uid] = ui_msg.message_id
         await callback.answer()
         return
-
-    if uid not in games:
-        await callback.message.answer("Сначала /start")
-        await callback.answer()
-        return
-
-    game = games[uid]
-    action_taken = False
 
     if data == "action_1":
         if game.ap > 0:
@@ -191,6 +213,7 @@ async def process_callback(callback: types.CallbackQuery):
         else:
             game.add_log("🏕 У тебя нет сил и нужно отдохнуть")
             action_taken = True
+
     elif data == "action_2":
         if uid in last_ui_msg_id:
             try:
@@ -203,16 +226,19 @@ async def process_callback(callback: types.CallbackQuery):
         last_inv_msg_id[uid] = inv_msg.message_id
         await callback.answer()
         return
+
     elif data == "action_3":
         game.thirst = min(100, game.thirst + 20)
         game.add_log("💧 Напился... жажда +20")
         action_taken = True
+
     elif data == "action_4":
         game.day += 1
         game.ap = 5
         game.hunger = max(0, game.hunger - 15)
         game.add_log(f"🌙 День {game.day}. Выспался, голод -15")
         action_taken = True
+
     elif data == "action_5":
         if game.ap > 0:
             game.ap -= 1
@@ -225,32 +251,26 @@ async def process_callback(callback: types.CallbackQuery):
         else:
             game.add_log("🏕 У тебя нет сил и нужно отдохнуть")
             action_taken = True
+
     elif data == "action_6":
         chance = 10 + (game.karma // 10)
         if random.randint(1, 100) <= chance:
             await callback.message.answer("🚁 ПОБЕДА! Ты сбежал!\n\n/start — новая игра")
             games.pop(uid, None)
             last_ui_msg_id.pop(uid, None)
+            # Удаляем из БД при победе (опционально)
+            players_collection.delete_one({"_id": uid})
             await callback.answer("Победа!")
             return
         else:
             game.add_log("Побег не удался...")
             action_taken = True
-    elif data == "inv_inspect":
-        game.add_log("Осмотрел инвентарь... (заглушка)")
+
+    # Заглушки инвентаря (пока без изменений)
+    elif data in ("inv_inspect", "inv_use", "inv_drop", "inv_craft", "inv_character"):
+        game.add_log(f"{data.replace('inv_', '').capitalize()}... (заглушка)")
         action_taken = True
-    elif data == "inv_use":
-        game.add_log("Использовал предмет... (заглушка)")
-        action_taken = True
-    elif data == "inv_drop":
-        game.add_log("Выкинул предмет... (заглушка)")
-        action_taken = True
-    elif data == "inv_craft":
-        game.add_log("Крафт... (заглушка)")
-        action_taken = True
-    elif data == "inv_character":
-        game.add_log("Персонаж... (заглушка)")
-        action_taken = True
+
     elif data == "inv_back":
         if uid in last_inv_msg_id:
             try:
@@ -264,12 +284,47 @@ async def process_callback(callback: types.CallbackQuery):
         await callback.answer()
         return
 
+    # Сохранение после любого действия, которое меняет состояние
     if action_taken:
+        save_game(uid, game)
         await callback.message.edit_text(
             game.get_ui(),
             reply_markup=main_inline_kb
         )
         await callback.answer()
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ГЛОБАЛЬНЫЙ СЛОВАРЬ ИГР (кэш в памяти)
+# ──────────────────────────────────────────────────────────────────────────────
+
+games = {}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SELF-PING + АВТО-ПЕРЕУСТАНОВКА WEBHOOK
+# ──────────────────────────────────────────────────────────────────────────────
+
+PING_INTERVAL_SECONDS = 300
+
+async def self_ping_task():
+    if not BASE_URL:
+        logging.info("Self-ping отключён")
+        return
+    ping_url = f"{BASE_URL}/ping"
+    logging.info(f"Self-ping запущен (каждые {PING_INTERVAL_SECONDS} сек → {ping_url})")
+    while True:
+        try:
+            async with httpx.AsyncClient() as client:
+                r = await client.get(ping_url, timeout=10)
+                if r.status_code == 200:
+                    logging.info(f"[SELF-PING] OK → {time.strftime('%Y-%m-%d %H:%M:%S')}")
+                    try:
+                        await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
+                        logging.info(f"Webhook переустановлен: {WEBHOOK_URL}")
+                    except Exception as e:
+                        logging.warning(f"Авто-переустановка webhook: {e}")
+        except Exception as e:
+            logging.error(f"[SELF-PING] ошибка: {e}")
+        await asyncio.sleep(PING_INTERVAL_SECONDS)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # FASTAPI МАРШРУТЫ И ЖИЗНЕННЫЙ ЦИКЛ
@@ -314,5 +369,4 @@ async def on_shutdown():
 
 if __name__ == "__main__":
     import uvicorn
-    import gc
     uvicorn.run(app, host="0.0.0.0", port=8000)
