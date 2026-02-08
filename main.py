@@ -71,7 +71,7 @@ class Game:
         self.day = 1
         self.log = ["🌲 Ты проснулся в лесу. Что будешь делать?"]
         self.inventory = ["Спички 🔥", "Вилка 🍴", "Кусок коры 🪵"]
-        # Скоро добавим: self.weather = "clear"  (для следующей итерации)
+        self.weather = "clear"  # clear / cloudy / rain
 
     def add_log(self, text):
         self.log.append(text)
@@ -79,8 +79,13 @@ class Game:
             self.log = self.log[-20:]
 
     def get_ui(self):
+        weather_icon = {
+            "clear": "☀️ Ясно",
+            "cloudy": "☁️ Пасмурно",
+            "rain": "🌧️ Дождь"
+        }.get(self.weather, "☀️ Ясно")
         return (
-            f"❤️ {self.hp}   🍖 {self.hunger}   💧 {self.thirst}  ⚡ {self.ap}   ☀️ {self.day}\n"
+            f"❤️ {self.hp}   🍖 {self.hunger}   💧 {self.thirst}  ⚡ {self.ap}   ☀️ {self.day}   {weather_icon}\n"
             "━━━━━━━━━━━━━━━━━━━\n"
             + "\n".join(f"> {line}" for line in self.log) + "\n"
             "━━━━━━━━━━━━━━━━━━━"
@@ -148,7 +153,7 @@ start_kb = InlineKeyboardMarkup(inline_keyboard=[
 async def cmd_start(message: Message):
     uid = message.from_user.id
 
-    # Очистка старых сообщений бота (опционально, можно убрать если лимиты API беспокоят)
+    # Очистка старых сообщений бота
     try:
         history = await bot.get_chat_history(message.chat.id, limit=30)
         for msg in history:
@@ -183,19 +188,8 @@ async def process_callback(callback: types.CallbackQuery):
 
     data = callback.data
 
-    # Загрузка игры (если ещё не загружена в памяти)
-    if uid not in games:
-        loaded_game = load_game(uid)
-        games[uid] = loaded_game if loaded_game else Game()
-
-    game = games[uid]
-    action_taken = False
-
     if data == "start_game":
-        # Если новая игра — перезаписываем
         games[uid] = Game()
-        save_game(uid, games[uid])
-
         await callback.message.edit_text("Игра началась!\n\nВыбери действие ниже ↓")
 
         ui_msg = await callback.message.answer(games[uid].get_ui(), reply_markup=main_inline_kb)
@@ -203,8 +197,19 @@ async def process_callback(callback: types.CallbackQuery):
         await callback.answer()
         return
 
+    if uid not in games:
+        await callback.message.answer("Сначала /start")
+        await callback.answer()
+        return
+
+    game = games[uid]
+    action_taken = False
+
     if data == "action_1":
-        if game.ap > 0:
+        if game.weather == "rain":
+            game.add_log("🌧️ Дождь льёт стеной, в чащу не сунешься...")
+            action_taken = True
+        elif game.ap > 0:
             game.ap -= 1
             game.hunger = max(0, game.hunger - 7)
             game.thirst = max(0, game.thirst - 8)
@@ -213,7 +218,6 @@ async def process_callback(callback: types.CallbackQuery):
         else:
             game.add_log("🏕 У тебя нет сил и нужно отдохнуть")
             action_taken = True
-
     elif data == "action_2":
         if uid in last_ui_msg_id:
             try:
@@ -226,19 +230,23 @@ async def process_callback(callback: types.CallbackQuery):
         last_inv_msg_id[uid] = inv_msg.message_id
         await callback.answer()
         return
-
     elif data == "action_3":
         game.thirst = min(100, game.thirst + 20)
         game.add_log("💧 Напился... жажда +20")
         action_taken = True
-
     elif data == "action_4":
         game.day += 1
         game.ap = 5
         game.hunger = max(0, game.hunger - 15)
-        game.add_log(f"🌙 День {game.day}. Выспался, голод -15")
-        action_taken = True
 
+        # Генерация погоды
+        weather_choices = ["clear", "cloudy", "rain"]
+        weights = [70, 20, 10]
+        game.weather = random.choices(weather_choices, weights=weights, k=1)[0]
+
+        weather_name = {"clear": "ясно", "cloudy": "пасмурно", "rain": "дождь"}[game.weather]
+        game.add_log(f"🌙 День {game.day}. Выспался, голод -15. На улице {weather_name}.")
+        action_taken = True
     elif data == "action_5":
         if game.ap > 0:
             game.ap -= 1
@@ -251,26 +259,32 @@ async def process_callback(callback: types.CallbackQuery):
         else:
             game.add_log("🏕 У тебя нет сил и нужно отдохнуть")
             action_taken = True
-
     elif data == "action_6":
         chance = 10 + (game.karma // 10)
         if random.randint(1, 100) <= chance:
             await callback.message.answer("🚁 ПОБЕДА! Ты сбежал!\n\n/start — новая игра")
             games.pop(uid, None)
             last_ui_msg_id.pop(uid, None)
-            # Удаляем из БД при победе (опционально)
-            players_collection.delete_one({"_id": uid})
             await callback.answer("Победа!")
             return
         else:
             game.add_log("Побег не удался...")
             action_taken = True
-
-    # Заглушки инвентаря (пока без изменений)
-    elif data in ("inv_inspect", "inv_use", "inv_drop", "inv_craft", "inv_character"):
-        game.add_log(f"{data.replace('inv_', '').capitalize()}... (заглушка)")
+    elif data == "inv_inspect":
+        game.add_log("Осмотрел инвентарь... (заглушка)")
         action_taken = True
-
+    elif data == "inv_use":
+        game.add_log("Использовал предмет... (заглушка)")
+        action_taken = True
+    elif data == "inv_drop":
+        game.add_log("Выкинул предмет... (заглушка)")
+        action_taken = True
+    elif data == "inv_craft":
+        game.add_log("Крафт... (заглушка)")
+        action_taken = True
+    elif data == "inv_character":
+        game.add_log("Персонаж... (заглушка)")
+        action_taken = True
     elif data == "inv_back":
         if uid in last_inv_msg_id:
             try:
@@ -284,20 +298,12 @@ async def process_callback(callback: types.CallbackQuery):
         await callback.answer()
         return
 
-    # Сохранение после любого действия, которое меняет состояние
     if action_taken:
-        save_game(uid, game)
         await callback.message.edit_text(
             game.get_ui(),
             reply_markup=main_inline_kb
         )
         await callback.answer()
-
-# ──────────────────────────────────────────────────────────────────────────────
-# ГЛОБАЛЬНЫЙ СЛОВАРЬ ИГР (кэш в памяти)
-# ──────────────────────────────────────────────────────────────────────────────
-
-games = {}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # SELF-PING + АВТО-ПЕРЕУСТАНОВКА WEBHOOK
@@ -310,7 +316,7 @@ async def self_ping_task():
         logging.info("Self-ping отключён")
         return
     ping_url = f"{BASE_URL}/ping"
-    logging.info(f"Self-ping запущен (каждые {PING_INTERVAL_SECONDS} сек → {ping_url})")
+    logging.info(f"Self-ping запущен (каждые 5 мин → {ping_url})")
     while True:
         try:
             async with httpx.AsyncClient() as client:
@@ -369,4 +375,5 @@ async def on_shutdown():
 
 if __name__ == "__main__":
     import uvicorn
+    import gc
     uvicorn.run(app, host="0.0.0.0", port=8000)
