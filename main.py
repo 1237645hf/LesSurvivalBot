@@ -49,7 +49,6 @@ try:
     mongo_client = MongoClient(MONGO_URI)
     db = mongo_client['forest_game']           # имя базы данных
     players_collection = db['players']         # коллекция игроков
-    # Простая проверка подключения
     mongo_client.server_info()
     logging.info("MongoDB подключён успешно")
 except (ConfigurationError, OperationFailure) as e:
@@ -119,6 +118,9 @@ def save_game(uid: int, game: Game):
     except Exception as e:
         logging.error(f"Ошибка сохранения игрока {uid}: {e}")
 
+# ГЛОБАЛЬНЫЙ КЭШ ИГР — ПЕРЕМЕЩЁН ВВЕРХ, ЧТОБЫ БЫЛ ДОСТУПЕН В ХЕНДЛЕРАХ
+games = {}
+
 # ──────────────────────────────────────────────────────────────────────────────
 # КНОПКИ
 # ──────────────────────────────────────────────────────────────────────────────
@@ -153,15 +155,8 @@ start_kb = InlineKeyboardMarkup(inline_keyboard=[
 async def cmd_start(message: Message):
     uid = message.from_user.id
 
-    # Очистка старых сообщений бота
-    try:
-        history = await bot.get_chat_history(message.chat.id, limit=30)
-        for msg in history:
-            if msg.from_user and msg.from_user.id == (await bot.get_me()).id:
-                if msg.message_id != message.message_id:
-                    await bot.delete_message(message.chat.id, msg.message_id)
-    except Exception as e:
-        logging.warning(f"Очистка чата не удалась: {e}")
+    # Убрали get_chat_history — метод не существует в aiogram 3.x
+    # Если нужно чистить чат — будем использовать last_ui_msg_id / last_inv_msg_id
 
     await message.answer(
         "🌲 Добро пожаловать в лес выживания!\n\n"
@@ -190,6 +185,8 @@ async def process_callback(callback: types.CallbackQuery):
 
     if data == "start_game":
         games[uid] = Game()
+        save_game(uid, games[uid])  # сразу сохраняем новую игру
+
         await callback.message.edit_text("Игра началась!\n\nВыбери действие ниже ↓")
 
         ui_msg = await callback.message.answer(games[uid].get_ui(), reply_markup=main_inline_kb)
@@ -198,9 +195,13 @@ async def process_callback(callback: types.CallbackQuery):
         return
 
     if uid not in games:
-        await callback.message.answer("Сначала /start")
-        await callback.answer()
-        return
+        loaded = load_game(uid)
+        if loaded:
+            games[uid] = loaded
+        else:
+            await callback.message.answer("Сначала /start")
+            await callback.answer()
+            return
 
     game = games[uid]
     action_taken = False
@@ -218,6 +219,7 @@ async def process_callback(callback: types.CallbackQuery):
         else:
             game.add_log("🏕 У тебя нет сил и нужно отдохнуть")
             action_taken = True
+
     elif data == "action_2":
         if uid in last_ui_msg_id:
             try:
@@ -230,10 +232,12 @@ async def process_callback(callback: types.CallbackQuery):
         last_inv_msg_id[uid] = inv_msg.message_id
         await callback.answer()
         return
+
     elif data == "action_3":
         game.thirst = min(100, game.thirst + 20)
         game.add_log("💧 Напился... жажда +20")
         action_taken = True
+
     elif data == "action_4":
         game.day += 1
         game.ap = 5
@@ -247,6 +251,7 @@ async def process_callback(callback: types.CallbackQuery):
         weather_name = {"clear": "ясно", "cloudy": "пасмурно", "rain": "дождь"}[game.weather]
         game.add_log(f"🌙 День {game.day}. Выспался, голод -15. На улице {weather_name}.")
         action_taken = True
+
     elif data == "action_5":
         if game.ap > 0:
             game.ap -= 1
@@ -259,32 +264,25 @@ async def process_callback(callback: types.CallbackQuery):
         else:
             game.add_log("🏕 У тебя нет сил и нужно отдохнуть")
             action_taken = True
+
     elif data == "action_6":
         chance = 10 + (game.karma // 10)
         if random.randint(1, 100) <= chance:
             await callback.message.answer("🚁 ПОБЕДА! Ты сбежал!\n\n/start — новая игра")
             games.pop(uid, None)
             last_ui_msg_id.pop(uid, None)
+            players_collection.delete_one({"_id": uid})
             await callback.answer("Победа!")
             return
         else:
             game.add_log("Побег не удался...")
             action_taken = True
-    elif data == "inv_inspect":
-        game.add_log("Осмотрел инвентарь... (заглушка)")
+
+    # Заглушки инвентаря
+    elif data in ("inv_inspect", "inv_use", "inv_drop", "inv_craft", "inv_character"):
+        game.add_log(f"{data.replace('inv_', '').capitalize()}... (заглушка)")
         action_taken = True
-    elif data == "inv_use":
-        game.add_log("Использовал предмет... (заглушка)")
-        action_taken = True
-    elif data == "inv_drop":
-        game.add_log("Выкинул предмет... (заглушка)")
-        action_taken = True
-    elif data == "inv_craft":
-        game.add_log("Крафт... (заглушка)")
-        action_taken = True
-    elif data == "inv_character":
-        game.add_log("Персонаж... (заглушка)")
-        action_taken = True
+
     elif data == "inv_back":
         if uid in last_inv_msg_id:
             try:
@@ -299,6 +297,7 @@ async def process_callback(callback: types.CallbackQuery):
         return
 
     if action_taken:
+        save_game(uid, game)
         await callback.message.edit_text(
             game.get_ui(),
             reply_markup=main_inline_kb
@@ -316,7 +315,7 @@ async def self_ping_task():
         logging.info("Self-ping отключён")
         return
     ping_url = f"{BASE_URL}/ping"
-    logging.info(f"Self-ping запущен (каждые 5 мин → {ping_url})")
+    logging.info(f"Self-ping запущен (каждые {PING_INTERVAL_SECONDS} сек → {ping_url})")
     while True:
         try:
             async with httpx.AsyncClient() as client:
@@ -375,5 +374,4 @@ async def on_shutdown():
 
 if __name__ == "__main__":
     import uvicorn
-    import gc
     uvicorn.run(app, host="0.0.0.0", port=8000)
