@@ -219,11 +219,11 @@ story_next_kb = InlineKeyboardMarkup(inline_keyboard=[
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     uid = message.from_user.id
-    logging.info(f"[START] Получен /start от пользователя {uid}")
+    logging.info(f"[START] Получен /start от {uid}")
 
-    # Чистим старые сообщения (до 100 штук, но без паники при ошибках)
+    # Максимально чистим чат сверху
     try:
-        for i in range(1, 100):
+        for i in range(1, 150):
             await bot.delete_message(message.chat.id, message.message_id - i)
     except:
         pass
@@ -232,7 +232,7 @@ async def cmd_start(message: Message):
     if loaded:
         games[uid] = loaded
         await message.answer(
-            "Есть сохранение. Что делаем?",
+            "У тебя есть сохранённая игра. Что хочешь?",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Продолжить", callback_data="load_game")],
                 [InlineKeyboardButton(text="Новая игра", callback_data="new_game")]
@@ -240,7 +240,15 @@ async def cmd_start(message: Message):
         )
     else:
         await message.answer(
-            "🌲 Ты открыл глаза. Вокруг только лес. Холодно. Хочется есть.\n\nВыживи.",
+            "🌲 Добро пожаловать в лес выживания!\n\n"
+            "Краткий гайд\n"
+            "❤️ 100 - здоровье\n"
+            "🍖 100 - сытость\n"
+            "💧 100 - жажда\n"
+            "⚡ 5 - действия на день\n"
+            "☀️ 100 - день\n\n"
+            "⚖️ Карма поможет выбраться.\n\n"
+            "Попробуй выжить...друг.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Начать", callback_data="new_game")]
             ])
@@ -257,14 +265,11 @@ async def process_callback(callback: types.CallbackQuery):
 
     data = callback.data
     game = games.get(uid)
-    if not game:
-        await callback.answer("Сначала начни игру /start")
-        return
-
     chat_id = callback.message.chat.id
+
     logging.info(f"[CALLBACK] {data} от {uid}")
 
-    # Удаляем предыдущее подменю
+    # Удаляем предыдущее меню при переходе
     if data.startswith(("action_", "inv_", "story_")) and uid in last_submenu_msg_id:
         try:
             await bot.delete_message(chat_id, last_submenu_msg_id[uid])
@@ -272,33 +277,49 @@ async def process_callback(callback: types.CallbackQuery):
         except:
             pass
 
+    if not game and data not in ("new_game", "load_game"):
+        await callback.message.answer("Сначала начни игру /start")
+        await callback.answer()
+        return
+
     action_taken = False
 
-    if data in ("new_game", "start_game"):
+    # ─── НОВАЯ ИГРА ────────────────────────────────────────
+    if data == "new_game":
         game = Game()
         games[uid] = game
         save_game(uid, game)
-        if uid in last_ui_msg_id:
-            try: await bot.delete_message(chat_id, last_ui_msg_id[uid])
-            except: pass
+
+        # Чистим чат
+        try:
+            for i in range(1, 50):
+                await bot.delete_message(chat_id, callback.message.message_id - i)
+        except:
+            pass
+
         msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = msg.message_id
         await callback.answer()
         return
 
+    # ─── ЗАГРУЗКА ──────────────────────────────────────────
     if data == "load_game":
         game = load_game(uid) or Game()
         games[uid] = game
         save_game(uid, game)
-        if uid in last_ui_msg_id:
-            try: await bot.delete_message(chat_id, last_ui_msg_id[uid])
-            except: pass
+
+        try:
+            for i in range(1, 50):
+                await bot.delete_message(chat_id, callback.message.message_id - i)
+        except:
+            pass
+
         msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = msg.message_id
         await callback.answer()
         return
 
-    # Исследование
+    # ─── ИССЛЕДОВАНИЕ ────────────────────────────────────────
     if data == "action_1":
         if game.ap <= 0:
             game.add_log("Нет сил. Нужно поспать.")
@@ -309,9 +330,11 @@ async def process_callback(callback: types.CallbackQuery):
 
             if game.equipment.get("hand") == "Факел" and game.story_state is None:
                 game.story_state = "wolf_scene"
-                if uid in last_ui_msg_id:
-                    try: await bot.delete_message(chat_id, last_ui_msg_id[uid]); del last_ui_msg_id[uid]
-                    except: pass
+                try:
+                    await bot.delete_message(chat_id, last_ui_msg_id[uid])
+                    del last_ui_msg_id[uid]
+                except:
+                    pass
                 msg = await callback.message.answer(
                     "Ты слышишь хриплое рычание и звук рвущейся земли.\n"
                     "Осторожно выглядываешь из-за дерева.\n\n"
@@ -339,7 +362,7 @@ async def process_callback(callback: types.CallbackQuery):
                     game.add_log("А из этого можно сделать факел?")
         action_taken = True
 
-    # Остальные сюжетные callback'и (оставил без изменений, но добавил логи)
+    # ─── ОСТАЛЬНЫЕ CALLBACK ──────────────────────────────────
     elif data == "story_wolf_flee":
         game.add_log("Ты тихо отступил. Что бы там ни было — не твоё дело.")
         game.story_state = None
@@ -350,7 +373,7 @@ async def process_callback(callback: types.CallbackQuery):
         game.add_log("Ты размахнулся и ударил волка горящим факелом по морде.")
         game.add_log("Шерсть вспыхнула, зверь взвыл и бросился в чащу.")
         game.equipment["hand"] = None
-        game.inventory["Факел"] -= 1 if game.inventory["Факел"] > 0 else 0
+        game.inventory["Факел"] -= 1 if game.inventory.get("Факел", 0) > 0 else 0
         msg = await callback.message.answer(
             "Факел догорел и рассыпался угольками.\n\nТеперь под пнём открыта яма...",
             reply_markup=story_peek_kb
@@ -389,7 +412,6 @@ async def process_callback(callback: types.CallbackQuery):
         msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = msg.message_id
 
-    # Инвентарь, персонаж, действия
     elif data == "action_2":
         msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
         last_submenu_msg_id[uid] = msg.message_id
@@ -439,7 +461,8 @@ async def process_callback(callback: types.CallbackQuery):
                     message_id=last_ui_msg_id[uid],
                     reply_markup=get_main_kb(game)
                 )
-            except:
+            except Exception as e:
+                logging.warning(f"Edit failed: {e}")
                 msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
                 last_ui_msg_id[uid] = msg.message_id
 
@@ -539,6 +562,6 @@ async def self_ping_task():
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8000))  # ← Render использует переменную PORT
+    port = int(os.getenv("PORT", 8000))
     logging.info(f"Запуск uvicorn на порту {port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
