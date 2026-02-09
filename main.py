@@ -38,8 +38,8 @@ dp = Dispatcher()
 app = FastAPI(title="Forest Survival Bot")
 
 last_request_time = {}
-last_ui_msg_id = {}
-last_submenu_msg_id = {}  # отдельный словарь для инвентаря/персонажа
+last_ui_msg_id = {}       # ID главного окна
+last_submenu_msg_id = {}  # ID инвентаря/персонажа
 
 # ──────────────────────────────────────────────────────────────────────────────
 # MONGODB
@@ -192,12 +192,25 @@ start_kb = InlineKeyboardMarkup(inline_keyboard=[
 async def cmd_start(message: Message):
     uid = message.from_user.id
 
-    # Проверяем, есть ли сохранённая игра
+    # Пытаемся удалить все сообщения выше /start (кроме самого /start)
+    try:
+        chat_id = message.chat.id
+        message_id = message.message_id
+        # Удаляем сообщения выше текущего (до 50 последних)
+        for i in range(1, 51):
+            try:
+                await bot.delete_message(chat_id, message_id - i)
+            except:
+                pass  # если сообщение уже удалено или не от бота — пропускаем
+    except Exception as e:
+        logging.warning(f"Очистка чата не удалась: {e}")
+
+    # Проверяем сохранение
     loaded = load_game(uid)
     if loaded:
         games[uid] = loaded
         await message.answer(
-            "У тебя есть сохранённая игра. Хочешь продолжить или начать заново?",
+            "У тебя есть сохранённая игра. Что хочешь?",
             reply_markup=start_continue_kb
         )
     else:
@@ -225,17 +238,20 @@ async def process_callback(callback: types.CallbackQuery):
     last_request_time[uid] = now
 
     data = callback.data
+    game = games.get(uid)
 
-    # Удаляем текущее главное окно (если есть)
-    if uid in last_ui_msg_id:
+    # Удаляем текущее главное окно ТОЛЬКО если это НЕ действие в текущем окне
+    is_action_in_current_window = data in ("action_1", "action_3", "action_4", "action_collect_water", "loc_")
+
+    if not is_action_in_current_window and uid in last_ui_msg_id:
         try:
             await bot.delete_message(callback.message.chat.id, last_ui_msg_id[uid])
             del last_ui_msg_id[uid]
         except:
             pass
 
-    # Удаляем текущее подменю (инвентарь/персонаж), если открыто
-    if uid in last_submenu_msg_id:
+    # Удаляем текущее подменю, если открывается новое
+    if data in ("action_2", "inv_character") and uid in last_submenu_msg_id:
         try:
             await bot.delete_message(callback.message.chat.id, last_submenu_msg_id[uid])
             del last_submenu_msg_id[uid]
@@ -246,7 +262,13 @@ async def process_callback(callback: types.CallbackQuery):
         game = Game()
         games[uid] = game
         save_game(uid, game)
-        await callback.message.edit_text("Игра началась!\n\nВыбери действие ниже ↓")
+
+        if uid in last_ui_msg_id:
+            try:
+                await bot.delete_message(callback.message.chat.id, last_ui_msg_id[uid])
+                del last_ui_msg_id[uid]
+            except:
+                pass
 
         ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = ui_msg.message_id
@@ -257,26 +279,28 @@ async def process_callback(callback: types.CallbackQuery):
         game = load_game(uid)
         if game:
             games[uid] = game
-            await callback.message.edit_text("Игра загружена!\n\nВыбери действие ниже ↓")
-
-            ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
-            last_ui_msg_id[uid] = ui_msg.message_id
         else:
-            await callback.message.edit_text("Сохранённой игры не найдено. Начинаем новую.")
             game = Game()
             games[uid] = game
             save_game(uid, game)
-            ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
-            last_ui_msg_id[uid] = ui_msg.message_id
+
+        if uid in last_ui_msg_id:
+            try:
+                await bot.delete_message(callback.message.chat.id, last_ui_msg_id[uid])
+                del last_ui_msg_id[uid]
+            except:
+                pass
+
+        ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
+        last_ui_msg_id[uid] = ui_msg.message_id
         await callback.answer()
         return
 
-    if uid not in games:
+    if not game:
         await callback.message.answer("Сначала начни игру /start")
         await callback.answer()
         return
 
-    game = games[uid]
     action_taken = False
 
     if data.startswith("loc_"):
@@ -372,8 +396,20 @@ async def process_callback(callback: types.CallbackQuery):
 
     if action_taken:
         save_game(uid, game)
-        ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
-        last_ui_msg_id[uid] = ui_msg.message_id
+        # Обновляем текущее главное окно (не удаляем)
+        if uid in last_ui_msg_id:
+            try:
+                await callback.message.edit_text(
+                    game.get_ui(),
+                    reply_markup=get_main_kb(game)
+                )
+            except:
+                # Если edit не удалось (например, сообщение не от бота) — отправляем новое
+                ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
+                last_ui_msg_id[uid] = ui_msg.message_id
+        else:
+            ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
+            last_ui_msg_id[uid] = ui_msg.message_id
         await callback.answer()
 
 # ──────────────────────────────────────────────────────────────────────────────
