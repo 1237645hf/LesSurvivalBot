@@ -27,7 +27,7 @@ WEBHOOK_URL = f"{BASE_URL}{WEBHOOK_PATH}" if BASE_URL else None
 
 MONGO_URI = os.getenv("MONGO_URI")
 if not MONGO_URI:
-    raise ValueValue("MONGO_URI не найден в Environment Variables Render!")
+    raise ValueError("MONGO_URI не найден в Environment Variables Render!")
 
 logging.basicConfig(level=logging.INFO)
 logging.info(f"Бот запущен. TOKEN: {TOKEN[:10]}... BASE_URL: {BASE_URL}")
@@ -37,24 +37,23 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 app = FastAPI(title="Forest Survival Bot")
 
-last_request_time = {}  # кулдаун
-last_ui_msg_id = {}     # user_id → message_id главного UI
-last_inv_msg_id = {}    # user_id → message_id инвентаря
+last_request_time = {}
+last_ui_msg_id = {}
+last_inv_msg_id = {}
 
 # ──────────────────────────────────────────────────────────────────────────────
-# ПОДКЛЮЧЕНИЕ К MONGODB
+# MONGODB
 # ──────────────────────────────────────────────────────────────────────────────
 
 try:
     mongo_client = MongoClient(MONGO_URI)
-    db = mongo_client['forest_game']  # имя базы данных
-    players_collection = db['players']  # коллекция игроков
-    # Простая проверка подключения
+    db = mongo_client['forest_game']
+    players_collection = db['players']
     mongo_client.server_info()
     logging.info("MongoDB подключён успешно")
-except (ConfigurationError, OperationFailure) as e:
-    logging.error(f"Ошибка подключения к MongoDB: {e}")
-    raise RuntimeError("Не удалось подключиться к MongoDB")
+except Exception as e:
+    logging.error(f"Ошибка MongoDB: {e}")
+    raise
 
 # ──────────────────────────────────────────────────────────────────────────────
 # КЛАСС ИГРЫ
@@ -67,20 +66,19 @@ class Game:
         self.thirst = 60
         self.ap = 5
         self.karma = 0
-        self.search_progress = 0
         self.day = 1
         self.log = ["🌲 Ты проснулся в лесу. Что будешь делать?"]
         self.inventory = Counter({
             "Спички 🔥": 1,
             "Вилка 🍴": 1,
             "Кусок коры 🪵": 1,
-            "Сухпай": 3,  # порции
-            "Бутылка воды": 10  # глотки
+            "Сухпай": 3,
+            "Бутылка воды": 10
         })
-        self.weather = "clear"  # clear / cloudy / rain
+        self.weather = "clear"
         self.location = "лес"
         self.unlocked_locations = ["лес", "тёмный лес", "озеро", "заброшенный лагерь"]
-        self.water_capacity = 10  # по умолчанию для бутылки
+        self.water_capacity = 10  # бутылка по умолчанию
 
     def add_log(self, text):
         self.log.append(text)
@@ -104,7 +102,7 @@ class Game:
         return "🎒 Инвентарь:\n" + "\n".join(lines) if lines else "🎒 Инвентарь пуст"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# ФУНКЦИИ СОХРАНЕНИЯ / ЗАГРУЗКИ
+# СОХРАНЕНИЕ / ЗАГРУЗКА
 # ──────────────────────────────────────────────────────────────────────────────
 
 def load_game(uid: int) -> Game | None:
@@ -117,7 +115,7 @@ def load_game(uid: int) -> Game | None:
             game.inventory = Counter(inv_dict)
             return game
     except Exception as e:
-        logging.error(f"Ошибка загрузки игрока {uid}: {e}")
+        logging.error(f"Ошибка загрузки {uid}: {e}")
     return None
 
 def save_game(uid: int, game: Game):
@@ -130,9 +128,8 @@ def save_game(uid: int, game: Game):
             upsert=True
         )
     except Exception as e:
-        logging.error(f"Ошибка сохранения игрока {uid}: {e}")
+        logging.error(f"Ошибка сохранения {uid}: {e}")
 
-# ГЛОБАЛЬНЫЙ КЭШ ИГР
 games = {}
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -157,17 +154,23 @@ def get_main_kb(game: Game):
         else:
             loc_row.append(InlineKeyboardButton(text=f"{next_icon} Заблокировано", callback_data="loc_locked"))
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
+    kb = [
         loc_row,
-        [InlineKeyboardButton(text="🔍 Исследовать ", callback_data="action_1"),
-         InlineKeyboardButton(text="🎒 Инвентарь ", callback_data="action_2")],
-        [InlineKeyboardButton(text=f"💧 Пить воду ({game.inventory['Бутылка воды']}/{game.water_capacity})", callback_data="action_3")
-         if game.inventory['Бутылка воды'] > 0 else InlineKeyboardButton(text="💧 Пить воду (пусто)", callback_data="action_3_empty"),
-         InlineKeyboardButton(text="🌙 Спать ", callback_data="action_4")]
-    ])
+        [
+            InlineKeyboardButton(text="🔍 Исследовать ", callback_data="action_1"),
+            InlineKeyboardButton(text="🎒 Инвентарь ", callback_data="action_2")
+        ],
+        [
+            InlineKeyboardButton(text=f"💧 Пить воду ({game.inventory['Бутылка воды']}/{game.water_capacity})", callback_data="action_3")
+            if game.inventory['Бутылка воды'] > 0 else InlineKeyboardButton(text="💧 Пить воду (пусто)", callback_data="action_3"),
+            InlineKeyboardButton(text="🌙 Спать ", callback_data="action_4")
+        ]
+    ]
+
     if game.weather == "rain":
-        kb.inline_keyboard.append([InlineKeyboardButton(text="🌧️ Собрать воду ", callback_data="action_collect_water")])
-    return kb
+        kb.append([InlineKeyboardButton(text="🌧️ Собрать воду ", callback_data="action_collect_water")])
+
+    return InlineKeyboardMarkup(inline_keyboard=kb)
 
 inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="👁️ Осмотреть ", callback_data="inv_inspect"),
@@ -192,13 +195,13 @@ async def cmd_start(message: Message):
     await message.answer(
         "🌲 Добро пожаловать в лес выживания!\n\n"
         "Краткий гайд\n"
-        "❤️ 100 - твое здоровье\n"
-        "🍖 100 - твоя сытость\n"
-        "💧 100 - твоя жажда\n"
-        "⚡ 5 - очки действий на день\n"
-        "☀️ 100 - игровой день\n\n"
-        "⚖️ Карма - единственный параметр способный тебе помочь выбраться из леса.\n\n"
-        "Попробуй выжить, друг....",
+        "❤️ 100 - здоровье\n"
+        "🍖 100 - сытость\n"
+        "💧 100 - жажда\n"
+        "⚡ 5 - действия на день\n"
+        "☀️ 100 - день\n\n"
+        "⚖️ Карма помогает выбраться.\n\n"
+        "Попробуй выжить...",
         reply_markup=start_kb
     )
 
@@ -219,7 +222,6 @@ async def process_callback(callback: types.CallbackQuery):
         games[uid] = game
         save_game(uid, game)
         await callback.message.edit_text("Игра началась!\n\nВыбери действие ниже ↓")
-
         ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = ui_msg.message_id
         await callback.answer()
@@ -229,6 +231,7 @@ async def process_callback(callback: types.CallbackQuery):
         loaded = load_game(uid)
         if loaded:
             games[uid] = loaded
+            game = loaded
         else:
             await callback.message.answer("Сначала /start")
             await callback.answer()
@@ -240,28 +243,25 @@ async def process_callback(callback: types.CallbackQuery):
     if data.startswith("loc_"):
         if data == "loc_locked":
             game.add_log("Эта локация заблокирована...")
-            action_taken = True
         elif data == "loc_current":
             game.add_log("Ты уже здесь.")
-            action_taken = True
         else:
             new_loc = data.replace("loc_", "")
             if new_loc in game.unlocked_locations:
                 game.location = new_loc
                 game.add_log(f"Перешёл в {new_loc}.")
-                action_taken = True
             else:
                 game.add_log("Локация не открыта.")
-                action_taken = True
+        action_taken = True
 
     elif data == "action_1":
         if game.weather == "rain":
-            game.add_log("🌧️ Дождь льёт стеной, в чащу не сунешься...")
-            action_taken = True
+            game.add_log("🌧️ Дождь льёт стеной, исследовать нельзя...")
         elif game.ap > 0:
             game.ap -= 1
             game.hunger = max(0, game.hunger - 7)
             game.thirst = max(0, game.thirst - 8)
+
             events = [
                 ("Нашёл ягоды! +10 сытости", lambda: setattr(game, 'hunger', min(100, game.hunger + 10))),
                 ("Нашёл мухоморы (предмет)", lambda: game.inventory.update({"Мухоморы": game.inventory["Мухоморы"] + 1})),
@@ -271,16 +271,12 @@ async def process_callback(callback: types.CallbackQuery):
                 ("Нашёл ветку", lambda: game.inventory.update({"Ветка": game.inventory["Ветка"] + 1})),
                 ("Нашёл нож", lambda: game.inventory.update({"Нож": game.inventory["Нож"] + 1}))
             ]
-            # Модификаторы по локации
-            if game.location in ["озеро"]:
-                events.append(("Напился из озера! +30 жажды", lambda: setattr(game, 'thirst', min(100, game.thirst + 30))))
-            event_text, event_effect = random.choice(events)
-            event_effect()
-            game.add_log(f"🔍 Ты пошёл в чащу... {event_text}")
-            action_taken = True
+            text, effect = random.choice(events)
+            effect()
+            game.add_log(f"🔍 Исследовал... {text}")
         else:
             game.add_log("🏕 У тебя нет сил и нужно отдохнуть")
-            action_taken = True
+        action_taken = True
 
     elif data == "action_2":
         if uid in last_ui_msg_id:
@@ -321,29 +317,13 @@ async def process_callback(callback: types.CallbackQuery):
         if game.weather == "rain":
             added = 40
             game.inventory["Бутылка воды"] = min(game.water_capacity, game.inventory["Бутылка воды"] + added)
-            game.add_log(f"🌧️ Собрал дождевую воду... +{added} в бутылку (теперь {game.inventory['Бутылка воды']}/{game.water_capacity})")
+            game.add_log(f"🌧️ Собрал дождевую воду... +{added} (теперь {game.inventory['Бутылка воды']}/{game.water_capacity})")
         else:
             game.add_log("Сейчас не идёт дождь...")
         action_taken = True
 
-    elif data == "inv_inspect":
-        game.add_log("Осмотрел инвентарь... (заглушка)")
-        action_taken = True
-
-    elif data == "inv_use":
-        game.add_log("Использовал предмет... (заглушка)")
-        action_taken = True
-
-    elif data == "inv_drop":
-        game.add_log("Выкинул предмет... (заглушка)")
-        action_taken = True
-
-    elif data == "inv_craft":
-        game.add_log("Крафт... (заглушка)")
-        action_taken = True
-
-    elif data == "inv_character":
-        game.add_log("Персонаж... (заглушка)")
+    elif data in ("inv_inspect", "inv_use", "inv_drop", "inv_craft", "inv_character"):
+        game.add_log(f"{data.replace('inv_', '').capitalize()}... (заглушка)")
         action_taken = True
 
     elif data == "inv_back":
@@ -354,20 +334,21 @@ async def process_callback(callback: types.CallbackQuery):
             except:
                 pass
 
-        ui_msg = await callback.message.answer(game.get_ui(), reply_markup=main_inline_kb)
+        ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = ui_msg.message_id
         await callback.answer()
         return
 
     if action_taken:
+        save_game(uid, game)
         await callback.message.edit_text(
             game.get_ui(),
-            reply_markup=main_inline_kb
+            reply_markup=get_main_kb(game)
         )
         await callback.answer()
 
 # ──────────────────────────────────────────────────────────────────────────────
-# SELF-PING + АВТО-ПЕРЕУСТАНОВКА WEBHOOK
+# SELF-PING + WEBHOOK
 # ──────────────────────────────────────────────────────────────────────────────
 
 PING_INTERVAL_SECONDS = 300
@@ -377,7 +358,7 @@ async def self_ping_task():
         logging.info("Self-ping отключён")
         return
     ping_url = f"{BASE_URL}/ping"
-    logging.info(f"Self-ping запущен (каждые 5 мин → {ping_url})")
+    logging.info(f"Self-ping запущен (каждые {PING_INTERVAL_SECONDS} сек → {ping_url})")
     while True:
         try:
             async with httpx.AsyncClient() as client:
@@ -394,7 +375,7 @@ async def self_ping_task():
         await asyncio.sleep(PING_INTERVAL_SECONDS)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# FASTAPI МАРШРУТЫ И ЖИЗНЕННЫЙ ЦИКЛ
+# FASTAPI
 # ──────────────────────────────────────────────────────────────────────────────
 
 @app.get("/ping")
@@ -436,5 +417,4 @@ async def on_shutdown():
 
 if __name__ == "__main__":
     import uvicorn
-    import gc
     uvicorn.run(app, host="0.0.0.0", port=8000)
