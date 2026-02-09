@@ -26,7 +26,7 @@ WEBHOOK_PATH = f"/bot/{TOKEN}"
 WEBHOOK_URL = f"{BASE_URL}{WEBHOOK_PATH}" if BASE_URL else None
 MONGO_URI = os.getenv("MONGO_URI")
 if not MONGO_URI:
-    raise ValueError("MONGO_URI не найден в Environment Variables Render!")
+    raise ValueValue("MONGO_URI не найден в Environment Variables Render!")
 
 logging.basicConfig(level=logging.INFO)
 logging.info(f"Бот запущен. TOKEN: {TOKEN[:10]}... BASE_URL: {BASE_URL}")
@@ -43,12 +43,12 @@ app = FastAPI(title="Forest Survival Bot")
 last_request_time = {}  # Антифлуд
 
 # ──────────────────────────────────────────────────────────────────────────────
-# MONGODB для игры (используем тот же client)
+# MONGODB для игры
 # ──────────────────────────────────────────────────────────────────────────────
 db = mongo_client['forest_game']
 players_collection = db['players']
 
-# Проверка подключения (асинхронно)
+# Проверка подключения
 async def check_mongo():
     try:
         await mongo_client.server_info()
@@ -88,6 +88,7 @@ class Game:
         self.location = "лес"
         self.unlocked_locations = ["лес", "тёмный лес", "озеро", "заброшенный лагерь"]
         self.water_capacity = 10
+        # Снаряжение для персонажа (заглушки)
         self.equipment = {
             "голова": None,
             "торс": None,
@@ -156,7 +157,7 @@ async def save_game(uid: int, game: Game):
         logging.error(f"Ошибка сохранения {uid}: {e}")
 
 # ──────────────────────────────────────────────────────────────────────────────
-# КНОПКИ (без изменений)
+# КНОПКИ
 # ──────────────────────────────────────────────────────────────────────────────
 def get_main_kb(game: Game):
     locations = ["лес", "тёмный лес", "озеро", "заброшенный лагерь"]
@@ -217,12 +218,13 @@ async def cmd_start(message: Message, state: FSMContext):
     uid = message.from_user.id
     chat_id = message.chat.id
     message_id = message.message_id
+    # Удаляем только свои сообщения выше (до 50)
     for i in range(1, 51):
         try:
             await bot.delete_message(chat_id, message_id - i)
         except Exception:
-            pass
-
+            pass  # Если не наше или не существует — пропускаем
+    # Проверяем сохранение
     loaded = await load_game(uid)
     if loaded:
         game_dict = loaded.__dict__.copy()
@@ -257,12 +259,10 @@ async def process_callback(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer("Подожди секунду!")
         return
     last_request_time[uid] = now
-
     data = callback.data
     current_state = await state.get_state()
     state_data = await state.get_data()
     game_dict = state_data.get('game')
-
     if not game_dict:
         game = await load_game(uid)
         if not game:
@@ -274,16 +274,14 @@ async def process_callback(callback: types.CallbackQuery, state: FSMContext):
         game_dict['equipment'] = game.equipment
         await state.update_data(game=game_dict)
         state_data = await state.get_data()
-
     game = Game()
     game.__dict__.update(game_dict)
     game.inventory = Counter(game_dict['inventory'])
     game.equipment = game_dict['equipment']
     current_msg_id = state_data.get('current_msg_id')
-
     action_taken = False
     edit_current = False
-
+    business_id = str(callback.business_connection_id) if callback.business_connection_id else None
     if data in ("start_game", "new_game"):
         game = Game()
         game_dict = game.__dict__.copy()
@@ -294,14 +292,13 @@ async def process_callback(callback: types.CallbackQuery, state: FSMContext):
         await save_game(uid, game)
         try:
             if current_msg_id:
-                await bot.delete_message(chat_id, current_msg_id)
+                await bot.delete_message(chat_id=str(chat_id), message_id=current_msg_id, business_connection_id=business_id)
         except:
             pass
         ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         await state.update_data(current_msg_id=ui_msg.message_id)
         await callback.answer()
         return
-
     if data == "load_game":
         game = await load_game(uid)
         if not game:
@@ -314,23 +311,21 @@ async def process_callback(callback: types.CallbackQuery, state: FSMContext):
         await state.update_data(game=game_dict, current_msg_id=None)
         try:
             if current_msg_id:
-                await bot.delete_message(chat_id, current_msg_id)
+                await bot.delete_message(chat_id=str(chat_id), message_id=current_msg_id, business_connection_id=business_id)
         except:
             pass
         ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         await state.update_data(current_msg_id=ui_msg.message_id)
         await callback.answer()
         return
-
     if not game:
         await callback.answer()
         return
-
-    # Обработка действий (без изменений)
+    # Обработка в зависимости от состояния
     if current_state == GameStates.main:
         if data.startswith("loc_") or data in ("action_1", "action_3", "action_4", "action_collect_water"):
+            # Действия в главном окне - edit
             edit_current = True
-            # ... (весь блок действий main без изменений)
             if data.startswith("loc_"):
                 if data == "loc_locked":
                     game.add_log("Эта локация заблокирована...")
@@ -344,11 +339,58 @@ async def process_callback(callback: types.CallbackQuery, state: FSMContext):
                     else:
                         game.add_log("Локация не открыта.")
                 action_taken = True
-            # Остальные действия (action_1, action_3 и т.д.) — без изменений
-
+            elif data == "action_1":
+                if game.weather == "rain":
+                    game.add_log("🌧️ Дождь льёт стеной, исследовать нельзя...")
+                elif game.ap > 0:
+                    game.ap -= 1
+                    game.hunger = max(0, game.hunger - 7)
+                    game.thirst = max(0, game.thirst - 8)
+                    events = [
+                        ("Нашёл ягоды! +10 сытости", lambda: setattr(game, 'hunger', min(100, game.hunger + 10))),
+                        ("Нашёл мухоморы (предмет)", lambda: game.inventory.update({"Мухоморы": game.inventory["Мухоморы"] + 1})),
+                        ("Нашёл родник! Наполнил бутылку +3 глотка", lambda: game.inventory.update({"Бутылка воды": min(game.water_capacity, game.inventory["Бутылка воды"] + 3)})),
+                        ("Укус змеи! -5 HP", lambda: setattr(game, 'hp', max(0, game.hp - 5))),
+                        ("Нашёл кору", lambda: game.inventory.update({"Кусок коры 🪵": game.inventory["Кусок коры 🪵"] + 1})),
+                        ("Нашёл ветку", lambda: game.inventory.update({"Ветка": game.inventory["Ветка"] + 1})),
+                        ("Нашёл нож", lambda: game.inventory.update({"Нож": game.inventory["Нож"] + 1}))
+                    ]
+                    event_text, event_effect = random.choice(events)
+                    event_effect()
+                    game.add_log(f"🔍 Ты пошёл исследовать... {event_text}")
+                else:
+                    game.add_log("🏕 У тебя нет сил и нужно отдохнуть")
+                action_taken = True
+            elif data == "action_3":
+                if game.inventory["Бутылка воды"] > 0:
+                    game.inventory["Бутылка воды"] -= 1
+                    game.thirst = min(100, game.thirst + 20)
+                    game.add_log(f"💧 Напился... жажда +20 (осталось {game.inventory['Бутылка воды']}/{game.water_capacity})")
+                else:
+                    game.add_log("💧 Бутылка пуста, найди источник!")
+                action_taken = True
+            elif data == "action_4":
+                game.day += 1
+                game.ap = 5
+                game.hunger = max(0, game.hunger - 15)
+                weather_choices = ["clear", "cloudy", "rain"]
+                weights = [70, 20, 10]
+                game.weather = random.choices(weather_choices, weights=weights, k=1)[0]
+                weather_name = {"clear": "ясно", "cloudy": "пасмурно", "rain": "дождь"}[game.weather]
+                game.add_log(f"🌙 День {game.day}. Выспался, голод -15. На улице {weather_name}.")
+                action_taken = True
+            elif data == "action_collect_water":
+                if game.weather == "rain":
+                    added = 40
+                    game.inventory["Бутылка воды"] = min(game.water_capacity, game.inventory["Бутылка воды"] + added)
+                    game.add_log(f"🌧️ Собрал дождевую воду... +{added} (теперь {game.inventory['Бутылка воды']}/{game.water_capacity})")
+                else:
+                    game.add_log("Сейчас не идёт дождь...")
+                action_taken = True
         elif data == "action_2":
+            # Переход в инвентарь: delete main, send inventory
             try:
-                await bot.delete_message(chat_id, current_msg_id)
+                await bot.delete_message(chat_id=str(chat_id), message_id=current_msg_id, business_connection_id=business_id)
             except:
                 pass
             submenu_msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
@@ -356,48 +398,98 @@ async def process_callback(callback: types.CallbackQuery, state: FSMContext):
             await state.update_data(current_msg_id=submenu_msg.message_id)
             await callback.answer()
             return
-
-    # Остальные состояния (inventory, character) — без изменений
-
+    elif current_state == GameStates.inventory:
+        if data in ("inv_inspect", "inv_use", "inv_drop", "inv_craft"):
+            # Действия в инвентаре - edit (заглушки)
+            edit_current = True
+            game.add_log(f"{data.replace('inv_', '').capitalize()}... (заглушка)")
+            action_taken = True
+        elif data == "inv_character":
+            # Переход в персонаж: delete inventory, send character
+            try:
+                await bot.delete_message(chat_id=str(chat_id), message_id=current_msg_id, business_connection_id=business_id)
+            except:
+                pass
+            char_msg = await callback.message.answer(game.get_character_text(), reply_markup=character_inline_kb)
+            await state.set_state(GameStates.character)
+            await state.update_data(current_msg_id=char_msg.message_id)
+            await callback.answer()
+            return
+        elif data == "inv_back":
+            # Назад в main: delete inventory, send main
+            try:
+                await bot.delete_message(chat_id=str(chat_id), message_id=current_msg_id, business_connection_id=business_id)
+            except:
+                pass
+            ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
+            await state.set_state(GameStates.main)
+            await state.update_data(current_msg_id=ui_msg.message_id)
+            await callback.answer()
+            return
+    elif current_state == GameStates.character:
+        if data == "character_back":
+            # Назад в inventory: delete character, send inventory
+            try:
+                await bot.delete_message(chat_id=str(chat_id), message_id=current_msg_id, business_connection_id=business_id)
+            except:
+                pass
+            submenu_msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
+            await state.set_state(GameStates.inventory)
+            await state.update_data(current_msg_id=submenu_msg.message_id)
+            await callback.answer()
+            return
     if action_taken:
         await save_game(uid, game)
         game_dict = game.__dict__.copy()
         game_dict['inventory'] = dict(game.inventory)
         game_dict['equipment'] = game.equipment
         await state.update_data(game=game_dict)
-
     if edit_current and action_taken:
         try:
             if current_state == GameStates.main:
                 await bot.edit_message_text(
                     game.get_ui(),
-                    chat_id,
-                    current_msg_id,
-                    reply_markup=get_main_kb(game)
+                    chat_id=str(chat_id),
+                    message_id=current_msg_id,
+                    reply_markup=get_main_kb(game),
+                    business_connection_id=business_id
                 )
             elif current_state == GameStates.inventory:
                 await bot.edit_message_text(
                     game.get_inventory_text(),
-                    chat_id,
-                    current_msg_id,
-                    reply_markup=inventory_inline_kb
+                    chat_id=str(chat_id),
+                    message_id=current_msg_id,
+                    reply_markup=inventory_inline_kb,
+                    business_connection_id=business_id
                 )
             elif current_state == GameStates.character:
                 await bot.edit_message_text(
                     game.get_character_text(),
-                    chat_id,
-                    current_msg_id,
-                    reply_markup=character_inline_kb
+                    chat_id=str(chat_id),
+                    message_id=current_msg_id,
+                    reply_markup=character_inline_kb,
+                    business_connection_id=business_id
                 )
         except Exception as e:
             logging.warning(f"Edit failed: {e}")
-
+            # Fallback: delete and send new to avoid nothing happening
+            try:
+                await bot.delete_message(chat_id=str(chat_id), message_id=current_msg_id, business_connection_id=business_id)
+            except:
+                pass
+            if current_state == GameStates.main:
+                new_msg = await bot.send_message(str(chat_id), game.get_ui(), reply_markup=get_main_kb(game), business_connection_id=business_id)
+            elif current_state == GameStates.inventory:
+                new_msg = await bot.send_message(str(chat_id), game.get_inventory_text(), reply_markup=inventory_inline_kb, business_connection_id=business_id)
+            elif current_state == GameStates.character:
+                new_msg = await bot.send_message(str(chat_id), game.get_character_text(), reply_markup=character_inline_kb, business_connection_id=business_id)
+            await state.update_data(current_msg_id=new_msg.message_id)
     await callback.answer()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # SELF-PING + WEBHOOK
 # ──────────────────────────────────────────────────────────────────────────────
-PING_INTERVAL_SECONDS = 300
+PING_INTERVAL_SECONDS = 300 # 5 минут, как просил
 async def self_ping_task():
     if not BASE_URL:
         logging.info("Self-ping отключён")
@@ -440,7 +532,7 @@ async def webhook(request: Request):
 
 @app.on_event("startup")
 async def on_startup():
-    await check_mongo()  # Проверка MongoDB
+    await check_mongo()
     if WEBHOOK_URL:
         try:
             await bot.delete_webhook(drop_pending_updates=True)
