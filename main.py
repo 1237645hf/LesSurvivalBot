@@ -69,8 +69,10 @@ class Game:
         self.search_progress = 0
         self.day = 1
         self.log = ["🌲 Ты проснулся в лесу. Что будешь делать?"]
-        self.inventory = ["Спички 🔥", "Вилка 🍴", "Кусок коры 🪵"]
+        self.inventory = ["Спички 🔥", "Вилка 🍴", "Кусок коры 🪵", "Сухпай (3/3)"]
         self.weather = "clear"  # clear / cloudy / rain
+        self.location = "лес"   # текущая локация
+        self.unlocked_locations = ["лес", "тёмный лес", "река", "озеро", "заброшенный лагерь"]  # пока все открыты
 
     def add_log(self, text):
         self.log.append(text)
@@ -83,8 +85,16 @@ class Game:
             "cloudy": "☁️ Пасмурно",
             "rain": "🌧️ Дождь"
         }.get(self.weather, "☀️ Ясно")
+        location_icon = {
+            "лес": "🌲 Лес",
+            "тёмный лес": "🌳 Тёмный лес",
+            "река": "🌊 Река",
+            "озеро": "💦 Озеро",
+            "заброшенный лагерь": "🏕️ Заброшенный лагерь"
+        }.get(self.location, "🌲 Лес")
         return (
             f"❤️ {self.hp}   🍖 {self.hunger}   💧 {self.thirst}  ⚡ {self.ap}   ☀️ {self.day}   {weather_icon}\n"
+            f"Ты в {location_icon}\n"
             "━━━━━━━━━━━━━━━━━━━\n"
             + "\n".join(f"> {line}" for line in self.log) + "\n"
             "━━━━━━━━━━━━━━━━━━━"
@@ -118,33 +128,52 @@ def save_game(uid: int, game: Game):
     except Exception as e:
         logging.error(f"Ошибка сохранения игрока {uid}: {e}")
 
-# ГЛОБАЛЬНЫЙ КЭШ ИГР — ПЕРЕМЕЩЁН ВВЕРХ, ЧТОБЫ БЫЛ ДОСТУПЕН В ХЕНДЛЕРАХ
+# ГЛОБАЛЬНЫЙ КЭШ ИГР
 games = {}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # КНОПКИ
 # ──────────────────────────────────────────────────────────────────────────────
 
-main_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="В чащу 🌲", callback_data="action_1")],
-    [InlineKeyboardButton(text="Инвентарь 🎒", callback_data="action_2")],
-    [InlineKeyboardButton(text="Пить воду 💧", callback_data="action_3")],
-    [InlineKeyboardButton(text="Спать 🌙", callback_data="action_4")],
-    [InlineKeyboardButton(text="📱ловить сигнал📱", callback_data="action_5")],
-    [InlineKeyboardButton(text="Сбежать 🚁", callback_data="action_6")],
-])
+def get_main_kb(game: Game):
+    locations = ["лес", "тёмный лес", "река", "озеро", "заброшенный лагерь"]
+    loc_icons = ["🌲", "🌳", "🌊", "💦", "🏕️"]
+    current_idx = locations.index(game.location)
+    loc_row = []
+    if current_idx > 0:
+        prev_loc = locations[current_idx - 1]
+        prev_icon = loc_icons[current_idx - 1]
+        loc_row.append(InlineKeyboardButton(text=f"← {prev_icon}", callback_data=f"loc_{prev_loc}"))
+    loc_row.append(InlineKeyboardButton(text=f"{loc_icons[current_idx]} {game.location.capitalize()}", callback_data="loc_current"))  # текущая, без действия
+    if current_idx < len(locations) - 1:
+        next_loc = locations[current_idx + 1]
+        next_icon = loc_icons[current_idx + 1]
+        if next_loc in game.unlocked_locations:
+            loc_row.append(InlineKeyboardButton(text=f"{next_icon} →", callback_data=f"loc_{next_loc}"))
+        else:
+            loc_row.append(InlineKeyboardButton(text=f"{next_icon} Заблокировано", callback_data="loc_locked"))
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        loc_row,  # ряд с локациями
+        [InlineKeyboardButton(text="🌲 В чащу ", callback_data="action_1"),
+         InlineKeyboardButton(text="🎒 Инвентарь ", callback_data="action_2")],
+        [InlineKeyboardButton(text="💧 Пить воду ", callback_data="action_3"),
+         InlineKeyboardButton(text="🌙 Спать ", callback_data="action_4")],
+        [InlineKeyboardButton(text="🚁 Сбежать ", callback_data="action_6")],
+    ])
+    return kb
 
 inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="Осмотреть 👁️", callback_data="inv_inspect")],
-    [InlineKeyboardButton(text="Использовать 🛠️", callback_data="inv_use")],
-    [InlineKeyboardButton(text="Выкинуть 🗑️", callback_data="inv_drop")],
-    [InlineKeyboardButton(text="Крафт 🛠️", callback_data="inv_craft")],
-    [InlineKeyboardButton(text="Персонаж 👤", callback_data="inv_character")],
-    [InlineKeyboardButton(text="Назад ←", callback_data="inv_back")],
+    [InlineKeyboardButton(text="👁️ Осмотреть ", callback_data="inv_inspect"),
+     InlineKeyboardButton(text="🛠️ Использовать ", callback_data="inv_use")],
+    [InlineKeyboardButton(text="🗑️ Выкинуть ", callback_data="inv_drop"),
+     InlineKeyboardButton(text="🛠️ Крафт ", callback_data="inv_craft")],
+    [InlineKeyboardButton(text="👤 Персонаж ", callback_data="inv_character"),
+     InlineKeyboardButton(text="← Назад ", callback_data="inv_back")],
 ])
 
 start_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="🫡 Я готов 🫡", callback_data="start_game")],
+    [InlineKeyboardButton(text="🫡 Я готов ", callback_data="start_game")],
 ])
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -154,9 +183,6 @@ start_kb = InlineKeyboardMarkup(inline_keyboard=[
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     uid = message.from_user.id
-
-    # Убрали get_chat_history — метод не существует в aiogram 3.x
-    # Если нужно чистить чат — будем использовать last_ui_msg_id / last_inv_msg_id
 
     await message.answer(
         "🌲 Добро пожаловать в лес выживания!\n\n"
@@ -185,11 +211,11 @@ async def process_callback(callback: types.CallbackQuery):
 
     if data == "start_game":
         games[uid] = Game()
-        save_game(uid, games[uid])  # сразу сохраняем новую игру
+        save_game(uid, games[uid])
 
         await callback.message.edit_text("Игра началась!\n\nВыбери действие ниже ↓")
 
-        ui_msg = await callback.message.answer(games[uid].get_ui(), reply_markup=main_inline_kb)
+        ui_msg = await callback.message.answer(games[uid].get_ui(), reply_markup=get_main_kb(games[uid]))
         last_ui_msg_id[uid] = ui_msg.message_id
         await callback.answer()
         return
@@ -206,7 +232,24 @@ async def process_callback(callback: types.CallbackQuery):
     game = games[uid]
     action_taken = False
 
-    if data == "action_1":
+    if data.startswith("loc_"):
+        if data == "loc_locked":
+            game.add_log("Эта локация заблокирована...")
+            action_taken = True
+        elif data == "loc_current":
+            game.add_log("Ты уже здесь.")
+            action_taken = True
+        else:
+            new_loc = data.replace("loc_", "")
+            if new_loc in game.unlocked_locations:
+                game.location = new_loc
+                game.add_log(f"Перешёл в {new_loc}.")
+                action_taken = True
+            else:
+                game.add_log("Локация не открыта.")
+                action_taken = True
+
+    elif data == "action_1":
         if game.weather == "rain":
             game.add_log("🌧️ Дождь льёт стеной, в чащу не сунешься...")
             action_taken = True
@@ -214,7 +257,20 @@ async def process_callback(callback: types.CallbackQuery):
             game.ap -= 1
             game.hunger = max(0, game.hunger - 7)
             game.thirst = max(0, game.thirst - 8)
-            game.add_log("🔍 Ты пошёл в чащу... нашёл кору!")
+            # События в чаще (базовые, зависят от локации)
+            events = [
+                ("Нашёл ягоды! +10 сытости", lambda: setattr(game, 'hunger', min(100, game.hunger + 10))),
+                ("Нашёл мухоморы... рискнул съесть? -5 HP", lambda: setattr(game, 'hp', max(0, game.hp - 5))),
+                ("Нашёл родник! +20 жажды", lambda: setattr(game, 'thirst', min(100, game.thirst + 20))),
+                ("Укус змеи! -10 HP", lambda: setattr(game, 'hp', max(0, game.hp - 10))),
+                ("Нашёл кору", lambda: game.inventory.append("Кусок коры 🪵"))
+            ]
+            # Модификаторы по локации
+            if game.location in ["река", "озеро"]:
+                events.append(("Напился из реки/озера! +30 жажды", lambda: setattr(game, 'thirst', min(100, game.thirst + 30))))  # больше шанса на воду
+            event_text, event_effect = random.choice(events)
+            event_effect()
+            game.add_log(f"🔍 Ты пошёл в чащу... {event_text}")
             action_taken = True
         else:
             game.add_log("🏕 У тебя нет сил и нужно отдохнуть")
@@ -243,7 +299,6 @@ async def process_callback(callback: types.CallbackQuery):
         game.ap = 5
         game.hunger = max(0, game.hunger - 15)
 
-        # Генерация погоды
         weather_choices = ["clear", "cloudy", "rain"]
         weights = [70, 20, 10]
         game.weather = random.choices(weather_choices, weights=weights, k=1)[0]
@@ -251,19 +306,6 @@ async def process_callback(callback: types.CallbackQuery):
         weather_name = {"clear": "ясно", "cloudy": "пасмурно", "rain": "дождь"}[game.weather]
         game.add_log(f"🌙 День {game.day}. Выспался, голод -15. На улице {weather_name}.")
         action_taken = True
-
-    elif data == "action_5":
-        if game.ap > 0:
-            game.ap -= 1
-            if random.randint(1, 2) == 1:
-                game.search_progress += 5
-                game.add_log("📱 Поймал сигнал... +5 к поиску маршрута")
-            else:
-                game.add_log("📱 Сигнал не пойман...")
-            action_taken = True
-        else:
-            game.add_log("🏕 У тебя нет сил и нужно отдохнуть")
-            action_taken = True
 
     elif data == "action_6":
         chance = 10 + (game.karma // 10)
@@ -278,9 +320,24 @@ async def process_callback(callback: types.CallbackQuery):
             game.add_log("Побег не удался...")
             action_taken = True
 
-    # Заглушки инвентаря
-    elif data in ("inv_inspect", "inv_use", "inv_drop", "inv_craft", "inv_character"):
-        game.add_log(f"{data.replace('inv_', '').capitalize()}... (заглушка)")
+    elif data == "inv_inspect":
+        game.add_log("👁️ Осмотрел инвентарь... (заглушка)")
+        action_taken = True
+
+    elif data == "inv_use":
+        game.add_log("🛠️ Использовал предмет... (заглушка)")
+        action_taken = True
+
+    elif data == "inv_drop":
+        game.add_log("🗑️ Выкинул предмет... (заглушка)")
+        action_taken = True
+
+    elif data == "inv_craft":
+        game.add_log("🛠️ Крафт... (заглушка)")
+        action_taken = True
+
+    elif data == "inv_character":
+        game.add_log("👤 Персонаж... (заглушка)")
         action_taken = True
 
     elif data == "inv_back":
@@ -291,7 +348,7 @@ async def process_callback(callback: types.CallbackQuery):
             except:
                 pass
 
-        ui_msg = await callback.message.answer(game.get_ui(), reply_markup=main_inline_kb)
+        ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = ui_msg.message_id
         await callback.answer()
         return
@@ -300,7 +357,7 @@ async def process_callback(callback: types.CallbackQuery):
         save_game(uid, game)
         await callback.message.edit_text(
             game.get_ui(),
-            reply_markup=main_inline_kb
+            reply_markup=get_main_kb(game)
         )
         await callback.answer()
 
