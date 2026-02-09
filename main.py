@@ -11,6 +11,7 @@ from aiogram.types import Update, Message, InlineKeyboardMarkup, InlineKeyboardB
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.pymongo import PyMongoStorage
 import httpx
 from pymongo import MongoClient
 from pymongo.errors import ConfigurationError, OperationFailure
@@ -31,15 +32,19 @@ logging.basicConfig(level=logging.INFO)
 logging.info(f"Бот запущен. TOKEN: {TOKEN[:10]}... BASE_URL: {BASE_URL}")
 logging.info(f"MONGO_URI: {MONGO_URI[:30]}...")
 bot = Bot(token=TOKEN)
-dp = Dispatcher()
+
+# FSM storage на MongoDB для persistence
+mongo_client = MongoClient(MONGO_URI)
+storage = PyMongoStorage(client=mongo_client, db_name='forest_game_fsm')
+dp = Dispatcher(storage=storage)
+
 app = FastAPI(title="Forest Survival Bot")
 last_request_time = {}  # Антифлуд
 
 # ──────────────────────────────────────────────────────────────────────────────
-# MONGODB
+# MONGODB для игры (отдельно от FSM)
 # ──────────────────────────────────────────────────────────────────────────────
 try:
-    mongo_client = MongoClient(MONGO_URI)
     db = mongo_client['forest_game']
     players_collection = db['players']
     mongo_client.server_info()
@@ -218,8 +223,12 @@ async def cmd_start(message: Message, state: FSMContext):
     # Проверяем сохранение
     loaded = load_game(uid)
     if loaded:
+        # Подготавливаем game_dict
+        game_dict = loaded.__dict__.copy()
+        game_dict['inventory'] = dict(loaded.inventory)
+        game_dict['equipment'] = loaded.equipment
         await state.set_state(GameStates.main)
-        await state.update_data(game=loaded.__dict__)  # Временно в FSM, но сохраним в Mongo
+        await state.update_data(game=game_dict)
         await message.answer(
             "У тебя есть сохранённая игра. Что хочешь?",
             reply_markup=start_continue_kb
@@ -261,12 +270,12 @@ async def process_callback(callback: types.CallbackQuery, state: FSMContext):
         game_dict['inventory'] = dict(game.inventory)
         game_dict['equipment'] = game.equipment
         await state.update_data(game=game_dict)
-    else:
-        # Восстанавливаем game из state_data
-        game = Game()
-        game.__dict__.update(game_dict)
-        game.inventory = Counter(game_dict['inventory'])
-        game.equipment = game_dict['equipment']
+        state_data = await state.get_data()  # Обновляем локальный state_data
+    # Восстанавливаем game из state_data
+    game = Game()
+    game.__dict__.update(game_dict)
+    game.inventory = Counter(game_dict['inventory'])
+    game.equipment = game_dict['equipment']
     current_msg_id = state_data.get('current_msg_id')
 
     action_taken = False
@@ -274,10 +283,11 @@ async def process_callback(callback: types.CallbackQuery, state: FSMContext):
 
     if data in ("start_game", "new_game"):
         game = Game()
+        game_dict = game.__dict__.copy()
+        game_dict['inventory'] = dict(game.inventory)
+        game_dict['equipment'] = game.equipment
         await state.set_state(GameStates.main)
-        await state.update_data(game=game.__dict__.copy(), current_msg_id=None)
-        state_data['game']['inventory'] = dict(game.inventory)
-        state_data['game']['equipment'] = game.equipment
+        await state.update_data(game=game_dict, current_msg_id=None)
         save_game(uid, game)
         try:
             if current_msg_id:
@@ -294,10 +304,11 @@ async def process_callback(callback: types.CallbackQuery, state: FSMContext):
         if not game:
             game = Game()
             save_game(uid, game)
+        game_dict = game.__dict__.copy()
+        game_dict['inventory'] = dict(game.inventory)
+        game_dict['equipment'] = game.equipment
         await state.set_state(GameStates.main)
-        await state.update_data(game=game.__dict__.copy(), current_msg_id=None)
-        state_data['game']['inventory'] = dict(game.inventory)
-        state_data['game']['equipment'] = game.equipment
+        await state.update_data(game=game_dict, current_msg_id=None)
         try:
             if current_msg_id:
                 await bot.delete_message(chat_id, current_msg_id)
@@ -394,7 +405,7 @@ async def process_callback(callback: types.CallbackQuery, state: FSMContext):
         if data in ("inv_inspect", "inv_use", "inv_drop", "inv_craft"):
             # Действия в инвентаре - edit (заглушки)
             edit_current = True
-            game.add_log(f"{data.replace('inv_', '').capitalize()}... (заглушка)")
+            game.add_log(f"{data.replace('inv_', '').capitalize()}... (заглушка)")  # Лог добавляется, но в инвентаре не видно — если нужно, добавь в текст
             action_taken = True
         elif data == "inv_character":
             # Переход в персонаж: delete inventory, send character
@@ -431,14 +442,16 @@ async def process_callback(callback: types.CallbackQuery, state: FSMContext):
             await state.update_data(current_msg_id=submenu_msg.message_id)
             await callback.answer()
             return
+        # Если добавишь действия в character — добавь edit_current = True здесь
 
     if action_taken:
         # Сохраняем game в Mongo после действия
         save_game(uid, game)
-        # Обновляем state_data
-        await state.update_data(game=game.__dict__.copy())
-        state_data['game']['inventory'] = dict(game.inventory)
-        state_data['game']['equipment'] = game.equipment
+        # Обновляем state_data (подготавливаем dict заранее)
+        game_dict = game.__dict__.copy()
+        game_dict['inventory'] = dict(game.inventory)
+        game_dict['equipment'] = game.equipment
+        await state.update_data(game=game_dict)
 
     if edit_current and action_taken:
         try:
@@ -456,19 +469,16 @@ async def process_callback(callback: types.CallbackQuery, state: FSMContext):
                     current_msg_id,
                     reply_markup=inventory_inline_kb
                 )
-            # Для character пока нет edit, только назад
+            elif current_state == GameStates.character:
+                await bot.edit_message_text(
+                    game.get_character_text(),
+                    chat_id,
+                    current_msg_id,
+                    reply_markup=character_inline_kb
+                )
         except Exception as e:
             logging.warning(f"Edit failed: {e}")
-            # Если edit не удался, отправляем новое и обновляем ID
-            try:
-                await bot.delete_message(chat_id, current_msg_id)
-            except:
-                pass
-            if current_state == GameStates.main:
-                new_msg = await bot.send_message(chat_id, game.get_ui(), reply_markup=get_main_kb(game))
-            elif current_state == GameStates.inventory:
-                new_msg = await bot.send_message(chat_id, game.get_inventory_text(), reply_markup=inventory_inline_kb)
-            await state.update_data(current_msg_id=new_msg.message_id)
+            # Без fallback: просто лог, сообщение не мерцает
 
     await callback.answer()
 
