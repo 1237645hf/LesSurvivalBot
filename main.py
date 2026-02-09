@@ -79,7 +79,7 @@ class Game:
             "pet": None,
             "hand": None
         }
-        self.story_state = None   # "wolf_scene", "cat_name_wait", etc.
+        self.story_state = None
         self.found_branch_once = False
 
     def add_log(self, text):
@@ -89,9 +89,8 @@ class Game:
 
     def get_ui(self):
         weather_icon = {"clear": "☀️", "cloudy": "☁️", "rain": "🌧️"}.get(self.weather, "☀️")
-        karma_str = f"🕊️ {self.karma}/{self.karma_goal}"
         return (
-            f"❤️ {self.hp} 🍖 {self.hunger} 💧 {self.thirst} ⚡ {self.ap} {weather_icon} {self.day} {karma_str}\n"
+            f"❤️ {self.hp} 🍖 {self.hunger} 💧 {self.thirst} ⚡ {self.ap} {weather_icon} {self.day}\n"
             "━━━━━━━━━━━━━━━━━━━\n"
             + "\n".join(f"> {line}" for line in self.log) + "\n"
             "━━━━━━━━━━━━━━━━━━━"
@@ -220,9 +219,11 @@ story_next_kb = InlineKeyboardMarkup(inline_keyboard=[
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     uid = message.from_user.id
-    # Опционально чистим старые сообщения
+    logging.info(f"[START] Получен /start от пользователя {uid}")
+
+    # Чистим старые сообщения (до 100 штук, но без паники при ошибках)
     try:
-        for i in range(1, 40):
+        for i in range(1, 100):
             await bot.delete_message(message.chat.id, message.message_id - i)
     except:
         pass
@@ -261,8 +262,9 @@ async def process_callback(callback: types.CallbackQuery):
         return
 
     chat_id = callback.message.chat.id
+    logging.info(f"[CALLBACK] {data} от {uid}")
 
-    # Удаляем предыдущее подменю при необходимости
+    # Удаляем предыдущее подменю
     if data.startswith(("action_", "inv_", "story_")) and uid in last_submenu_msg_id:
         try:
             await bot.delete_message(chat_id, last_submenu_msg_id[uid])
@@ -272,7 +274,6 @@ async def process_callback(callback: types.CallbackQuery):
 
     action_taken = False
 
-    # ─── НОВАЯ ИГРА / ЗАГРУЗКА ───────────────────────────────
     if data in ("new_game", "start_game"):
         game = Game()
         games[uid] = game
@@ -297,7 +298,7 @@ async def process_callback(callback: types.CallbackQuery):
         await callback.answer()
         return
 
-    # ─── ИССЛЕДОВАНИЕ ────────────────────────────────────────
+    # Исследование
     if data == "action_1":
         if game.ap <= 0:
             game.add_log("Нет сил. Нужно поспать.")
@@ -333,13 +334,12 @@ async def process_callback(callback: types.CallbackQuery):
                 text, effect = random.choice(events)
                 effect()
                 game.add_log(f"🔍 Исследовал... {text}")
-
                 if "Ветка" in text and not game.found_branch_once:
                     game.found_branch_once = True
                     game.add_log("А из этого можно сделать факел?")
         action_taken = True
 
-    # ─── СЮЖЕТНЫЕ СОБЫТИЯ ────────────────────────────────────
+    # Остальные сюжетные callback'и (оставил без изменений, но добавил логи)
     elif data == "story_wolf_flee":
         game.add_log("Ты тихо отступил. Что бы там ни было — не твоё дело.")
         game.story_state = None
@@ -389,13 +389,13 @@ async def process_callback(callback: types.CallbackQuery):
         msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = msg.message_id
 
-    # ─── ИНВЕНТАРЬ / ПЕРСОНАЖ / ИСПОЛЬЗОВАНИЕ ────────────────
+    # Инвентарь, персонаж, действия
     elif data == "action_2":
         msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
         last_submenu_msg_id[uid] = msg.message_id
 
     elif data == "inv_use":
-        if game.inventory["Факел"] > 0 and game.equipment["hand"] is None:
+        if game.inventory.get("Факел", 0) > 0 and game.equipment["hand"] is None:
             game.inventory["Факел"] -= 1
             game.equipment["hand"] = "Факел"
             game.add_log("Ты взял факел в руку.")
@@ -451,7 +451,7 @@ async def handle_name_input(message: Message):
     uid = message.from_user.id
     game = games.get(uid)
     if not game or game.story_state != "cat_name_wait":
-        return  # игнорируем все остальные текстовые сообщения
+        return
 
     name = message.text.strip()
     if not name:
@@ -466,7 +466,6 @@ async def handle_name_input(message: Message):
     game.story_state = None
     save_game(uid, game)
 
-    # Удаляем сообщение с запросом имени, если оно было
     if uid in last_submenu_msg_id:
         try:
             await bot.delete_message(message.chat.id, last_submenu_msg_id[uid])
@@ -495,6 +494,7 @@ async def webhook(request: Request):
         body = await request.json()
         update = Update.model_validate(body, context={"bot": bot})
         await dp.feed_update(bot, update)
+        logging.info(f"Webhook получил обновление: {update.update_id if update else 'нет id'}")
         return {"ok": True}
     except Exception as e:
         logging.error(f"Webhook error: {e}")
@@ -505,27 +505,40 @@ async def on_startup():
     if WEBHOOK_URL:
         try:
             await bot.delete_webhook(drop_pending_updates=True)
-        except:
-            pass
-        try:
-            await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
-            logging.info(f"Webhook установлен: {WEBHOOK_URL}")
+            logging.info("Старый webhook удалён")
         except Exception as e:
-            logging.error(f"set_webhook failed: {e}")
+            logging.warning(f"Не удалось удалить старый webhook: {e}")
+
+        try:
+            await bot.set_webhook(
+                url=WEBHOOK_URL,
+                drop_pending_updates=True,
+                allowed_updates=["message", "callback_query"]
+            )
+            logging.info(f"Webhook успешно установлен: {WEBHOOK_URL}")
+        except Exception as e:
+            logging.error(f"Ошибка установки webhook: {e}")
+    else:
+        logging.warning("BASE_URL не задан → webhook не установлен!")
+
     asyncio.create_task(self_ping_task())
 
 async def self_ping_task():
     if not BASE_URL:
+        logging.info("Self-ping отключён (нет BASE_URL)")
         return
     url = f"{BASE_URL}/ping"
     while True:
         try:
             async with httpx.AsyncClient() as c:
                 await c.get(url, timeout=10)
-        except:
-            pass
+            logging.info("[SELF-PING] OK")
+        except Exception as e:
+            logging.warning(f"[SELF-PING] ошибка: {e}")
         await asyncio.sleep(300)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8000))  # ← Render использует переменную PORT
+    logging.info(f"Запуск uvicorn на порту {port}")
+    uvicorn.run(app, host="0.0.0.0", port=port)
