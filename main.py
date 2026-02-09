@@ -39,10 +39,10 @@ app = FastAPI(title="Forest Survival Bot")
 
 last_request_time = {}
 last_ui_msg_id = {}
-last_inv_msg_id = {}
+last_submenu_msg_id = {}  # отдельный словарь для инвентаря/персонажа
 
 # ──────────────────────────────────────────────────────────────────────────────
-# ПОДКЛЮЧЕНИЕ К MONGODB
+# MONGODB
 # ──────────────────────────────────────────────────────────────────────────────
 
 try:
@@ -51,9 +51,9 @@ try:
     players_collection = db['players']
     mongo_client.server_info()
     logging.info("MongoDB подключён успешно")
-except (ConfigurationError, OperationFailure) as e:
-    logging.error(f"Ошибка подключения к MongoDB: {e}")
-    raise RuntimeError("Не удалось подключиться к MongoDB")
+except Exception as e:
+    logging.error(f"Ошибка MongoDB: {e}")
+    raise
 
 # ──────────────────────────────────────────────────────────────────────────────
 # КЛАСС ИГРЫ
@@ -175,8 +175,13 @@ inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
      InlineKeyboardButton(text="← Назад ", callback_data="inv_back")],
 ])
 
+start_continue_kb = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="🔑 Загрузить игру", callback_data="load_game")],
+    [InlineKeyboardButton(text="🎭 Начать новую", callback_data="new_game")],
+])
+
 start_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="🫡 Я готов ", callback_data="start_game")],
+    [InlineKeyboardButton(text="🫡 Я готов ", callback_data="start_game")]
 ])
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -186,18 +191,28 @@ start_kb = InlineKeyboardMarkup(inline_keyboard=[
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     uid = message.from_user.id
-    await message.answer(
-        "🌲 Добро пожаловать в лес выживания!\n\n"
-        "Краткий гайд\n"
-        "❤️ 100 - здоровье\n"
-        "🍖 100 - сытость\n"
-        "💧 100 - жажда\n"
-        "⚡ 5 - действия на день\n"
-        "☀️ 100 - день\n\n"
-        "⚖️ Карма помогает выбраться.\n\n"
-        "Попробуй выжить...",
-        reply_markup=start_kb
-    )
+
+    # Проверяем, есть ли сохранённая игра
+    loaded = load_game(uid)
+    if loaded:
+        games[uid] = loaded
+        await message.answer(
+            "У тебя есть сохранённая игра. Хочешь продолжить или начать заново?",
+            reply_markup=start_continue_kb
+        )
+    else:
+        await message.answer(
+            "🌲 Добро пожаловать в лес выживания!\n\n"
+            "Краткий гайд\n"
+            "❤️ 100 - здоровье\n"
+            "🍖 100 - сытость\n"
+            "💧 100 - жажда\n"
+            "⚡ 5 - действия на день\n"
+            "☀️ 100 - день\n\n"
+            "⚖️ Карма помогает выбраться.\n\n"
+            "Попробуй выжить...",
+            reply_markup=start_kb
+        )
 
 @dp.callback_query()
 async def process_callback(callback: types.CallbackQuery):
@@ -211,7 +226,23 @@ async def process_callback(callback: types.CallbackQuery):
 
     data = callback.data
 
-    if data == "start_game":
+    # Удаляем текущее главное окно (если есть)
+    if uid in last_ui_msg_id:
+        try:
+            await bot.delete_message(callback.message.chat.id, last_ui_msg_id[uid])
+            del last_ui_msg_id[uid]
+        except:
+            pass
+
+    # Удаляем текущее подменю (инвентарь/персонаж), если открыто
+    if uid in last_submenu_msg_id:
+        try:
+            await bot.delete_message(callback.message.chat.id, last_submenu_msg_id[uid])
+            del last_submenu_msg_id[uid]
+        except:
+            pass
+
+    if data in ("start_game", "new_game"):
         game = Game()
         games[uid] = game
         save_game(uid, game)
@@ -222,25 +253,31 @@ async def process_callback(callback: types.CallbackQuery):
         await callback.answer()
         return
 
-    if uid not in games:
-        loaded = load_game(uid)
-        if loaded:
-            games[uid] = loaded
+    if data == "load_game":
+        game = load_game(uid)
+        if game:
+            games[uid] = game
+            await callback.message.edit_text("Игра загружена!\n\nВыбери действие ниже ↓")
+
+            ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
+            last_ui_msg_id[uid] = ui_msg.message_id
         else:
-            await callback.message.answer("Сначала /start")
-            await callback.answer()
-            return
+            await callback.message.edit_text("Сохранённой игры не найдено. Начинаем новую.")
+            game = Game()
+            games[uid] = game
+            save_game(uid, game)
+            ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
+            last_ui_msg_id[uid] = ui_msg.message_id
+        await callback.answer()
+        return
+
+    if uid not in games:
+        await callback.message.answer("Сначала начни игру /start")
+        await callback.answer()
+        return
 
     game = games[uid]
     action_taken = False
-
-    # Удаляем текущее главное окно перед любым действием (чтобы не плодить окна)
-    if uid in last_ui_msg_id:
-        try:
-            await bot.delete_message(callback.message.chat.id, last_ui_msg_id[uid])
-            del last_ui_msg_id[uid]
-        except:
-            pass
 
     if data.startswith("loc_"):
         if data == "loc_locked":
@@ -281,8 +318,8 @@ async def process_callback(callback: types.CallbackQuery):
         action_taken = True
 
     elif data == "action_2":
-        inv_msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
-        last_inv_msg_id[uid] = inv_msg.message_id
+        submenu_msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
+        last_submenu_msg_id[uid] = submenu_msg.message_id
         await callback.answer()
         return
 
@@ -318,12 +355,12 @@ async def process_callback(callback: types.CallbackQuery):
         action_taken = True
 
     elif data == "inv_character":
-        char_msg = await callback.message.answer(game.get_character_text(), reply_markup=character_inline_kb)
-        last_inv_msg_id[uid] = char_msg.message_id
+        char_msg = await callback.message.answer("Персонаж... (заглушка)", reply_markup=character_inline_kb)
+        last_submenu_msg_id[uid] = char_msg.message_id
         await callback.answer()
         return
 
-    elif data == "character_back":
+    elif data in ("inv_back", "character_back"):
         ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = ui_msg.message_id
         await callback.answer()
@@ -332,12 +369,6 @@ async def process_callback(callback: types.CallbackQuery):
     elif data in ("inv_inspect", "inv_use", "inv_drop", "inv_craft"):
         game.add_log(f"{data.replace('inv_', '').capitalize()}... (заглушка)")
         action_taken = True
-
-    elif data == "inv_back":
-        ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
-        last_ui_msg_id[uid] = ui_msg.message_id
-        await callback.answer()
-        return
 
     if action_taken:
         save_game(uid, game)
