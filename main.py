@@ -7,46 +7,43 @@ from collections import Counter
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import Update, Message, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import CommandStart
+from aiogram.types import Update, Message, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from aiogram.filters import CommandStart, Text
 import httpx
 from pymongo import MongoClient
-from pymongo.errors import ConfigurationError, OperationFailure
 
 # ──────────────────────────────────────────────────────────────────────────────
 # НАСТРОЙКИ
 # ──────────────────────────────────────────────────────────────────────────────
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
-    raise ValueError("TOKEN не найден в Environment Variables Render!")
+    raise ValueError("TOKEN не найден!")
 BASE_URL = os.getenv("RENDER_EXTERNAL_URL")
 WEBHOOK_PATH = f"/bot/{TOKEN}"
 WEBHOOK_URL = f"{BASE_URL}{WEBHOOK_PATH}" if BASE_URL else None
 MONGO_URI = os.getenv("MONGO_URI")
 if not MONGO_URI:
-    raise ValueError("MONGO_URI не найден в Environment Variables Render!")
+    raise ValueError("MONGO_URI не найден!")
+
 logging.basicConfig(level=logging.INFO)
 logging.info(f"Бот запущен. TOKEN: {TOKEN[:10]}... BASE_URL: {BASE_URL}")
-logging.info(f"MONGO_URI: {MONGO_URI[:30]}...")
+
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 app = FastAPI(title="Forest Survival Bot")
+
 last_request_time = {}
-last_ui_msg_id = {}  # ID главного окна
-last_submenu_msg_id = {}  # ID инвентаря/персонажа
+last_ui_msg_id = {}
+last_submenu_msg_id = {}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # MONGODB
 # ──────────────────────────────────────────────────────────────────────────────
-try:
-    mongo_client = MongoClient(MONGO_URI)
-    db = mongo_client['forest_game']
-    players_collection = db['players']
-    mongo_client.server_info()
-    logging.info("MongoDB подключён успешно")
-except Exception as e:
-    logging.error(f"Ошибка MongoDB: {e}")
-    raise
+mongo_client = MongoClient(MONGO_URI)
+db = mongo_client['forest_game']
+players_collection = db['players']
+mongo_client.server_info()
+logging.info("MongoDB подключён успешно")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # КЛАСС ИГРЫ
@@ -58,6 +55,7 @@ class Game:
         self.thirst = 60
         self.ap = 5
         self.karma = 0
+        self.karma_goal = 100
         self.day = 1
         self.log = ["🌲 Ты проснулся в лесу. Что будешь делать?"]
         self.inventory = Counter({
@@ -78,9 +76,11 @@ class Game:
             "pants": None,
             "boots": None,
             "trinket": None,
-            "pet": None
+            "pet": None,
+            "hand": None          # ← новый слот под факел и возможно оружие позже
         }
-        self.active_achievement = "Нет активной ачивки"  # Заглушка для ачивки
+        self.story_state = None   # "wolf_scene", "cat_name_wait", None
+        self.found_branch_once = False
 
     def add_log(self, text):
         self.log.append(text)
@@ -89,8 +89,9 @@ class Game:
 
     def get_ui(self):
         weather_icon = {"clear": "☀️", "cloudy": "☁️", "rain": "🌧️"}.get(self.weather, "☀️")
+        karma_str = f"🕊️ {self.karma}/{self.karma_goal}"
         return (
-            f"❤️ {self.hp} 🍖 {self.hunger} 💧 {self.thirst} ⚡ {self.ap} {weather_icon} {self.day}\n"
+            f"❤️ {self.hp} 🍖 {self.hunger} 💧 {self.thirst} ⚡ {self.ap} {weather_icon} {self.day} {karma_str}\n"
             "━━━━━━━━━━━━━━━━━━━\n"
             + "\n".join(f"> {line}" for line in self.log) + "\n"
             "━━━━━━━━━━━━━━━━━━━"
@@ -100,11 +101,12 @@ class Game:
         lines = []
         for item, count in self.inventory.items():
             if count > 0:
-                lines.append(f"• {item} x{count}" if count > 1 else f"• {item}")
+                marker = " ✦" if item in ("Факел",) else ""   # можно использовать
+                lines.append(f"• {item} x{count}{marker}" if count > 1 else f"• {item}{marker}")
         return "🎒 Инвентарь:\n" + "\n".join(lines) if lines else "🎒 Инвентарь пуст"
 
     def get_character_text(self):
-        text = f"👤 Персонаж:\nАктивная ачивка: {self.active_achievement}\n\nЭкипировка:\n"
+        lines = []
         slots = {
             "head": "Голова",
             "torso": "Торс",
@@ -112,12 +114,13 @@ class Game:
             "pants": "Штаны",
             "boots": "Ботинки",
             "trinket": "Безделушка",
-            "pet": "Питомец"
+            "pet": "Питомец",
+            "hand": "Рука"
         }
         for slot, name in slots.items():
-            item = self.equipment.get(slot, None)
-            text += f"{name}: {item if item else 'Пусто'}\n"
-        return text
+            item = self.equipment.get(slot)
+            lines.append(f"{name}: {item if item else 'Пусто'}")
+        return "👤 Персонаж:\n\n" + "\n".join(lines)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # СОХРАНЕНИЕ / ЗАГРУЗКА
@@ -129,11 +132,9 @@ def load_game(uid: int) -> Game | None:
             game = Game()
             inv_dict = data["game_data"].pop("inventory", {})
             equip_dict = data["game_data"].pop("equipment", {})
-            active_ach = data["game_data"].pop("active_achievement", "Нет активной ачивки")
             game.__dict__.update(data["game_data"])
             game.inventory = Counter(inv_dict)
             game.equipment = equip_dict
-            game.active_achievement = active_ach
             return game
     except Exception as e:
         logging.error(f"Ошибка загрузки {uid}: {e}")
@@ -144,7 +145,6 @@ def save_game(uid: int, game: Game):
         data = game.__dict__.copy()
         data["inventory"] = dict(game.inventory)
         data["equipment"] = game.equipment
-        data["active_achievement"] = game.active_achievement
         players_collection.update_one(
             {"_id": uid},
             {"$set": {"game_data": data}},
@@ -164,49 +164,56 @@ def get_main_kb(game: Game):
     current_idx = locations.index(game.location)
     loc_row = []
     if current_idx > 0:
-        prev_loc = locations[current_idx - 1]
-        prev_icon = loc_icons[current_idx - 1]
-        loc_row.append(InlineKeyboardButton(text=f"← {prev_icon}", callback_data=f"loc_{prev_loc}"))
+        loc_row.append(InlineKeyboardButton(text=f"← {loc_icons[current_idx-1]}", callback_data=f"loc_{locations[current_idx-1]}"))
     loc_row.append(InlineKeyboardButton(text=f"{loc_icons[current_idx]} {game.location.capitalize()}", callback_data="loc_current"))
-    if current_idx < len(locations) - 1:
-        next_loc = locations[current_idx + 1]
-        next_icon = loc_icons[current_idx + 1]
+    if current_idx < len(locations)-1:
+        next_loc = locations[current_idx+1]
         if next_loc in game.unlocked_locations:
-            loc_row.append(InlineKeyboardButton(text=f"{next_icon} →", callback_data=f"loc_{next_loc}"))
+            loc_row.append(InlineKeyboardButton(text=f"{loc_icons[current_idx+1]} →", callback_data=f"loc_{next_loc}"))
         else:
-            loc_row.append(InlineKeyboardButton(text=f"{next_icon} Заблокировано", callback_data="loc_locked"))
+            loc_row.append(InlineKeyboardButton(text=f"{loc_icons[current_idx+1]} ×", callback_data="loc_locked"))
+
     kb = InlineKeyboardMarkup(inline_keyboard=[
         loc_row,
-        [InlineKeyboardButton(text="🔍 Исследовать ", callback_data="action_1"),
-         InlineKeyboardButton(text="🎒 Инвентарь ", callback_data="action_2")],
-        [InlineKeyboardButton(text=f"💧 Пить воду ({game.inventory['Бутылка воды']}/{game.water_capacity})", callback_data="action_3")
-         if game.inventory['Бутылка воды'] > 0 else InlineKeyboardButton(text="💧 Пить воду (пусто)", callback_data="action_3"),
-         InlineKeyboardButton(text="🌙 Спать ", callback_data="action_4")]
+        [InlineKeyboardButton(text="🔍 Исследовать", callback_data="action_1"),
+         InlineKeyboardButton(text="🎒 Инвентарь", callback_data="action_2")],
+        [InlineKeyboardButton(text=f"💧 Пить ({game.inventory['Бутылка воды']}/{game.water_capacity})", callback_data="action_3")
+         if game.inventory['Бутылка воды'] > 0 else InlineKeyboardButton(text="💧 Пить (пусто)", callback_data="action_3"),
+         InlineKeyboardButton(text="🌙 Спать", callback_data="action_4")]
     ])
     if game.weather == "rain":
-        kb.inline_keyboard.append([InlineKeyboardButton(text="🌧️ Собрать воду ", callback_data="action_collect_water")])
+        kb.inline_keyboard.append([InlineKeyboardButton(text="🌧️ Собрать воду", callback_data="action_collect_water")])
     return kb
 
 inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="👁️ Осмотреть ", callback_data="inv_inspect"),
-     InlineKeyboardButton(text="🛠️ Использовать ", callback_data="inv_use")],
-    [InlineKeyboardButton(text="🗑️ Выкинуть ", callback_data="inv_drop"),
-     InlineKeyboardButton(text="🛠️ Крафт ", callback_data="inv_craft")],
-    [InlineKeyboardButton(text="👤 Персонаж ", callback_data="inv_character"),
-     InlineKeyboardButton(text="← Назад ", callback_data="inv_back")],
+    [InlineKeyboardButton(text="👁️ Осмотреть", callback_data="inv_inspect"),
+     InlineKeyboardButton(text="🛠️ Использовать", callback_data="inv_use")],
+    [InlineKeyboardButton(text="🗑️ Выкинуть", callback_data="inv_drop"),
+     InlineKeyboardButton(text="🛠️ Крафт", callback_data="inv_craft")],
+    [InlineKeyboardButton(text="👤 Персонаж", callback_data="inv_character"),
+     InlineKeyboardButton(text="← Назад", callback_data="inv_back")],
 ])
 
 character_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="← Назад ", callback_data="character_back")],
-])  # Добавили клавиатуру для персонажа
-
-start_continue_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="🔑 Загрузить игру", callback_data="load_game")],
-    [InlineKeyboardButton(text="🎭 Начать новую", callback_data="new_game")],
+    [InlineKeyboardButton(text="← Назад", callback_data="character_back")]
 ])
 
-start_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="🫡 Я готов ", callback_data="start_game")]
+story_wolf_kb = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="Сбежать от волка", callback_data="story_wolf_flee")],
+    [InlineKeyboardButton(text="Использовать факел", callback_data="story_wolf_fight")]
+])
+
+story_peek_kb = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="Заглянуть под пень", callback_data="story_peek")]
+])
+
+story_cat_kb = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="Оставить его здесь", callback_data="story_cat_leave")],
+    [InlineKeyboardButton(text="Забрать с собой", callback_data="story_cat_take")]
+])
+
+story_next_kb = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="Дальше", callback_data="story_next")]
 ])
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -215,233 +222,294 @@ start_kb = InlineKeyboardMarkup(inline_keyboard=[
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     uid = message.from_user.id
-    # Пытаемся удалить все сообщения выше /start (кроме самого /start)
+    # чистим старые сообщения (опционально)
     try:
-        chat_id = message.chat.id
-        message_id = message.message_id
-        # Удаляем сообщения выше текущего (до 50 последних)
-        for i in range(1, 51):
-            try:
-                await bot.delete_message(chat_id, message_id - i)
-            except:
-                pass  # если сообщение уже удалено или не от бота — пропускаем
-    except Exception as e:
-        logging.warning(f"Очистка чата не удалась: {e}")
-    # Проверяем сохранение
-    loaded = load_game(uid)
-    if loaded:
-        games[uid] = loaded
-        await message.answer(
-            "У тебя есть сохранённая игра. Что хочешь?",
-            reply_markup=start_continue_kb
-        )
+        for i in range(1, 40):
+            await bot.delete_message(message.chat.id, message.message_id - i)
+    except:
+        pass
+
+    game = load_game(uid)
+    if game:
+        games[uid] = game
+        await message.answer("Есть сохранение. Продолжить?", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Продолжить", callback_data="load_game")],
+            [InlineKeyboardButton(text="Новая игра", callback_data="new_game")]
+        ]))
     else:
         await message.answer(
-            "🌲 Добро пожаловать в лес выживания!\n\n"
-            "Краткий гайд\n"
-            "❤️ 100 - здоровье\n"
-            "🍖 100 - сытость\n"
-            "💧 100 - жажда\n"
-            "⚡ 5 - действия на день\n"
-            "☀️ 100 - день\n\n"
-            "⚖️ Карма помогает выбраться.\n\n"
-            "Попробуй выжить...",
-            reply_markup=start_kb
+            "🌲 Ты открыл глаза. Вокруг лес. Холодно. Хочется есть.\n\n"
+            "Выживи.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Начать", callback_data="new_game")]
+            ])
         )
 
 @dp.callback_query()
 async def process_callback(callback: types.CallbackQuery):
     uid = callback.from_user.id
     now = time.time()
-    if uid in last_request_time and now - last_request_time[uid] < 1.0:
-        await callback.answer("Подожди секунду!")
+    if uid in last_request_time and now - last_request_time[uid] < 0.8:
+        await callback.answer("Подожди немного...")
         return
     last_request_time[uid] = now
+
     data = callback.data
     game = games.get(uid)
-    # Удаляем текущее главное окно ТОЛЬКО если это НЕ действие в текущем окне
-    is_action_in_current_window = data.startswith("loc_") or data in ("action_1", "action_3", "action_4", "action_collect_water")
-    if not is_action_in_current_window and uid in last_ui_msg_id:
+    if not game:
+        await callback.answer("Сначала начни игру")
+        return
+
+    chat_id = callback.message.chat.id
+
+    # Удаляем подменю при переходе
+    if data in ("action_2", "inv_character", "inv_back", "character_back", "story_") and uid in last_submenu_msg_id:
         try:
-            await bot.delete_message(callback.message.chat.id, last_ui_msg_id[uid])
-            del last_ui_msg_id[uid]
-        except:
-            pass
-    # Удаляем текущее подменю, если открывается новое или закрывается
-    if data in ("action_2", "inv_character", "inv_back", "character_back") and uid in last_submenu_msg_id:
-        try:
-            await bot.delete_message(callback.message.chat.id, last_submenu_msg_id[uid])
+            await bot.delete_message(chat_id, last_submenu_msg_id[uid])
             del last_submenu_msg_id[uid]
         except:
             pass
-    if data in ("start_game", "new_game"):
+
+    # ─── НОВАЯ ИГРА ────────────────────────────────────────
+    if data in ("new_game", "start_game"):
         game = Game()
         games[uid] = game
         save_game(uid, game)
         if uid in last_ui_msg_id:
             try:
-                await bot.delete_message(callback.message.chat.id, last_ui_msg_id[uid])
-                del last_ui_msg_id[uid]
+                await bot.delete_message(chat_id, last_ui_msg_id[uid])
             except:
                 pass
-        ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
-        last_ui_msg_id[uid] = ui_msg.message_id
+        msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
+        last_ui_msg_id[uid] = msg.message_id
         await callback.answer()
         return
+
+    # ─── ЗАГРУЗКА ──────────────────────────────────────────
     if data == "load_game":
-        game = load_game(uid)
-        if game:
-            games[uid] = game
-        else:
-            game = Game()
-            games[uid] = game
-            save_game(uid, game)
+        game = load_game(uid) or Game()
+        games[uid] = game
+        save_game(uid, game)
         if uid in last_ui_msg_id:
             try:
-                await bot.delete_message(callback.message.chat.id, last_ui_msg_id[uid])
-                del last_ui_msg_id[uid]
+                await bot.delete_message(chat_id, last_ui_msg_id[uid])
             except:
                 pass
-        ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
-        last_ui_msg_id[uid] = ui_msg.message_id
+        msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
+        last_ui_msg_id[uid] = msg.message_id
         await callback.answer()
         return
-    if not game:
-        await callback.message.answer("Сначала начни игру /start")
-        await callback.answer()
-        return
+
+    # ─── ДЕЙСТВИЯ НА ГЛАВНОМ ЭКРАНЕ ───────────────────────
     action_taken = False
-    if data.startswith("loc_"):
-        if data == "loc_locked":
-            game.add_log("Эта локация заблокирована...")
-        elif data == "loc_current":
-            game.add_log("Ты уже здесь.")
+
+    if data == "action_1":  # Исследовать
+        if game.ap <= 0:
+            game.add_log("Нет сил. Нужно поспать.")
         else:
-            new_loc = data.replace("loc_", "")
-            if new_loc in game.unlocked_locations:
-                game.location = new_loc
-                game.add_log(f"Перешёл в {new_loc}.")
-            else:
-                game.add_log("Локация не открыта.")
-        action_taken = True
-    elif data == "action_1":
-        if game.weather == "rain":
-            game.add_log("🌧️ Дождь льёт стеной, исследовать нельзя...")
-        elif game.ap > 0:
             game.ap -= 1
             game.hunger = max(0, game.hunger - 7)
             game.thirst = max(0, game.thirst - 8)
-            events = [
-                ("Нашёл ягоды! +10 сытости", lambda: setattr(game, 'hunger', min(100, game.hunger + 10))),
-                ("Нашёл мухоморы (предмет)", lambda: game.inventory.update({"Мухоморы": game.inventory.get("Мухоморы", 0) + 1})),
-                ("Нашёл родник! Наполнил бутылку +3 глотка", lambda: game.inventory.update({"Бутылка воды": min(game.water_capacity, game.inventory["Бутылка воды"] + 3)})),
-                ("Укус змеи! -5 HP", lambda: setattr(game, 'hp', max(0, game.hp - 5))),
-                ("Нашёл кору", lambda: game.inventory.update({"Кусок коры 🪵": game.inventory["Кусок коры 🪵"] + 1})),
-                ("Нашёл ветку", lambda: game.inventory.update({"Ветка": game.inventory.get("Ветка", 0) + 1})),
-                ("Нашёл нож", lambda: game.inventory.update({"Нож": game.inventory.get("Нож", 0) + 1}))
-            ]
-            event_text, event_effect = random.choice(events)
-            event_effect()
-            game.add_log(f"🔍 Ты пошёл исследовать... {event_text}")
-        else:
-            game.add_log("🏕 У тебя нет сил и нужно отдохнуть")
+
+            if game.equipment.get("hand") == "Факел" and game.story_state is None:
+                # Запускаем сюжет
+                game.story_state = "wolf_scene"
+                if uid in last_ui_msg_id:
+                    try:
+                        await bot.delete_message(chat_id, last_ui_msg_id[uid])
+                        del last_ui_msg_id[uid]
+                    except:
+                        pass
+                msg = await callback.message.answer(
+                    "Ты слышишь хриплое рычание и звук рвущейся земли.\n"
+                    "Осторожно выглядываешь из-за дерева.\n\n"
+                    "Старый, истощённый волк яростно копает под пнём.\n"
+                    "Рёбра торчат, один глаз мутный.\n\n"
+                    "Твои действия:",
+                    reply_markup=story_wolf_kb
+                )
+                last_submenu_msg_id[uid] = msg.message_id
+            else:
+                # обычное исследование
+                events = [
+                    ("Нашёл ягоды! +10 сытости", lambda: setattr(game, 'hunger', min(100, game.hunger + 10))),
+                    ("Нашёл мухоморы", lambda: game.inventory.update({"Мухоморы": game.inventory["Мухоморы"] + 1})),
+                    ("Нашёл родник → +3 воды", lambda: game.inventory.update({"Бутылка воды": min(game.water_capacity, game.inventory["Бутылка воды"] + 3)})),
+                    ("Укус насекомого –5 HP", lambda: setattr(game, 'hp', max(0, game.hp - 5))),
+                    ("Нашёл кору", lambda: game.inventory.update({"Кусок коры 🪵": game.inventory["Кусок коры 🪵"] + 1})),
+                    ("Нашёл ветку", lambda: game.inventory.update({"Ветка": game.inventory["Ветка"] + 1})),
+                    ("Нашёл нож", lambda: game.inventory.update({"Нож": game.inventory["Нож"] + 1}))
+                ]
+                text, effect = random.choice(events)
+                effect()
+                game.add_log(f"🔍 Исследовал... {text}")
+
+                # Первая ветка → мысль про факел (только один раз)
+                if "Ветка" in text and not game.found_branch_once:
+                    game.found_branch_once = True
+                    game.add_log("А из этого можно сделать факел?")
         action_taken = True
-    elif data == "action_2":
-        submenu_msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
-        last_submenu_msg_id[uid] = submenu_msg.message_id
+
+    # ─── ИСТОРИЯ ───────────────────────────────────────────
+    elif data == "story_wolf_flee":
+        game.add_log("Ты тихо отступил. Что бы там ни было — не твоё дело.")
+        game.story_state = None
+        msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
+        last_ui_msg_id[uid] = msg.message_id
+        await callback.answer("Ок")
+
+    elif data == "story_wolf_fight":
+        game.add_log("Ты размахнулся и ударил волка горящим факелом по морде.")
+        game.add_log("Шерсть вспыхнула, зверь взвыл и бросился в чащу.")
+        game.equipment["hand"] = None  # факел сломался
+        game.inventory["Факел"] = game.inventory["Факел"] - 1 if game.inventory["Факел"] > 0 else 0
+        msg = await callback.message.answer(
+            "Факел догорел и рассыпался угольками.\n\n"
+            "Теперь под пнём открыта яма...",
+            reply_markup=story_peek_kb
+        )
+        last_submenu_msg_id[uid] = msg.message_id
+        game.story_state = "after_fight"
+
+    elif data == "story_peek":
+        msg = await callback.message.answer(
+            "Ты наклоняешься. В темноте ямы блестят два испуганных глаза.\n"
+            "Маленький грязный котёнок дрожит и смотрит на тебя.\n\n"
+            "Твои действия:",
+            reply_markup=story_cat_kb
+        )
+        last_submenu_msg_id[uid] = msg.message_id
+        game.story_state = "cat_choice"
+
+    elif data == "story_cat_leave":
+        game.add_log("Ты оставил котёнка и ушёл. Лес снова стал тихим.")
+        game.story_state = None
+        msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
+        last_ui_msg_id[uid] = msg.message_id
+        await callback.answer("Ок")
+
+    elif data == "story_cat_take":
+        game.story_state = "cat_name_wait"
+        msg = await callback.message.answer(
+            "Ты осторожно берёшь дрожащего котёнка на руки.\n"
+            "Он холодный и лёгкий.\n\n"
+            "Как ты его назовёшь?",
+            reply_markup=None
+        )
+        last_submenu_msg_id[uid] = msg.message_id
         await callback.answer()
-        return
+
+    elif data == "story_next":
+        game.story_state = None
+        msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
+        last_ui_msg_id[uid] = msg.message_id
+        await callback.answer()
+
+    # ─── ИНВЕНТАРЬ ─────────────────────────────────────────
+    elif data == "action_2":
+        msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
+        last_submenu_msg_id[uid] = msg.message_id
+        await callback.answer()
+
+    # ─── ИСПОЛЬЗОВАТЬ ПРЕДМЕТ (факел) ─────────────────────
+    elif data == "inv_use":
+        # пока заглушка — в будущем выбор предмета
+        # для простоты считаем, что используем факел, если он есть
+        if game.inventory["Факел"] > 0 and game.equipment["hand"] is None:
+            game.inventory["Факел"] -= 1
+            game.equipment["hand"] = "Факел"
+            game.add_log("Ты взял факел в руку.")
+            action_taken = True
+        else:
+            game.add_log("Нечего использовать или рука занята.")
+
+    # ─── ПЕРСОНАЖ ─────────────────────────────────────────
+    elif data == "inv_character":
+        msg = await callback.message.answer(game.get_character_text(), reply_markup=character_inline_kb)
+        last_submenu_msg_id[uid] = msg.message_id
+        await callback.answer()
+
+    # ─── НАЗАД ИЗ ПОДМЕНЮ ─────────────────────────────────
+    elif data in ("inv_back", "character_back"):
+        msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
+        last_ui_msg_id[uid] = msg.message_id
+        await callback.answer()
+
+    # другие действия (пить, спать и т.д.) — оставляем как было
     elif data == "action_3":
         if game.inventory["Бутылка воды"] > 0:
             game.inventory["Бутылка воды"] -= 1
             game.thirst = min(100, game.thirst + 20)
-            game.add_log(f"💧 Напился... жажда +20 (осталось {game.inventory['Бутылка воды']}/{game.water_capacity})")
+            game.add_log(f"Напился. Жажда +20 (осталось {game.inventory['Бутылка воды']})")
         else:
-            game.add_log("💧 Бутылка пуста, найди источник!")
+            game.add_log("Бутылка пуста.")
         action_taken = True
+
     elif data == "action_4":
         game.day += 1
         game.ap = 5
         game.hunger = max(0, game.hunger - 15)
-        weather_choices = ["clear", "cloudy", "rain"]
-        weights = [70, 20, 10]
-        game.weather = random.choices(weather_choices, weights=weights, k=1)[0]
-        weather_name = {"clear": "ясно", "cloudy": "пасмурно", "rain": "дождь"}[game.weather]
-        game.add_log(f"🌙 День {game.day}. Выспался, голод -15. На улице {weather_name}.")
+        game.weather = random.choices(["clear", "cloudy", "rain"], weights=[70, 20, 10])[0]
+        w_name = {"clear": "ясно", "cloudy": "пасмурно", "rain": "дождь"}[game.weather]
+        game.add_log(f"День {game.day}. Выспался. Голод -15. {w_name.capitalize()}.")
         action_taken = True
-    elif data == "action_collect_water":
-        if game.weather == "rain":
-            added = 40
-            game.inventory["Бутылка воды"] = min(game.water_capacity, game.inventory["Бутылка воды"] + added)
-            game.add_log(f"🌧️ Собрал дождевую воду... +{added} (теперь {game.inventory['Бутылка воды']}/{game.water_capacity})")
-        else:
-            game.add_log("Сейчас не идёт дождь...")
-        action_taken = True
-    elif data == "inv_character":
-        submenu_msg = await callback.message.answer(game.get_character_text(), reply_markup=character_inline_kb)
-        last_submenu_msg_id[uid] = submenu_msg.message_id
-        await callback.answer()
-        return
-    elif data in ("inv_back", "character_back"):
-        ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
-        last_ui_msg_id[uid] = ui_msg.message_id
-        await callback.answer()
-        return
-    elif data in ("inv_inspect", "inv_use", "inv_drop", "inv_craft"):
-        game.add_log(f"{data.replace('inv_', '').capitalize()}... (заглушка)")
-        action_taken = True
+
     if action_taken:
         save_game(uid, game)
-        # Обновляем текущее главное окно (не удаляем)
         if uid in last_ui_msg_id:
             try:
                 await bot.edit_message_text(
-                    text=game.get_ui(),
-                    chat_id=callback.message.chat.id,
+                    game.get_ui(),
+                    chat_id=chat_id,
                     message_id=last_ui_msg_id[uid],
                     reply_markup=get_main_kb(game)
                 )
             except:
-                # Если edit не удалось — отправляем новое
-                ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
-                last_ui_msg_id[uid] = ui_msg.message_id
-        else:
-            ui_msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
-            last_ui_msg_id[uid] = ui_msg.message_id
-        await callback.answer()
+                msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
+                last_ui_msg_id[uid] = msg.message_id
 
-# ──────────────────────────────────────────────────────────────────────────────
-# SELF-PING + WEBHOOK
-# ──────────────────────────────────────────────────────────────────────────────
-PING_INTERVAL_SECONDS = 300
-async def self_ping_task():
-    if not BASE_URL:
-        logging.info("Self-ping отключён")
+    await callback.answer()
+
+# ─── ВВОД ИМЕНИ КОТЁНКА ────────────────────────────────────────
+@dp.message()
+async def handle_text_message(message: Message):
+    uid = message.from_user.id
+    game = games.get(uid)
+    if not game or game.story_state != "cat_name_wait":
         return
-    ping_url = f"{BASE_URL}/ping"
-    logging.info(f"Self-ping запущен (каждые {PING_INTERVAL_SECONDS} сек → {ping_url})")
-    while True:
+
+    name = message.text.strip()
+    if not name:
+        await message.answer("Дай хоть какое-то имя…")
+        return
+
+    game.equipment["pet"] = name
+    game.karma += 5
+    game.add_log(f"У вас появился питомец: {name}")
+    game.add_log(f"Карма +5 → {game.karma}/{game.karma_goal}")
+
+    game.story_state = None
+    save_game(uid, game)
+
+    msg = await message.answer(
+        f"«{name}» — произносишь ты вслух.\n"
+        "Котёнок прижимается ближе и тихо мурчит.\n\n"
+        "Впервые в этом лесу не так одиноко.",
+        reply_markup=story_next_kb
+    )
+    if uid in last_submenu_msg_id:
         try:
-            async with httpx.AsyncClient() as client:
-                r = await client.get(ping_url, timeout=10)
-                if r.status_code == 200:
-                    logging.info(f"[SELF-PING] OK → {time.strftime('%Y-%m-%d %H:%M:%S')}")
-                    try:
-                        await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
-                        logging.info(f"Webhook переустановлен: {WEBHOOK_URL}")
-                    except Exception as e:
-                        logging.warning(f"Авто-переустановка webhook: {e}")
-        except Exception as e:
-            logging.error(f"[SELF-PING] ошибка: {e}")
-        await asyncio.sleep(PING_INTERVAL_SECONDS)
+            await bot.delete_message(message.chat.id, last_submenu_msg_id[uid])
+        except:
+            pass
+    last_submenu_msg_id[uid] = msg.message_id
 
 # ──────────────────────────────────────────────────────────────────────────────
-# FASTAPI
+# FASTAPI + WEBHOOK + PING
 # ──────────────────────────────────────────────────────────────────────────────
 @app.get("/ping")
-@app.get("/health")
-async def health_check():
-    return PlainTextResponse("OK", status_code=200)
+async def ping():
+    return PlainTextResponse("OK")
 
 @app.post(WEBHOOK_PATH)
 async def webhook(request: Request):
@@ -452,28 +520,27 @@ async def webhook(request: Request):
         return {"ok": True}
     except Exception as e:
         logging.error(f"Webhook error: {e}")
-        raise HTTPException(status_code=500)
+        raise HTTPException(500)
 
 @app.on_event("startup")
 async def on_startup():
     if WEBHOOK_URL:
-        try:
-            await bot.delete_webhook(drop_pending_updates=True)
-        except:
-            pass
-        try:
-            await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
-            logging.info(f"Webhook установлен: {WEBHOOK_URL}")
-        except Exception as e:
-            logging.error(f"set_webhook failed: {e}")
+        await bot.delete_webhook(drop_pending_updates=True)
+        await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
+        logging.info(f"Webhook: {WEBHOOK_URL}")
     asyncio.create_task(self_ping_task())
 
-@app.on_event("shutdown")
-async def on_shutdown():
-    try:
-        await bot.delete_webhook(drop_pending_updates=True)
-    except:
-        pass
+async def self_ping_task():
+    if not BASE_URL:
+        return
+    url = f"{BASE_URL}/ping"
+    while True:
+        try:
+            async with httpx.AsyncClient() as c:
+                await c.get(url, timeout=8)
+        except:
+            pass
+        await asyncio.sleep(300)
 
 if __name__ == "__main__":
     import uvicorn
