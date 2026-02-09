@@ -6,9 +6,9 @@ import random
 from collections import Counter
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import Update, Message, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
-from aiogram.filters import CommandStart, Text
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.types import Update, Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.filters import CommandStart
 import httpx
 from pymongo import MongoClient
 
@@ -77,9 +77,9 @@ class Game:
             "boots": None,
             "trinket": None,
             "pet": None,
-            "hand": None          # ← новый слот под факел и возможно оружие позже
+            "hand": None
         }
-        self.story_state = None   # "wolf_scene", "cat_name_wait", None
+        self.story_state = None   # "wolf_scene", "cat_name_wait", etc.
         self.found_branch_once = False
 
     def add_log(self, text):
@@ -101,12 +101,11 @@ class Game:
         lines = []
         for item, count in self.inventory.items():
             if count > 0:
-                marker = " ✦" if item in ("Факел",) else ""   # можно использовать
+                marker = " ✦" if item in ("Факел",) else ""
                 lines.append(f"• {item} x{count}{marker}" if count > 1 else f"• {item}{marker}")
         return "🎒 Инвентарь:\n" + "\n".join(lines) if lines else "🎒 Инвентарь пуст"
 
     def get_character_text(self):
-        lines = []
         slots = {
             "head": "Голова",
             "torso": "Торс",
@@ -117,9 +116,7 @@ class Game:
             "pet": "Питомец",
             "hand": "Рука"
         }
-        for slot, name in slots.items():
-            item = self.equipment.get(slot)
-            lines.append(f"{name}: {item if item else 'Пусто'}")
+        lines = [f"{name}: {self.equipment.get(slot) or 'Пусто'}" for slot, name in slots.items()]
         return "👤 Персонаж:\n\n" + "\n".join(lines)
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -168,10 +165,11 @@ def get_main_kb(game: Game):
     loc_row.append(InlineKeyboardButton(text=f"{loc_icons[current_idx]} {game.location.capitalize()}", callback_data="loc_current"))
     if current_idx < len(locations)-1:
         next_loc = locations[current_idx+1]
+        next_icon = loc_icons[current_idx+1]
         if next_loc in game.unlocked_locations:
-            loc_row.append(InlineKeyboardButton(text=f"{loc_icons[current_idx+1]} →", callback_data=f"loc_{next_loc}"))
+            loc_row.append(InlineKeyboardButton(text=f"{next_icon} →", callback_data=f"loc_{next_loc}"))
         else:
-            loc_row.append(InlineKeyboardButton(text=f"{loc_icons[current_idx+1]} ×", callback_data="loc_locked"))
+            loc_row.append(InlineKeyboardButton(text=f"{next_icon} ×", callback_data="loc_locked"))
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         loc_row,
@@ -222,24 +220,26 @@ story_next_kb = InlineKeyboardMarkup(inline_keyboard=[
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     uid = message.from_user.id
-    # чистим старые сообщения (опционально)
+    # Опционально чистим старые сообщения
     try:
         for i in range(1, 40):
             await bot.delete_message(message.chat.id, message.message_id - i)
     except:
         pass
 
-    game = load_game(uid)
-    if game:
-        games[uid] = game
-        await message.answer("Есть сохранение. Продолжить?", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Продолжить", callback_data="load_game")],
-            [InlineKeyboardButton(text="Новая игра", callback_data="new_game")]
-        ]))
+    loaded = load_game(uid)
+    if loaded:
+        games[uid] = loaded
+        await message.answer(
+            "Есть сохранение. Что делаем?",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Продолжить", callback_data="load_game")],
+                [InlineKeyboardButton(text="Новая игра", callback_data="new_game")]
+            ])
+        )
     else:
         await message.answer(
-            "🌲 Ты открыл глаза. Вокруг лес. Холодно. Хочется есть.\n\n"
-            "Выживи.",
+            "🌲 Ты открыл глаза. Вокруг только лес. Холодно. Хочется есть.\n\nВыживи.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="Начать", callback_data="new_game")]
             ])
@@ -257,53 +257,48 @@ async def process_callback(callback: types.CallbackQuery):
     data = callback.data
     game = games.get(uid)
     if not game:
-        await callback.answer("Сначала начни игру")
+        await callback.answer("Сначала начни игру /start")
         return
 
     chat_id = callback.message.chat.id
 
-    # Удаляем подменю при переходе
-    if data in ("action_2", "inv_character", "inv_back", "character_back", "story_") and uid in last_submenu_msg_id:
+    # Удаляем предыдущее подменю при необходимости
+    if data.startswith(("action_", "inv_", "story_")) and uid in last_submenu_msg_id:
         try:
             await bot.delete_message(chat_id, last_submenu_msg_id[uid])
             del last_submenu_msg_id[uid]
         except:
             pass
 
-    # ─── НОВАЯ ИГРА ────────────────────────────────────────
+    action_taken = False
+
+    # ─── НОВАЯ ИГРА / ЗАГРУЗКА ───────────────────────────────
     if data in ("new_game", "start_game"):
         game = Game()
         games[uid] = game
         save_game(uid, game)
         if uid in last_ui_msg_id:
-            try:
-                await bot.delete_message(chat_id, last_ui_msg_id[uid])
-            except:
-                pass
+            try: await bot.delete_message(chat_id, last_ui_msg_id[uid])
+            except: pass
         msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = msg.message_id
         await callback.answer()
         return
 
-    # ─── ЗАГРУЗКА ──────────────────────────────────────────
     if data == "load_game":
         game = load_game(uid) or Game()
         games[uid] = game
         save_game(uid, game)
         if uid in last_ui_msg_id:
-            try:
-                await bot.delete_message(chat_id, last_ui_msg_id[uid])
-            except:
-                pass
+            try: await bot.delete_message(chat_id, last_ui_msg_id[uid])
+            except: pass
         msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = msg.message_id
         await callback.answer()
         return
 
-    # ─── ДЕЙСТВИЯ НА ГЛАВНОМ ЭКРАНЕ ───────────────────────
-    action_taken = False
-
-    if data == "action_1":  # Исследовать
+    # ─── ИССЛЕДОВАНИЕ ────────────────────────────────────────
+    if data == "action_1":
         if game.ap <= 0:
             game.add_log("Нет сил. Нужно поспать.")
         else:
@@ -312,14 +307,10 @@ async def process_callback(callback: types.CallbackQuery):
             game.thirst = max(0, game.thirst - 8)
 
             if game.equipment.get("hand") == "Факел" and game.story_state is None:
-                # Запускаем сюжет
                 game.story_state = "wolf_scene"
                 if uid in last_ui_msg_id:
-                    try:
-                        await bot.delete_message(chat_id, last_ui_msg_id[uid])
-                        del last_ui_msg_id[uid]
-                    except:
-                        pass
+                    try: await bot.delete_message(chat_id, last_ui_msg_id[uid]); del last_ui_msg_id[uid]
+                    except: pass
                 msg = await callback.message.answer(
                     "Ты слышишь хриплое рычание и звук рвущейся земли.\n"
                     "Осторожно выглядываешь из-за дерева.\n\n"
@@ -330,7 +321,6 @@ async def process_callback(callback: types.CallbackQuery):
                 )
                 last_submenu_msg_id[uid] = msg.message_id
             else:
-                # обычное исследование
                 events = [
                     ("Нашёл ягоды! +10 сытости", lambda: setattr(game, 'hunger', min(100, game.hunger + 10))),
                     ("Нашёл мухоморы", lambda: game.inventory.update({"Мухоморы": game.inventory["Мухоморы"] + 1})),
@@ -344,28 +334,25 @@ async def process_callback(callback: types.CallbackQuery):
                 effect()
                 game.add_log(f"🔍 Исследовал... {text}")
 
-                # Первая ветка → мысль про факел (только один раз)
                 if "Ветка" in text and not game.found_branch_once:
                     game.found_branch_once = True
                     game.add_log("А из этого можно сделать факел?")
         action_taken = True
 
-    # ─── ИСТОРИЯ ───────────────────────────────────────────
+    # ─── СЮЖЕТНЫЕ СОБЫТИЯ ────────────────────────────────────
     elif data == "story_wolf_flee":
         game.add_log("Ты тихо отступил. Что бы там ни было — не твоё дело.")
         game.story_state = None
         msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = msg.message_id
-        await callback.answer("Ок")
 
     elif data == "story_wolf_fight":
         game.add_log("Ты размахнулся и ударил волка горящим факелом по морде.")
         game.add_log("Шерсть вспыхнула, зверь взвыл и бросился в чащу.")
-        game.equipment["hand"] = None  # факел сломался
-        game.inventory["Факел"] = game.inventory["Факел"] - 1 if game.inventory["Факел"] > 0 else 0
+        game.equipment["hand"] = None
+        game.inventory["Факел"] -= 1 if game.inventory["Факел"] > 0 else 0
         msg = await callback.message.answer(
-            "Факел догорел и рассыпался угольками.\n\n"
-            "Теперь под пнём открыта яма...",
+            "Факел догорел и рассыпался угольками.\n\nТеперь под пнём открыта яма...",
             reply_markup=story_peek_kb
         )
         last_submenu_msg_id[uid] = msg.message_id
@@ -386,7 +373,6 @@ async def process_callback(callback: types.CallbackQuery):
         game.story_state = None
         msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = msg.message_id
-        await callback.answer("Ок")
 
     elif data == "story_cat_take":
         game.story_state = "cat_name_wait"
@@ -397,24 +383,18 @@ async def process_callback(callback: types.CallbackQuery):
             reply_markup=None
         )
         last_submenu_msg_id[uid] = msg.message_id
-        await callback.answer()
 
     elif data == "story_next":
         game.story_state = None
         msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = msg.message_id
-        await callback.answer()
 
-    # ─── ИНВЕНТАРЬ ─────────────────────────────────────────
+    # ─── ИНВЕНТАРЬ / ПЕРСОНАЖ / ИСПОЛЬЗОВАНИЕ ────────────────
     elif data == "action_2":
         msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
         last_submenu_msg_id[uid] = msg.message_id
-        await callback.answer()
 
-    # ─── ИСПОЛЬЗОВАТЬ ПРЕДМЕТ (факел) ─────────────────────
     elif data == "inv_use":
-        # пока заглушка — в будущем выбор предмета
-        # для простоты считаем, что используем факел, если он есть
         if game.inventory["Факел"] > 0 and game.equipment["hand"] is None:
             game.inventory["Факел"] -= 1
             game.equipment["hand"] = "Факел"
@@ -423,19 +403,14 @@ async def process_callback(callback: types.CallbackQuery):
         else:
             game.add_log("Нечего использовать или рука занята.")
 
-    # ─── ПЕРСОНАЖ ─────────────────────────────────────────
     elif data == "inv_character":
         msg = await callback.message.answer(game.get_character_text(), reply_markup=character_inline_kb)
         last_submenu_msg_id[uid] = msg.message_id
-        await callback.answer()
 
-    # ─── НАЗАД ИЗ ПОДМЕНЮ ─────────────────────────────────
     elif data in ("inv_back", "character_back"):
         msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = msg.message_id
-        await callback.answer()
 
-    # другие действия (пить, спать и т.д.) — оставляем как было
     elif data == "action_3":
         if game.inventory["Бутылка воды"] > 0:
             game.inventory["Бутылка воды"] -= 1
@@ -470,13 +445,13 @@ async def process_callback(callback: types.CallbackQuery):
 
     await callback.answer()
 
-# ─── ВВОД ИМЕНИ КОТЁНКА ────────────────────────────────────────
-@dp.message()
-async def handle_text_message(message: Message):
+# ─── ВВОД ИМЕНИ КОТЁНКА ───────────────────────────────────────────────────────
+@dp.message(F.text)
+async def handle_name_input(message: Message):
     uid = message.from_user.id
     game = games.get(uid)
     if not game or game.story_state != "cat_name_wait":
-        return
+        return  # игнорируем все остальные текстовые сообщения
 
     name = message.text.strip()
     if not name:
@@ -491,23 +466,26 @@ async def handle_text_message(message: Message):
     game.story_state = None
     save_game(uid, game)
 
-    msg = await message.answer(
+    # Удаляем сообщение с запросом имени, если оно было
+    if uid in last_submenu_msg_id:
+        try:
+            await bot.delete_message(message.chat.id, last_submenu_msg_id[uid])
+            del last_submenu_msg_id[uid]
+        except:
+            pass
+
+    await message.answer(
         f"«{name}» — произносишь ты вслух.\n"
         "Котёнок прижимается ближе и тихо мурчит.\n\n"
         "Впервые в этом лесу не так одиноко.",
         reply_markup=story_next_kb
     )
-    if uid in last_submenu_msg_id:
-        try:
-            await bot.delete_message(message.chat.id, last_submenu_msg_id[uid])
-        except:
-            pass
-    last_submenu_msg_id[uid] = msg.message_id
 
 # ──────────────────────────────────────────────────────────────────────────────
 # FASTAPI + WEBHOOK + PING
 # ──────────────────────────────────────────────────────────────────────────────
 @app.get("/ping")
+@app.get("/health")
 async def ping():
     return PlainTextResponse("OK")
 
@@ -520,14 +498,20 @@ async def webhook(request: Request):
         return {"ok": True}
     except Exception as e:
         logging.error(f"Webhook error: {e}")
-        raise HTTPException(500)
+        raise HTTPException(status_code=500)
 
 @app.on_event("startup")
 async def on_startup():
     if WEBHOOK_URL:
-        await bot.delete_webhook(drop_pending_updates=True)
-        await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
-        logging.info(f"Webhook: {WEBHOOK_URL}")
+        try:
+            await bot.delete_webhook(drop_pending_updates=True)
+        except:
+            pass
+        try:
+            await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
+            logging.info(f"Webhook установлен: {WEBHOOK_URL}")
+        except Exception as e:
+            logging.error(f"set_webhook failed: {e}")
     asyncio.create_task(self_ping_task())
 
 async def self_ping_task():
@@ -537,7 +521,7 @@ async def self_ping_task():
     while True:
         try:
             async with httpx.AsyncClient() as c:
-                await c.get(url, timeout=8)
+                await c.get(url, timeout=10)
         except:
             pass
         await asyncio.sleep(300)
