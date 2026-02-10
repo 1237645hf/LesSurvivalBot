@@ -399,7 +399,7 @@ async def process_callback(callback: types.CallbackQuery):
         last_ui_msg_id[uid] = msg.message_id
 
     elif data == "wolf_fight":
-        game.add_log(
+        full_fight_text = (
             "Ты поднимаешь факел повыше. Пламя трещит громче.\n"
             "Волк резко оборачивается, глаза вспыхивают жёлтым в свете огня.\n"
             "Секунду он смотрит на тебя — не нападает, но и не отступает.\n"
@@ -407,14 +407,14 @@ async def process_callback(callback: types.CallbackQuery):
             "Факел вспыхивает ярче от рывка воздуха.\n"
             "Зверь подается назад и ты замахиваешься факелом.\n"
             "Ещё мгновение — и ты видишь как подпалённый волк убегает в темноту между деревьями, бросив свою яму.\n"
-            "Остатки факела медленно догорают на земле возле тебя.\n\n"
-            "Теперь перед тобой открытая яма под пнём."
+            "Остатки факела медленно догорают на земле возле тебя."
         )
+        game.add_log(full_fight_text)
         game.equipment["hand"] = None
         game.inventory["Факел"] = max(0, game.inventory.get("Факел", 0) - 1)
         game.story_state = "after_fight"
         msg = await callback.message.answer(
-            "Теперь перед тобой открытая яма под пнём.",
+            full_fight_text + "\n\nТеперь перед тобой открытая яма под пнём.",
             reply_markup=peek_kb
         )
         last_submenu_msg_id[uid] = msg.message_id
@@ -465,7 +465,6 @@ async def process_callback(callback: types.CallbackQuery):
         last_ui_msg_id[uid] = msg.message_id
 
     elif data == "action_2":
-        # Всегда открываем инвентарь заново
         msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
         last_submenu_msg_id[uid] = msg.message_id
         await callback.answer()
@@ -492,7 +491,6 @@ async def process_callback(callback: types.CallbackQuery):
         game.inventory["Факел"] += 1
         game.add_log("Вы скрафтили факел.")
         game.add_log("Для крафта факела вам пришлось использовать носок с левой ноги.")
-        # Остаёмся в инвентаре
         msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
         last_submenu_msg_id[uid] = msg.message_id
         save_game(uid, game)
@@ -596,11 +594,9 @@ async def handle_name_input(message: Message):
         reply_markup=next_kb
     )
 
-    # Добавляем в лог главного экрана
     game.add_log(f"У вас появился питомец: {name}")
     game.add_log(f"+5 кармы")
 
-    # Обновляем главный UI
     if uid in last_ui_msg_id:
         try:
             await bot.edit_message_text(
