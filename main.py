@@ -70,7 +70,7 @@ class Game:
             "head": None, "torso": None, "back": None, "pants": None,
             "boots": None, "trinket": None, "pet": None, "hand": None
         }
-        self.story_state = None  # None / "wolf_scene" / "after_fight" / "cat_choice" / "cat_name_wait"
+        self.story_state = None
         self.found_branch_once = False
 
     def add_log(self, text):
@@ -265,7 +265,7 @@ async def process_callback(callback: types.CallbackQuery):
     logging.info(f"[CALLBACK] {data} от {uid}")
     chat_id = callback.message.chat.id
 
-    if data.startswith(("action_", "inv_", "story_")) and uid in last_submenu_msg_id:
+    if data.startswith(("action_", "inv_", "wolf_", "peek_", "cat_")) and uid in last_submenu_msg_id:
         try:
             await bot.delete_message(chat_id, last_submenu_msg_id[uid])
             del last_submenu_msg_id[uid]
@@ -441,17 +441,14 @@ async def process_callback(callback: types.CallbackQuery):
         last_submenu_msg_id[uid] = msg.message_id
 
     elif data == "inv_craft":
-        has_craft = False
         kb = InlineKeyboardMarkup(inline_keyboard=[])
         if game.inventory.get("Спички 🔥", 0) >= 1 and game.inventory.get("Ветка", 0) >= 1:
-            has_craft = True
             kb.inline_keyboard.append([
                 InlineKeyboardButton(text="Факел (1 ветка + 1 спичка)", callback_data="craft_Факел")
             ])
-        if not has_craft:
-            text = "Доступный крафт:\n\nПока ничего нельзя скрафтить.\n(нужна Ветка и Спички 🔥)"
-        else:
             text = "Доступный крафт:"
+        else:
+            text = "Пока ничего нельзя скрафтить.\n(нужна Ветка и Спички 🔥)"
         kb.inline_keyboard.append([InlineKeyboardButton(text="← Назад", callback_data="inv_back")])
         msg = await callback.message.answer(text, reply_markup=kb)
         last_submenu_msg_id[uid] = msg.message_id
@@ -465,11 +462,9 @@ async def process_callback(callback: types.CallbackQuery):
         game.inventory["Факел"] += 1
         game.add_log("Вы скрафтили факел.")
         game.add_log("Для крафта факела вам пришлось использовать носок с левой ноги.")
-        await callback.message.answer(
-            "Вы скрафтили факел.\nДля крафта факела вам пришлось использовать носок с левой ноги."
-        )
-        msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
-        last_submenu_msg_id[uid] = msg.message_id
+        # Возврат на главный экран — лог виден сразу
+        msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
+        last_ui_msg_id[uid] = msg.message_id
         save_game(uid, game)
 
     elif data == "inv_use":
@@ -550,8 +545,8 @@ async def handle_name_input(message: Message):
     game.equipment["pet"] = name
     game.karma += 5
     game.add_log(f"У вас появился питомец: {name}")
-    game.add_log(f"+5 кармы")
-    game.add_log("- Факел удалён, ты решаешь больше ночью не ходить на исследования.")
+    game.add_log("+5 кармы")
+    game.add_log("Факел удалён, ты решаешь больше ночью не ходить на исследования.")
     game.story_state = None
     save_game(uid, game)
     if uid in last_submenu_msg_id:
