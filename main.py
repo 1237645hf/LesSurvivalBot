@@ -43,7 +43,7 @@ mongo_client.server_info()
 logging.info("MongoDB подключён успешно")
 
 # ──────────────────────────────────────────────────────────────────────────────
-# КЛАСС ИГРЫ
+# КЛАСС ИГГРЫ
 # ──────────────────────────────────────────────────────────────────────────────
 class Game:
     def __init__(self):
@@ -67,17 +67,11 @@ class Game:
         self.unlocked_locations = ["лес", "тёмный лес", "озеро", "заброшенный лагерь"]
         self.water_capacity = 10
         self.equipment = {
-            "head": None,
-            "torso": None,
-            "back": None,
-            "pants": None,
-            "boots": None,
-            "trinket": None,
-            "pet": None,
-            "hand": None
+            "head": None, "torso": None, "back": None, "pants": None,
+            "boots": None, "trinket": None, "pet": None, "hand": None
         }
         self.story_state = None
-        self.found_branch_once = False
+        self.found_branch_once = False  # пока оставляем, но теперь не строго обязательно
 
     def add_log(self, text):
         self.log.append(text)
@@ -98,9 +92,9 @@ class Game:
         equipped_hand = self.equipment.get("hand")
         for item, count in self.inventory.items():
             if count > 0:
-                marker = " ✦" if item in ("Факел",) else ""
-                equipped = " ✅" if item == equipped_hand else ""
-                line = f"• {item} x{count}{marker}{equipped}" if count > 1 else f"• {item}{marker}{equipped}"
+                marker = " ✦" if item == "Факел" else ""
+                equipped_mark = " ✅" if item == equipped_hand else ""
+                line = f"• {item} x{count}{marker}{equipped_mark}" if count > 1 else f"• {item}{marker}{equipped_mark}"
                 lines.append(line)
         text = "🎒 Инвентарь:\n" + "\n".join(lines) if lines else "🎒 Инвентарь пуст"
         text += "\n━━━━━━━━━━━━━━━━━━━"
@@ -108,14 +102,8 @@ class Game:
 
     def get_character_text(self):
         slots = {
-            "head": "Голова",
-            "torso": "Торс",
-            "back": "Спина",
-            "pants": "Штаны",
-            "boots": "Ботинки",
-            "trinket": "Безделушка",
-            "pet": "Питомец",
-            "hand": "Рука"
+            "head": "Голова", "torso": "Торс", "back": "Спина", "pants": "Штаны",
+            "boots": "Ботинки", "trinket": "Безделушка", "pet": "Питомец", "hand": "Рука"
         }
         lines = [f"{name}: {self.equipment.get(slot) or 'Пусто'}" for slot, name in slots.items()]
         return "👤 Персонаж:\n\n" + "\n".join(lines)
@@ -154,32 +142,43 @@ def save_game(uid: int, game: Game):
 games = {}
 
 # ──────────────────────────────────────────────────────────────────────────────
-# РЕЦЕПТЫ КРАФТА
+# КРАФТ
 # ──────────────────────────────────────────────────────────────────────────────
 CRAFT_RECIPES = {
     "Факел": {
         "required": {"Спички 🔥": 1, "Ветка": 1},
         "result": {"Факел": 1},
-        "message": "Вы скрафтили факел, используя спички и ветку.\nТеперь можно отпугнуть волков... или просто посветить."
+        "craft_log": "Вы скрафтили факел.",
+        "funny_log": "Для крафта факела вам пришлось использовать носок с левой ноги."
     }
 }
 
 def get_craft_kb(game: Game):
     buttons = []
-    if game.found_branch_once:
-        buttons.append([InlineKeyboardButton(text="Факел 🔥 (Спички + Ветка)", callback_data="craft_Факел")])
+    has_recipe = False
+    for item, recipe in CRAFT_RECIPES.items():
+        if all(game.inventory.get(k, 0) >= v for k, v in recipe["required"].items()):
+            has_recipe = True
+            buttons.append([InlineKeyboardButton(
+                text=f"{item} 🔥 (Спички + Ветка)",
+                callback_data=f"craft_{item}"
+            )])
+    if not has_recipe:
+        buttons.append([InlineKeyboardButton(text="Пока ничего нельзя скрафтить", callback_data="dummy")])
     buttons.append([InlineKeyboardButton(text="← Назад", callback_data="inv_back")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-def get_use_items_kb(game: Game):
+def get_use_kb(game: Game):
     buttons = []
     if game.inventory.get("Факел", 0) > 0 and game.equipment["hand"] is None:
         buttons.append([InlineKeyboardButton(text="Факел 🔥", callback_data="use_item_Факел")])
+    if not buttons:
+        buttons.append([InlineKeyboardButton(text="Нечего использовать", callback_data="dummy")])
     buttons.append([InlineKeyboardButton(text="← Назад", callback_data="inv_back")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# КНОПКИ
+# КНОПКИ ОСНОВНЫЕ
 # ──────────────────────────────────────────────────────────────────────────────
 def get_main_kb(game: Game):
     locations = ["лес", "тёмный лес", "озеро", "заброшенный лагерь"]
@@ -240,7 +239,7 @@ story_next_kb = InlineKeyboardMarkup(inline_keyboard=[
 ])
 
 # ──────────────────────────────────────────────────────────────────────────────
-# ПРИВЕТСТВЕННОЕ СООБЩЕНИЕ
+# ПРИВЕТСТВИЕ
 # ──────────────────────────────────────────────────────────────────────────────
 GUIDE_TEXT = (
     "🌲 Добро пожаловать в лес выживания!\n\n"
@@ -260,7 +259,7 @@ GUIDE_TEXT = (
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     uid = message.from_user.id
-    logging.info(f"[START] Получен /start от пользователя {uid}")
+    logging.info(f"[START] /start от {uid}")
     try:
         for i in range(1, 100):
             await bot.delete_message(message.chat.id, message.message_id - i)
@@ -302,17 +301,7 @@ async def process_callback(callback: types.CallbackQuery):
         except:
             pass
 
-    if data == "new_game":
-        await callback.message.answer(
-            GUIDE_TEXT,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Начать", callback_data="start_new_game")]
-            ])
-        )
-        await callback.answer()
-        return
-
-    if data == "start_new_game":
+    if data in ("new_game", "start_new_game"):
         game = Game()
         games[uid] = game
         save_game(uid, game)
@@ -336,6 +325,16 @@ async def process_callback(callback: types.CallbackQuery):
         await callback.answer()
         return
 
+    if data == "new_game":
+        await callback.message.answer(
+            GUIDE_TEXT,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Начать", callback_data="start_new_game")]
+            ])
+        )
+        await callback.answer()
+        return
+
     game = games.get(uid)
     if not game:
         await callback.answer("Сначала начни игру /start")
@@ -356,11 +355,7 @@ async def process_callback(callback: types.CallbackQuery):
                     try: await bot.delete_message(chat_id, last_ui_msg_id[uid]); del last_ui_msg_id[uid]
                     except: pass
                 msg = await callback.message.answer(
-                    "Ты слышишь хриплое рычание и звук рвущейся земли.\n"
-                    "Осторожно выглядываешь из-за дерева.\n\n"
-                    "Старый, истощённый волк яростно копает под пнём.\n"
-                    "Рёбра торчат, один глаз мутный.\n\n"
-                    "Твои действия:",
+                    "Ты слышишь хриплое рычание...\nСтарый волк копает под пнём...\nТвои действия:",
                     reply_markup=story_wolf_kb
                 )
                 last_submenu_msg_id[uid] = msg.message_id
@@ -377,24 +372,23 @@ async def process_callback(callback: types.CallbackQuery):
                 text, effect = random.choice(events)
                 effect()
                 game.add_log(f"🔍 Исследовал... {text}")
-                if "Ветка" in text and not game.found_branch_once:
-                    game.found_branch_once = True
+                if "ветка" in text.lower():
                     game.add_log("А из этого можно сделать факел?")
         action_taken = True
 
+    # ─── СЮЖЕТ С ВОЛКОМ И КОТЁНКОМ (без изменений) ───
     elif data == "story_wolf_flee":
-        game.add_log("Ты тихо отступил. Что бы там ни было — не твоё дело.")
+        game.add_log("Ты тихо отступил.")
         game.story_state = None
         msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = msg.message_id
 
     elif data == "story_wolf_fight":
-        game.add_log("Ты размахнулся и ударил волка горящим факелом по морде.")
-        game.add_log("Шерсть вспыхнула, зверь взвыл и бросился в чащу.")
+        game.add_log("Ты ударил волка факелом. Он убежал.")
         game.equipment["hand"] = None
-        game.inventory["Факел"] -= 1 if game.inventory["Факел"] > 0 else 0
+        game.inventory["Факел"] -= 1 if game.inventory.get("Факел", 0) > 0 else 0
         msg = await callback.message.answer(
-            "Факел догорел и рассыпался угольками.\n\nТеперь под пнём открыта яма...",
+            "Факел догорел.\n\nТеперь под пнём открыта яма...",
             reply_markup=story_peek_kb
         )
         last_submenu_msg_id[uid] = msg.message_id
@@ -402,16 +396,14 @@ async def process_callback(callback: types.CallbackQuery):
 
     elif data == "story_peek":
         msg = await callback.message.answer(
-            "Ты наклоняешься. В темноте ямы блестят два испуганных глаза.\n"
-            "Маленький грязный котёнок дрожит и смотрит на тебя.\n\n"
-            "Твои действия:",
+            "В яме маленький грязный котёнок...\nТвои действия:",
             reply_markup=story_cat_kb
         )
         last_submenu_msg_id[uid] = msg.message_id
         game.story_state = "cat_choice"
 
     elif data == "story_cat_leave":
-        game.add_log("Ты оставил котёнка и ушёл. Лес снова стал тихим.")
+        game.add_log("Ты оставил котёнка.")
         game.story_state = None
         msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = msg.message_id
@@ -419,9 +411,7 @@ async def process_callback(callback: types.CallbackQuery):
     elif data == "story_cat_take":
         game.story_state = "cat_name_wait"
         msg = await callback.message.answer(
-            "Ты осторожно берёшь дрожащего котёнка на руки.\n"
-            "Он холодный и лёгкий.\n\n"
-            "Как ты его назовёшь?",
+            "Ты берёшь котёнка.\nКак ты его назовёшь?",
             reply_markup=None
         )
         last_submenu_msg_id[uid] = msg.message_id
@@ -431,20 +421,15 @@ async def process_callback(callback: types.CallbackQuery):
         msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = msg.message_id
 
+    # ─── ИНВЕНТАРЬ ───
     elif data == "action_2":
         msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
         last_submenu_msg_id[uid] = msg.message_id
 
     elif data == "inv_craft":
-        if not game.found_branch_once:
-            game.add_log("Вы ещё не нашли ветку. Исследуйте лес!")
-            await callback.answer("Ветка не найдена", show_alert=True)
-            return
-        craft_text = "Доступные крафты:\n\n"
-        if "Факел" in CRAFT_RECIPES:
-            craft_text += "• Факел (1 Спички + 1 Ветка)\n"
+        craft_text = "Что можно скрафтить:\n"
         msg = await callback.message.answer(
-            craft_text + "\nЧто хотите скрафтить?",
+            craft_text,
             reply_markup=get_craft_kb(game)
         )
         last_submenu_msg_id[uid] = msg.message_id
@@ -455,8 +440,7 @@ async def process_callback(callback: types.CallbackQuery):
             await callback.answer("Неизвестный рецепт")
             return
         recipe = CRAFT_RECIPES[item]
-        can_craft = all(game.inventory.get(k, 0) >= v for k, v in recipe["required"].items())
-        if not can_craft:
+        if not all(game.inventory.get(k, 0) >= v for k, v in recipe["required"].items()):
             await callback.answer("Недостаточно материалов!", show_alert=True)
             return
         # Крафт
@@ -464,37 +448,33 @@ async def process_callback(callback: types.CallbackQuery):
             game.inventory[k] -= v
         for k, v in recipe["result"].items():
             game.inventory[k] += v
-        game.add_log(recipe["message"])
-        await callback.message.answer(recipe["message"])
+        game.add_log(recipe["craft_log"])
+        game.add_log(recipe["funny_log"])
+        await callback.message.answer(f"{recipe['craft_log']}\n{recipe['funny_log']}")
         # Возврат в инвентарь
         msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
         last_submenu_msg_id[uid] = msg.message_id
         save_game(uid, game)
 
     elif data == "inv_use":
-        if not any(game.inventory.get(it, 0) > 0 for it in ["Факел"]):
-            game.add_log("Нечего использовать.")
-            await callback.answer()
-            return
         msg = await callback.message.answer(
             "Что использовать?",
-            reply_markup=get_use_items_kb(game)
+            reply_markup=get_use_kb(game)
         )
         last_submenu_msg_id[uid] = msg.message_id
 
     elif data.startswith("use_item_"):
         item = data.split("_", 2)[2]
         if item == "Факел":
-            if game.inventory["Факел"] > 0 and game.equipment["hand"] is None:
+            if game.inventory.get("Факел", 0) > 0 and game.equipment["hand"] is None:
                 game.inventory["Факел"] -= 1
                 game.equipment["hand"] = "Факел"
                 game.add_log("Вы экипировали факел в руку.")
-                await callback.message.answer("Факел теперь в руке! Он горит ярко.")
                 msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
                 last_submenu_msg_id[uid] = msg.message_id
                 save_game(uid, game)
             else:
-                game.add_log("Нельзя экипировать факел.")
+                game.add_log("Нельзя экипировать факел сейчас.")
         await callback.answer()
 
     elif data == "inv_character":
@@ -539,20 +519,20 @@ async def process_callback(callback: types.CallbackQuery):
 
     await callback.answer()
 
-# ─── ВВОД ИМЕНИ КОТЁНКА ───────────────────────────────────────────────────────
+# ─── ИМЯ КОТЁНКА ───
 @dp.message(F.text)
 async def handle_name_input(message: Message):
     uid = message.from_user.id
     game = games.get(uid)
     if not game or game.story_state != "cat_name_wait":
         return
-    name = message.text.strip()
+    name = message.text.strip()[:30]
     if not name:
         await message.answer("Дай хоть какое-то имя…")
         return
     game.equipment["pet"] = name
     game.karma += 5
-    game.add_log(f"У вас появился питомец: {name}")
+    game.add_log(f"Питомец: {name}")
     game.add_log(f"Карма +5 → {game.karma}/{game.karma_goal}")
     game.story_state = None
     save_game(uid, game)
@@ -563,14 +543,12 @@ async def handle_name_input(message: Message):
         except:
             pass
     await message.answer(
-        f"«{name}» — произносишь ты вслух.\n"
-        "Котёнок прижимается ближе и тихо мурчит.\n\n"
-        "Впервые в этом лесу не так одиноко.",
+        f"«{name}» — теперь у тебя есть друг.\nОн тихо мурчит.",
         reply_markup=story_next_kb
     )
 
 # ──────────────────────────────────────────────────────────────────────────────
-# FASTAPI + WEBHOOK + PING
+# FASTAPI + WEBHOOK
 # ──────────────────────────────────────────────────────────────────────────────
 @app.get("/ping")
 @app.get("/health")
@@ -583,49 +561,35 @@ async def webhook(request: Request):
         body = await request.json()
         update = Update.model_validate(body, context={"bot": bot})
         await dp.feed_update(bot, update)
-        logging.info(f"Webhook получил обновление: {update.update_id if update else 'нет id'}")
         return {"ok": True}
     except Exception as e:
         logging.error(f"Webhook error: {e}")
-        raise HTTPException(status_code=500)
+        raise HTTPException(500)
 
 @app.on_event("startup")
 async def on_startup():
     if WEBHOOK_URL:
         try:
             await bot.delete_webhook(drop_pending_updates=True)
-            logging.info("Старый webhook удалён")
+            await bot.set_webhook(url=WEBHOOK_URL, drop_pending_updates=True, allowed_updates=["message", "callback_query"])
+            logging.info(f"Webhook set: {WEBHOOK_URL}")
         except Exception as e:
-            logging.warning(f"Не удалось удалить старый webhook: {e}")
-        try:
-            await bot.set_webhook(
-                url=WEBHOOK_URL,
-                drop_pending_updates=True,
-                allowed_updates=["message", "callback_query"]
-            )
-            logging.info(f"Webhook успешно установлен: {WEBHOOK_URL}")
-        except Exception as e:
-            logging.error(f"Ошибка установки webhook: {e}")
-    else:
-        logging.warning("BASE_URL не задан → webhook не установлен!")
+            logging.error(f"Webhook setup error: {e}")
     asyncio.create_task(self_ping_task())
 
 async def self_ping_task():
     if not BASE_URL:
-        logging.info("Self-ping отключён (нет BASE_URL)")
         return
     url = f"{BASE_URL}/ping"
     while True:
         try:
             async with httpx.AsyncClient() as c:
                 await c.get(url, timeout=10)
-            logging.info("[SELF-PING] OK")
-        except Exception as e:
-            logging.warning(f"[SELF-PING] ошибка: {e}")
+        except:
+            pass
         await asyncio.sleep(300)
 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
-    logging.info(f"Запуск uvicorn на порту {port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
