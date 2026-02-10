@@ -33,7 +33,6 @@ last_request_time = {}
 last_ui_msg_id = {}
 last_submenu_msg_id = {}
 research_count_day2 = {}  # {uid: сколько раз исследовал на 2-й день}
-pending_drop = {}  # {uid: item} — для ввода количества выкинуть
 
 # ──────────────────────────────────────────────────────────────────────────────
 # MONGODB
@@ -74,7 +73,6 @@ class Game:
         }
         self.story_state = None
         self.found_branch_once = False
-        self.bonfire_used = False  # использовал ли костёр перед сном
 
     def add_log(self, text):
         self.log.append(text)
@@ -90,24 +88,18 @@ class Game:
             "━━━━━━━━━━━━━━━━━━━"
         )
 
-    def get_inventory_text(self, page=1):
-        items = list(self.inventory.items())
-        per_page = 20
-        start = (page - 1) * per_page
-        end = start + per_page
-        page_items = items[start:end]
+    def get_inventory_text(self):
         lines = []
         equipped_hand = self.equipment.get("hand")
-        for item, count in page_items:
+        for item, count in self.inventory.items():
             if count > 0:
                 marker = " ✦" if item == "Факел" else ""
                 equipped_mark = " ✅" if item == equipped_hand else ""
                 line = f"• {item} x{count}{marker}{equipped_mark}" if count > 1 else f"• {item}{marker}{equipped_mark}"
                 lines.append(line)
-        text = "🎒 Инвентарь (стр. {}/{}):\n".format(page, max(1, (len(items) + per_page - 1) // per_page))
-        text += "\n".join(lines) if lines else "Пусто"
+        text = "🎒 Инвентарь:\n" + "\n".join(lines) if lines else "🎒 Инвентарь пуст"
         text += "\n━━━━━━━━━━━━━━━━━━━"
-        return text, len(items) > end
+        return text
 
     def get_character_text(self):
         pet_text = f"Питомец: {self.equipment['pet']}" if self.equipment.get("pet") else "Питомец: Пусто"
@@ -123,6 +115,16 @@ class Game:
         }
         lines = [f"{name}: {self.equipment.get(slot) or 'Пусто'}" for slot, name in slots.items()]
         return "👤 Персонаж:\n\n" + "\n".join(lines)
+
+    def get_map_text(self):
+        lines = []
+        for loc in self.unlocked_locations:
+            if loc == self.location:
+                lines.append(f"→ {loc.capitalize()} (Ты тут)")
+            else:
+                lines.append(f"• {loc.capitalize()}")
+        text = "🗺 Карта:\n\n" + "\n".join(lines)
+        return text
 
 # ──────────────────────────────────────────────────────────────────────────────
 # СОХРАНЕНИЕ / ЗАГРУЗКА
@@ -161,8 +163,22 @@ games = {}
 # КНОПКИ
 # ──────────────────────────────────────────────────────────────────────────────
 def get_main_kb(game: Game):
+    locations = ["лес", "тёмный лес", "озеро", "заброшенный лагерь"]
+    loc_icons = ["🌲", "🌳", "🏝", "🏕️"]
+    current_idx = locations.index(game.location)
+    loc_row = []
+    if current_idx > 0:
+        loc_row.append(InlineKeyboardButton(text=f"← {loc_icons[current_idx-1]}", callback_data=f"loc_{locations[current_idx-1]}"))
+    loc_row.append(InlineKeyboardButton(text=f"{loc_icons[current_idx]} {game.location.capitalize()}", callback_data="loc_current"))
+    if current_idx < len(locations)-1:
+        next_loc = locations[current_idx+1]
+        next_icon = loc_icons[current_idx+1]
+        if next_loc in game.unlocked_locations:
+            loc_row.append(InlineKeyboardButton(text=f"{next_icon} →", callback_data=f"loc_{next_loc}"))
+        else:
+            loc_row.append(InlineKeyboardButton(text=f"{next_icon} ×", callback_data="loc_locked"))
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🗺 Карта", callback_data="map")],
+        loc_row,
         [InlineKeyboardButton(text="🔍 Исследовать", callback_data="action_1"),
          InlineKeyboardButton(text="🎒 Инвентарь", callback_data="action_2")],
         [InlineKeyboardButton(text=f"💧 Пить ({game.inventory['Бутылка воды']}/{game.water_capacity})", callback_data="action_3")
@@ -172,10 +188,6 @@ def get_main_kb(game: Game):
     if game.weather == "rain":
         kb.inline_keyboard.append([InlineKeyboardButton(text="🌧️ Собрать воду", callback_data="action_collect_water")])
     return kb
-
-map_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="← Назад", callback_data="inv_back")]
-])
 
 inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="👁️ Осмотреть", callback_data="inv_inspect"),
@@ -398,13 +410,15 @@ async def process_callback(callback: types.CallbackQuery):
 
     elif data == "wolf_fight":
         game.add_log(
+            "Ты поднимаешь факел повыше. Пламя трещит громче.\n"
             "Волк резко оборачивается, глаза вспыхивают жёлтым в свете огня.\n"
             "Секунду он смотрит на тебя — не нападает, но и не отступает.\n"
             "Тогда ты делаешь шаг вперёд и рычишь сам — низко, зло, по-человечески неумело.\n"
             "Факел вспыхивает ярче от рывка воздуха.\n"
             "Зверь подается назад и ты замахиваешься факелом.\n"
             "Ещё мгновение — и ты видишь как подпалённый волк убегает в темноту между деревьями, бросив свою яму.\n"
-            "Остатки факела медленно догорают на земле возле тебя."
+            "Остатки факела медленно догорают на земле возле тебя.\n\n"
+            "Теперь перед тобой открытая яма под пнём."
         )
         game.equipment["hand"] = None
         game.inventory["Факел"] = max(0, game.inventory.get("Факел", 0) - 1)
@@ -477,14 +491,9 @@ async def process_callback(callback: types.CallbackQuery):
             kb.inline_keyboard.append([
                 InlineKeyboardButton(text="Факел (1 ветка + 1 спичка)", callback_data="craft_Факел")
             ])
-        if game.inventory.get("Ветка", 0) >= 3 and game.inventory.get("Кусок коры 🪵", 0) >= 1:
-            kb.inline_keyboard.append([
-                InlineKeyboardButton(text="Костёр (3 ветки + 1 кора)", callback_data="craft_Костёр")
-            ])
-        if not kb.inline_keyboard:
-            text = "Пока ничего нельзя скрафтить.\n(нужна Ветка и Спички/Кора)"
-        else:
             text = "Доступный крафт:"
+        else:
+            text = "Пока ничего нельзя скрафтить.\n(нужна Ветка и Спички 🔥)"
         kb.inline_keyboard.append([InlineKeyboardButton(text="← Назад", callback_data="inv_back")])
         msg = await callback.message.answer(text, reply_markup=kb)
         last_submenu_msg_id[uid] = msg.message_id
@@ -503,27 +512,12 @@ async def process_callback(callback: types.CallbackQuery):
         save_game(uid, game)
         await callback.answer()
 
-    elif data == "craft_Костёр":
-        if game.inventory.get("Ветка", 0) < 3 or game.inventory.get("Кусок коры 🪵", 0) < 1:
-            await callback.answer("Недостаточно материалов", show_alert=True)
-            return
-        game.inventory["Ветка"] -= 3
-        game.inventory["Кусок коры 🪵"] -= 1
-        game.inventory["Костёр"] += 1
-        game.add_log("Вы скрафтили костёр.")
-        msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
-        last_submenu_msg_id[uid] = msg.message_id
-        save_game(uid, game)
-        await callback.answer()
-
     elif data == "inv_use":
         kb = InlineKeyboardMarkup(inline_keyboard=[])
         if game.inventory.get("Факел", 0) > 0 and game.equipment["hand"] is None:
             kb.inline_keyboard.append([InlineKeyboardButton(text="Факел 🔥", callback_data="use_item_Факел")])
-        if game.inventory.get("Костёр", 0) > 0:
-            kb.inline_keyboard.append([InlineKeyboardButton(text="Костёр 🔥", callback_data="use_item_Костёр")])
         if not kb.inline_keyboard:
-            kb.inline_keyboard.append([InlineKeyboardButton(text="Нечего использовать", callback_data="dummy")])
+            kb.inline_keyboard.append([InlineKeyboardButton(text="Нечego использовать", callback_data="dummy")])
         kb.inline_keyboard.append([InlineKeyboardButton(text="← Назад", callback_data="inv_back")])
         msg = await callback.message.answer("Что использовать?", reply_markup=kb)
         last_submenu_msg_id[uid] = msg.message_id
@@ -540,76 +534,8 @@ async def process_callback(callback: types.CallbackQuery):
             game.add_log("Нельзя экипировать факел сейчас.")
         await callback.answer()
 
-    elif data == "use_item_Костёр":
-        if game.inventory.get("Костёр", 0) > 0:
-            game.bonfire_used = True
-            game.add_log("Вы разожгли костёр.")
-            msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
-            last_ui_msg_id[uid] = msg.message_id
-            save_game(uid, game)
-        await callback.answer()
-
     elif data == "inv_character":
-        kb = InlineKeyboardMarkup(inline_keyboard=[])
-        if game.equipment.get("pet"):
-            kb.inline_keyboard.append([InlineKeyboardButton(text=f"Погладить {game.equipment['pet']}", callback_data="pet_pet")])
-        kb.inline_keyboard.append([InlineKeyboardButton(text="← Назад", callback_data="character_back")])
-        msg = await callback.message.answer(game.get_character_text(), reply_markup=kb)
-        last_submenu_msg_id[uid] = msg.message_id
-
-    elif data == "pet_pet":
-        pet_name = game.equipment.get("pet", "питомца")
-        pet_messages = [
-            f"{pet_name} мурлычет в ответ и трётся о твою руку.",
-            f"Ты погладил {pet_name}. Он довольно щурится.",
-            f"{pet_name} тихо мурчит и прижимается ближе.",
-            f"Поглаживая {pet_name}, ты чувствуешь тепло и спокойствие.",
-            f"{pet_name} ластится к тебе, настроение поднимается."
-        ]
-        game.add_log(random.choice(pet_messages))
-        msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
-        last_ui_msg_id[uid] = msg.message_id
-        save_game(uid, game)
-
-    elif data == "inv_drop":
-        kb = InlineKeyboardMarkup(inline_keyboard=[])
-        for item, count in game.inventory.items():
-            if count > 0:
-                kb.inline_keyboard.append([InlineKeyboardButton(text=f"{item} x{count}", callback_data=f"drop_select_{item}")])
-        kb.inline_keyboard.append([InlineKeyboardButton(text="Отмена", callback_data="inv_back")])
-        msg = await callback.message.answer("Что выкинуть?", reply_markup=kb)
-        last_submenu_msg_id[uid] = msg.message_id
-
-    elif data.startswith("drop_select_"):
-        item = data.split("_", 2)[2]
-        pending_drop[uid] = item
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Выкинуть всё", callback_data=f"drop_all_{item}")],
-            [InlineKeyboardButton(text="Сколько выкинуть", callback_data=f"drop_amount_{item}")],
-            [InlineKeyboardButton(text="Отмена", callback_data="inv_back")]
-        ])
-        msg = await callback.message.answer(f"Выкинуть {item}?", reply_markup=kb)
-        last_submenu_msg_id[uid] = msg.message_id
-
-    elif data.startswith("drop_all_"):
-        item = data.split("_", 2)[2]
-        if item in game.inventory:
-            del game.inventory[item]
-            game.add_log(f"Вы выкинули весь {item}.")
-            msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
-            last_submenu_msg_id[uid] = msg.message_id
-            save_game(uid, game)
-        if uid in pending_drop:
-            del pending_drop[uid]
-
-    elif data.startswith("drop_amount_"):
-        item = data.split("_", 2)[2]
-        pending_drop[uid] = item
-        msg = await callback.message.answer(f"Сколько {item} выкинуть? Напиши число.")
-        last_submenu_msg_id[uid] = msg.message_id
-
-    elif data == "inv_inspect":
-        msg = await callback.message.answer("Осмотреть что? Выбери предмет в подменю.", reply_markup=inventory_inline_kb)
+        msg = await callback.message.answer(game.get_character_text(), reply_markup=character_inline_kb)
         last_submenu_msg_id[uid] = msg.message_id
 
     elif data in ("inv_back", "character_back"):
@@ -629,15 +555,9 @@ async def process_callback(callback: types.CallbackQuery):
         game.day += 1
         game.ap = 5
         game.hunger = max(0, game.hunger - 15)
-        if game.bonfire_used:
-            game.hp = min(100, game.hp + 20)
-            game.add_log("Выспался у костра. +20 HP")
-            game.bonfire_used = False
-        else:
-            game.add_log("Выспался. Голод -15.")
         game.weather = random.choices(["clear", "cloudy", "rain"], weights=[70, 20, 10])[0]
         w_name = {"clear": "ясно", "cloudy": "пасмурно", "rain": "дождь"}[game.weather]
-        game.add_log(f"День {game.day}. {w_name.capitalize()}.")
+        game.add_log(f"День {game.day}. Выспался. Голод -15. {w_name.capitalize()}.")
         action_taken = True
 
     if action_taken:
@@ -656,72 +576,53 @@ async def process_callback(callback: types.CallbackQuery):
 
     await callback.answer()
 
-# ─── ВВОД КОЛИЧЕСТВА ВЫКИНУТЬ ──────────────────────────────────────────────────
+# ─── ВВОД ИМЕНИ КОТЁНКА ───────────────────────────────────────────────────────
 @dp.message(F.text)
-async def handle_text_input(message: Message):
+async def handle_name_input(message: Message):
     uid = message.from_user.id
     game = games.get(uid)
-    if not game:
+    if not game or game.story_state != "cat_name_wait":
+        return
+    name = message.text.strip()[:32]
+    if not name:
+        await message.answer("Дай хоть какое-то имя…")
         return
 
-    # Ввод имени котёнка
-    if game.story_state == "cat_name_wait":
-        name = message.text.strip()[:32]
-        if not name:
-            await message.answer("Дай хоть какое-то имя…")
-            return
-        game.equipment["pet"] = name
-        game.karma += 5
-        game.story_state = None
-        save_game(uid, game)
-        if uid in last_submenu_msg_id:
-            try:
-                await bot.delete_message(message.chat.id, last_submenu_msg_id[uid])
-                del last_submenu_msg_id[uid]
-            except:
-                pass
-        await message.answer(
-            f"Ты смотришь на маленькое существо у себя на руках.\n"
-            f"«{name}», — произносишь ты вслух, и понимаешь что нашел себе нового друга.\n"
-            f"Котёнок поднимает голову, будто услышал и запомнил.\n"
-            f"Уходя от пня, ты чувствуешь, как он начинает тихо, почти неслышно мурчать.\n"
-            f"Вибрация проходит сквозь твою грудь — слабая, но живая.\n"
-            f"Впервые за долгое время в этом лесу становится чуть теплее.",
-            reply_markup=next_kb
-        )
-        game.add_log(f"У вас появился питомец: {name}")
-        game.add_log(f"+5 кармы")
-        if uid in last_ui_msg_id:
-            try:
-                await bot.edit_message_text(
-                    game.get_ui(),
-                    chat_id=message.chat.id,
-                    message_id=last_ui_msg_id[uid],
-                    reply_markup=get_main_kb(game)
-                )
-            except:
-                pass
-        return
+    game.equipment["pet"] = name
+    game.karma += 5
+    game.story_state = None
+    save_game(uid, game)
 
-    # Ввод количества для выкинуть
-    if uid in pending_drop:
-        item = pending_drop[uid]
+    if uid in last_submenu_msg_id:
         try:
-            amount = int(message.text.strip())
-            if amount <= 0 or amount > game.inventory[item]:
-                await message.answer(f"Некорректное количество. У тебя {game.inventory[item]} шт.")
-                return
-            game.inventory[item] -= amount
-            if game.inventory[item] == 0:
-                del game.inventory[item]
-            game.add_log(f"Вы выкинули {amount} шт. {item}.")
-            msg = await message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
-            last_submenu_msg_id[uid] = msg.message_id
-            save_game(uid, game)
-        except ValueError:
-            await message.answer("Напиши число.")
-        del pending_drop[uid]
-        return
+            await bot.delete_message(message.chat.id, last_submenu_msg_id[uid])
+            del last_submenu_msg_id[uid]
+        except:
+            pass
+
+    await message.answer(
+        f"Ты смотришь на маленькое существо у себя на руках.\n"
+        f"«{name}», — произносишь ты вслух, и понимаешь что нашел себе нового друга.\n"
+        f"Котёнок поднимает голову, будто услышал и запомнил.\n"
+        f"Уходя от пня, ты чувствуешь, как он начинает тихо, почти неслышно мурчать.\n"
+        f"Вибрация проходит сквозь твою грудь — слабая, но живая.\n"
+        f"Впервые за долгое время в этом лесу становится чуть теплее.",
+        reply_markup=next_kb
+    )
+
+    game.add_log(f"У вас появился питомец: {name}")
+    game.add_log(f"+5 кармы")
+
+    if uid in last_ui_msg_id:
+        try:
+            await bot.edit_message_text(
+                game.get_ui(),
+                chat_id=message.chat.id,
+                message_id=last_ui_msg_id[uid],
+                reply_markup=get_main_kb(game)
+            )
+        except:
+            pass
 
 # ──────────────────────────────────────────────────────────────────────────────
 # FASTAPI + WEBHOOK + PING
