@@ -464,7 +464,12 @@ async def process_callback(callback: types.CallbackQuery):
         msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = msg.message_id
 
-    # Крафт — остаёмся в инвентаре
+    elif data == "action_2":
+        # Всегда открываем инвентарь заново
+        msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
+        last_submenu_msg_id[uid] = msg.message_id
+        await callback.answer()
+
     elif data == "inv_craft":
         kb = InlineKeyboardMarkup(inline_keyboard=[])
         if game.inventory.get("Спички 🔥", 0) >= 1 and game.inventory.get("Ветка", 0) >= 1:
@@ -491,8 +496,8 @@ async def process_callback(callback: types.CallbackQuery):
         msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
         last_submenu_msg_id[uid] = msg.message_id
         save_game(uid, game)
+        await callback.answer()
 
-    # Использовать — возврат на главный экран
     elif data == "inv_use":
         kb = InlineKeyboardMarkup(inline_keyboard=[])
         if game.inventory.get("Факел", 0) > 0 and game.equipment["hand"] is None:
@@ -581,7 +586,6 @@ async def handle_name_input(message: Message):
         except:
             pass
 
-    # Красивое сообщение
     await message.answer(
         f"Ты смотришь на маленькое существо у себя на руках.\n"
         f"«{name}», — произносишь ты вслух, и понимаешь что нашел себе нового друга.\n"
@@ -592,12 +596,11 @@ async def handle_name_input(message: Message):
         reply_markup=next_kb
     )
 
-    # Лог на главном экране
+    # Добавляем в лог главного экрана
     game.add_log(f"У вас появился питомец: {name}")
     game.add_log(f"+5 кармы")
-    game.add_log("Факел удалён, ты решаешь больше ночью не ходить на исследования.")
 
-    # Обновляем UI главного экрана
+    # Обновляем главный UI
     if uid in last_ui_msg_id:
         try:
             await bot.edit_message_text(
