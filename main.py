@@ -205,8 +205,8 @@ cat_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="Забрать с собой", callback_data="cat_take")]
 ])
 
-story_next_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="Дальше", callback_data="story_next")]
+return_kb = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="Уйти", callback_data="story_next")]
 ])
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -415,7 +415,7 @@ async def process_callback(callback: types.CallbackQuery):
         )
         game.karma -= 50
         game.story_state = None
-        msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
+        msg = await callback.message.answer(game.get_ui(), reply_markup=return_kb)
         last_ui_msg_id[uid] = msg.message_id
 
     elif data == "cat_take":
@@ -435,7 +435,7 @@ async def process_callback(callback: types.CallbackQuery):
         msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = msg.message_id
 
-    # Инвентарь и крафт
+    # Инвентарь и крафт (без изменений от предыдущей версии, но с правильным носком только в лог)
     elif data == "action_2":
         msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
         last_submenu_msg_id[uid] = msg.message_id
@@ -462,7 +462,6 @@ async def process_callback(callback: types.CallbackQuery):
         game.inventory["Факел"] += 1
         game.add_log("Вы скрафтили факел.")
         game.add_log("Для крафта факела вам пришлось использовать носок с левой ноги.")
-        # Возврат на главный экран — лог виден сразу
         msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = msg.message_id
         save_game(uid, game)
@@ -545,7 +544,7 @@ async def handle_name_input(message: Message):
     game.equipment["pet"] = name
     game.karma += 5
     game.add_log(f"У вас появился питомец: {name}")
-    game.add_log("+5 кармы")
+    game.add_log(f"+5 кармы")
     game.add_log("Факел удалён, ты решаешь больше ночью не ходить на исследования.")
     game.story_state = None
     save_game(uid, game)
