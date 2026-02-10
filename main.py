@@ -32,6 +32,7 @@ app = FastAPI(title="Forest Survival Bot")
 last_request_time = {}
 last_ui_msg_id = {}
 last_submenu_msg_id = {}
+research_count_day2 = {}  # {uid: сколько раз исследовал на 2-й день}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # MONGODB
@@ -205,8 +206,8 @@ cat_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="Забрать с собой", callback_data="cat_take")]
 ])
 
-return_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="Уйти", callback_data="story_next")]
+next_kb = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="Дальше", callback_data="story_next")]
 ])
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -321,6 +322,33 @@ async def process_callback(callback: types.CallbackQuery):
             game.hunger = max(0, game.hunger - 7)
             game.thirst = max(0, game.thirst - 8)
 
+            # Гарантированная ветка на 2-й день при 3-м исследовании
+            if game.day == 2 and uid not in research_count_day2:
+                research_count_day2[uid] = 0
+            if game.day == 2 and not game.found_branch_once:
+                research_count_day2[uid] = research_count_day2.get(uid, 0) + 1
+                if research_count_day2[uid] == 3:
+                    game.inventory["Ветка"] += 1
+                    game.add_log("🔍 Исследовал... Нашёл ветку")
+                    if not game.found_branch_once:
+                        game.found_branch_once = True
+                        game.add_log("Мысль: Из неё можно сделать факел?")
+                    action_taken = True
+                    save_game(uid, game)
+                    if uid in last_ui_msg_id:
+                        try:
+                            await bot.edit_message_text(
+                                game.get_ui(),
+                                chat_id=chat_id,
+                                message_id=last_ui_msg_id[uid],
+                                reply_markup=get_main_kb(game)
+                            )
+                        except:
+                            msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
+                            last_ui_msg_id[uid] = msg.message_id
+                    await callback.answer()
+                    return
+
             if game.equipment.get("hand") == "Факел" and game.story_state is None:
                 game.story_state = "wolf_scene"
                 if uid in last_ui_msg_id:
@@ -347,9 +375,10 @@ async def process_callback(callback: types.CallbackQuery):
                     ("Нашёл родник → +3 воды", lambda: game.inventory.update({"Бутылка воды": min(game.water_capacity, game.inventory["Бутылка воды"] + 3)})),
                     ("Укус насекомого –5 HP", lambda: setattr(game, 'hp', max(0, game.hp - 5))),
                     ("Нашёл кору", lambda: game.inventory.update({"Кусок коры 🪵": game.inventory["Кусок коры 🪵"] + 1})),
-                    ("Нашёл ветку", lambda: game.inventory.update({"Ветка": game.inventory["Ветка"] + 1})),
                     ("Нашёл нож", lambda: game.inventory.update({"Нож": game.inventory["Нож"] + 1}))
                 ]
+                if not game.found_branch_once:
+                    events.append(("Нашёл ветку", lambda: game.inventory.update({"Ветка": game.inventory["Ветка"] + 1})))
                 text, effect = random.choice(events)
                 effect()
                 game.add_log(f"🔍 Исследовал... {text}")
@@ -415,7 +444,7 @@ async def process_callback(callback: types.CallbackQuery):
         )
         game.karma -= 50
         game.story_state = None
-        msg = await callback.message.answer(game.get_ui(), reply_markup=return_kb)
+        msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = msg.message_id
 
     elif data == "cat_take":
@@ -435,11 +464,7 @@ async def process_callback(callback: types.CallbackQuery):
         msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
         last_ui_msg_id[uid] = msg.message_id
 
-    # Инвентарь и крафт (без изменений от предыдущей версии, но с правильным носком только в лог)
-    elif data == "action_2":
-        msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
-        last_submenu_msg_id[uid] = msg.message_id
-
+    # Крафт — остаёмся в инвентаре
     elif data == "inv_craft":
         kb = InlineKeyboardMarkup(inline_keyboard=[])
         if game.inventory.get("Спички 🔥", 0) >= 1 and game.inventory.get("Ветка", 0) >= 1:
@@ -462,10 +487,12 @@ async def process_callback(callback: types.CallbackQuery):
         game.inventory["Факел"] += 1
         game.add_log("Вы скрафтили факел.")
         game.add_log("Для крафта факела вам пришлось использовать носок с левой ноги.")
-        msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
-        last_ui_msg_id[uid] = msg.message_id
+        # Остаёмся в инвентаре
+        msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
+        last_submenu_msg_id[uid] = msg.message_id
         save_game(uid, game)
 
+    # Использовать — возврат на главный экран
     elif data == "inv_use":
         kb = InlineKeyboardMarkup(inline_keyboard=[])
         if game.inventory.get("Факел", 0) > 0 and game.equipment["hand"] is None:
@@ -481,8 +508,8 @@ async def process_callback(callback: types.CallbackQuery):
             game.inventory["Факел"] -= 1
             game.equipment["hand"] = "Факел"
             game.add_log("Вы экипировали факел в руку.")
-            msg = await callback.message.answer(game.get_inventory_text(), reply_markup=inventory_inline_kb)
-            last_submenu_msg_id[uid] = msg.message_id
+            msg = await callback.message.answer(game.get_ui(), reply_markup=get_main_kb(game))
+            last_ui_msg_id[uid] = msg.message_id
             save_game(uid, game)
         else:
             game.add_log("Нельзя экипировать факел сейчас.")
@@ -541,30 +568,46 @@ async def handle_name_input(message: Message):
     if not name:
         await message.answer("Дай хоть какое-то имя…")
         return
+
     game.equipment["pet"] = name
     game.karma += 5
-    game.add_log(f"У вас появился питомец: {name}")
-    game.add_log(f"+5 кармы")
-    game.add_log("Факел удалён, ты решаешь больше ночью не ходить на исследования.")
     game.story_state = None
     save_game(uid, game)
+
     if uid in last_submenu_msg_id:
         try:
             await bot.delete_message(message.chat.id, last_submenu_msg_id[uid])
             del last_submenu_msg_id[uid]
         except:
             pass
+
+    # Красивое сообщение
     await message.answer(
         f"Ты смотришь на маленькое существо у себя на руках.\n"
         f"«{name}», — произносишь ты вслух, и понимаешь что нашел себе нового друга.\n"
         f"Котёнок поднимает голову, будто услышал и запомнил.\n"
         f"Уходя от пня, ты чувствуешь, как он начинает тихо, почти неслышно мурчать.\n"
         f"Вибрация проходит сквозь твою грудь — слабая, но живая.\n"
-        f"Впервые за долгое время в этом лесу становится чуть теплее.\n\n"
-        f"У вас появился питомец: {name}\n"
-        f"+5 кармы",
-        reply_markup=story_next_kb
+        f"Впервые за долгое время в этом лесу становится чуть теплее.",
+        reply_markup=next_kb
     )
+
+    # Лог на главном экране
+    game.add_log(f"У вас появился питомец: {name}")
+    game.add_log(f"+5 кармы")
+    game.add_log("Факел удалён, ты решаешь больше ночью не ходить на исследования.")
+
+    # Обновляем UI главного экрана
+    if uid in last_ui_msg_id:
+        try:
+            await bot.edit_message_text(
+                game.get_ui(),
+                chat_id=message.chat.id,
+                message_id=last_ui_msg_id[uid],
+                reply_markup=get_main_kb(game)
+            )
+        except:
+            pass
 
 # ──────────────────────────────────────────────────────────────────────────────
 # FASTAPI + WEBHOOK + PING
