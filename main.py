@@ -9,7 +9,7 @@ from fastapi.responses import PlainTextResponse
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Update, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter  # ← добавлен TelegramRetryAfter
 import httpx
 from pymongo import MongoClient
 
@@ -144,7 +144,6 @@ def load_game(uid: int) -> Game | None:
             game.__dict__.update(data["game_data"])
             game.inventory = Counter(inv_dict)
             game.equipment = equip_dict
-            # Если nav_stack не сохранён в старых данных
             if "nav_stack" not in game.__dict__:
                 game.nav_stack = ["main"]
             return game
@@ -229,7 +228,7 @@ GUIDE_TEXT = (
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
-# ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ
+# ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ С RETRY ПРИ FLOOD
 # ──────────────────────────────────────────────────────────────────────────────
 async def update_or_send_message(chat_id: int, uid: int, text: str, reply_markup=None):
     msg_id = last_active_msg_id.get(uid)
@@ -242,6 +241,19 @@ async def update_or_send_message(chat_id: int, uid: int, text: str, reply_markup
                 reply_markup=reply_markup
             )
             return msg_id
+        except TelegramRetryAfter as e:
+            logging.warning(f"Flood control: ждём {e.retry_after} сек перед повтором edit")
+            await asyncio.sleep(e.retry_after + 0.5)  # +0.5 сек запаса
+            try:
+                await bot.edit_message_text(
+                    text,
+                    chat_id=chat_id,
+                    message_id=msg_id,
+                    reply_markup=reply_markup
+                )
+                return msg_id
+            except Exception as ex:
+                logging.error(f"Повторная ошибка при edit после retry: {ex}")
         except TelegramBadRequest as e:
             logging.warning(f"Не удалось отредактировать {msg_id} для {uid}: {e}")
             try:
@@ -249,6 +261,8 @@ async def update_or_send_message(chat_id: int, uid: int, text: str, reply_markup
             except:
                 pass
             last_active_msg_id.pop(uid, None)
+
+    # Если ничего не вышло — отправляем новое
     msg = await bot.send_message(chat_id, text, reply_markup=reply_markup)
     last_active_msg_id[uid] = msg.message_id
     return msg.message_id
@@ -285,10 +299,12 @@ async def process_callback(callback: types.CallbackQuery):
     uid = callback.from_user.id
     chat_id = callback.message.chat.id
     now = time.time()
-    if uid in last_request_time and now - last_request_time[uid] < 0.8:
+
+    # Увеличена задержка до 1 секунды + небольшой запас
+    if uid in last_request_time and now - last_request_time[uid] < 1.0:
         await callback.answer("Подожди немного...")
         return
-    last_request_time[uid] = now
+    last_request_time[uid] = now + 0.2  # +0.2 сек запаса, чтобы не было ровно на грани
 
     data = callback.data
     logging.info(f"[CALLBACK] {data} от {uid}")
@@ -319,7 +335,7 @@ async def process_callback(callback: types.CallbackQuery):
     kb = None
     action_taken = False
 
-    # Переходы в подменю — пушим в стек
+    # Переходы в подменю
     if data == "action_2":
         game.push_screen("inventory")
         text = game.get_inventory_text()
@@ -355,7 +371,7 @@ async def process_callback(callback: types.CallbackQuery):
         text = "Что использовать?"
         kb = kb_u
 
-    # Умная кнопка "Назад"
+    # Назад
     elif data == "back":
         prev = game.pop_screen()
         if prev == "main":
@@ -389,7 +405,7 @@ async def process_callback(callback: types.CallbackQuery):
             text = "Что использовать?"
             kb = kb_u
 
-    # Сюжетные возвраты + сброс стека
+    # Сюжетные возвраты
     elif data == "wolf_flee":
         game.add_log(
             "Ты медленно пятишься назад, стараясь не хрустнуть ни одной веткой.\n"
@@ -465,7 +481,7 @@ async def process_callback(callback: types.CallbackQuery):
         text = game.get_ui()
         kb = get_main_kb(game)
 
-    # Действия на главном экране
+    # Действия на главном
     elif data == "action_1":
         if game.ap <= 0:
             game.add_log("Нет сил. Нужно поспать.")
@@ -551,11 +567,9 @@ async def process_callback(callback: types.CallbackQuery):
             kb = get_main_kb(game)
         action_taken = True
 
-    # Обновляем сообщение, если есть что показать
     if text is not None:
         await update_or_send_message(chat_id, uid, text, kb)
 
-    # Сохраняем при действиях
     if action_taken:
         save_game(uid, game)
 
@@ -589,7 +603,7 @@ async def handle_name_input(message: Message):
         f"Вибрация проходит сквозь твою грудь — слабая, но живая.\n"
         f"Впервые за долгое время в этом лесу становится чуть теплее."
     )
-    game.reset_nav()  # после котёнка — на главный
+    game.reset_nav()
     await update_or_send_message(chat_id, uid, success_text, next_kb)
     game.add_log(f"У вас появился питомец: {name}")
     game.add_log(f"+5 кармы")
