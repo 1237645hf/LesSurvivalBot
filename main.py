@@ -6,7 +6,6 @@ import os
 from collections import Counter
 from datetime import datetime
 from random import choice, randint
-from aiogram.client.default import DefaultBotProperties
 
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
@@ -15,7 +14,9 @@ from aiogram.filters.command import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
+from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove, Update  # ← ДОБАВЛЕНО Update
+
+from aiogram.client.default import DefaultBotProperties  # Для parse_mode в новых версиях
 
 from fastapi import FastAPI
 from pymongo import MongoClient
@@ -132,15 +133,12 @@ async def update_or_send_message(message: Message, text: str, reply_markup=None)
     except:
         await message.answer(text, reply_markup=reply_markup)
 
-# ГРУППА: Маппинг клавиатур для событий (НОВОЕ!)
-# Описание: Связывает имя клавиатуры из stories.py ('kb_name') с реальной функцией.
-# Это нужно, чтобы stories.py не зависел от keyboards.py напрямую.
+# ГРУППА: Маппинг клавиатур для событий
 KB_MAP = {
     'wolf_kb': wolf_kb,
     'cat_kb': cat_kb,
     'peek_den_kb': peek_den_kb,
-    # Добавляй сюда все новые клавиатуры, которые используются в EVENTS
-    # Например: 'some_event_kb': some_event_kb,
+    # Добавляй сюда все kb, которые используются в EVENTS как 'kb_name'
 }
 
 # ГРУППА: Хендлеры сообщений
@@ -175,7 +173,6 @@ async def process_message(message: Message, state: FSMContext):
             game.story_state = event_name
             game.add_log(EVENTS[event_name]['text'])
 
-            # НОВОЕ: получаем клавиатуру по имени из KB_MAP
             kb_name = EVENTS[event_name].get('kb_name')
             reply_kb = KB_MAP.get(kb_name)(game) if kb_name and kb_name in KB_MAP else None
 
@@ -226,7 +223,6 @@ async def process_callback(callback: CallbackQuery):
             game.equipment[item] = True
             game.add_log(f"Экипировано: {item}")
 
-    # Обработка выборов в событиях (wolf, cat и т.д.)
     elif data in ['wolf_flee', 'wolf_fight']:
         effects = EVENTS['wolf']['effects'].get(data, {})
         for key, val in effects.items():
@@ -236,11 +232,9 @@ async def process_callback(callback: CallbackQuery):
         game.story_state = None
 
     elif data in ['cat_take', 'cat_leave']:
-        # Добавь логику аналогично wolf
-        pass  # ← здесь будет твоя реализация
+        pass  # Добавь логику
 
     elif data.startswith('peek_'):
-        # Аналогично
         pass
 
     elif data.startswith('craft_'):
@@ -248,7 +242,6 @@ async def process_callback(callback: CallbackQuery):
         result = check_craft(game, recipe_name)
         game.add_log(result)
 
-    # Обновляем сообщение
     await callback.message.edit_text(game.get_ui(), reply_markup=get_main_kb(game))
     await save_game(callback.from_user.id, game)
 
@@ -262,11 +255,10 @@ async def main():
 
 @app.post(WEBHOOK_PATH)
 async def webhook(update: dict):
-    telegram_update = aiogram.types.Update(**update)
+    telegram_update = Update(**update)  # ← ИСПРАВЛЕНО: теперь без aiogram.
     await dp.feed_update(bot=bot, update=telegram_update)
 
 if __name__ == "__main__":
     import uvicorn
-    # Для Render используй uvicorn.run с переменной PORT
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
