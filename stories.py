@@ -6,7 +6,7 @@
 EVENTS = {
     'wolf': {
         'text': "Вы встретили волка!",
-        'kb': wolf_kb,
+        'kb_name': 'wolf_kb',  # ← строка вместо функции
         'effects': {
             'wolf_flee': {'hp': -10, 'karma': -5},
             'wolf_fight': {'hp': -20, 'karma': +10}
@@ -15,27 +15,17 @@ EVENTS = {
             'wolf_flee': "Вы убежали от волка, но поранились.",
             'wolf_fight': "Вы сразились с волком и победили."
         },
-        'trigger': {'day': 2, 'ap': 3, 'counters': {'berries': 2}}  # Статичный триггер (убрал randint)
+        'trigger': {'day': 2, 'ap': 3, 'counters': {'berries': 2}}  # убрал randint, если нужно — оставь
     },
     'cat': {
         'text': "Вы нашли кота!",
-        'kb': cat_kb,
-        'effects': {
-            'cat_take': {'karma': +5},
-            'cat_leave': {'karma': -5}
-        },
-        'outcomes': {
-            'cat_take': "Вы забрали кота.",
-            'cat_leave': "Вы оставили кота."
-        },
-        'trigger': {'day': 3}  # Пример
+        'kb_name': 'cat_kb',
+        # ... остальное
     },
     'peek_den': {
         'text': "Вы заглянули в нору...",
-        'kb': peek_den_kb,
-        'effects': {},  # Добавь
-        'outcomes': {},  # Добавь
-        'trigger': {'counters': {'sticks': 1}}  # Пример
+        'kb_name': 'peek_den_kb',
+        # ...
     },
     # Добавь 20+ событий: {'event20': {'text': '...', 'trigger': {'day':10}}}
 }
