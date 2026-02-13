@@ -109,10 +109,10 @@ class Game:
     def get_ui(self):
         weather_icon = {"clear": "☀️", "cloudy": "☁️", "rain": "🌧️"}.get(self.weather, "☀️")
         return (
-            f"❤️ {self.hp} 🍖 {self.hunger} 💧 {self.thirst} ⚡ {self.ap} {weather_icon} {self.day}\n"
-            "━━━━━━━━━━━━━━━━━━━\n"
+            f"❤️ {self.hp}  🍖 {self.hunger}  💧 {self.thirst}  ⚡ {self.ap}  {weather_icon} {self.day}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
             + "\n".join(f"> {line}" for line in self.log) + "\n"
-            "━━━━━━━━━━━━━━━━━━━"
+            "━━━━━━━━━━━━━━━━━━━━━━"
         )
 
     def get_inventory_text(self):
@@ -125,7 +125,7 @@ class Game:
                 line = f"• {item} x{count}{marker}{equipped_mark}" if count > 1 else f"• {item}{marker}{equipped_mark}"
                 lines.append(line)
         text = "🎒 Инвентарь:\n" + "\n".join(lines) if lines else "🎒 Инвентарь пуст"
-        text += "\n━━━━━━━━━━━━━━━━━━━"
+        text += "\n━━━━━━━━━━━━━━━━━━━━━━"
         return text
 
     def get_character_text(self):
