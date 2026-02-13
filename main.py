@@ -206,7 +206,7 @@ async def update_or_send_message(chat_id: int, uid: int, text: str, reply_markup
             return msg_id
         except TelegramRetryAfter as e:
             logging.warning(f"Flood control: ждём {e.retry_after} сек перед повтором edit")
-            await asyncio.sleep(e.retry_after + 0.5)  # +0.5 сек запаса
+            await asyncio.sleep(e.retry_after + 0.5)
             try:
                 await bot.edit_message_text(
                     text, chat_id=chat_id, message_id=msg_id, reply_markup=reply_markup
@@ -221,7 +221,6 @@ async def update_or_send_message(chat_id: int, uid: int, text: str, reply_markup
             except:
                 pass
             last_active_msg_id.pop(uid, None)
-    # Если ничего не вышло — отправляем новое
     msg = await bot.send_message(chat_id, text, reply_markup=reply_markup)
     last_active_msg_id[uid] = msg.message_id
     return msg.message_id
@@ -258,11 +257,10 @@ async def process_callback(callback: types.CallbackQuery):
     uid = callback.from_user.id
     chat_id = callback.message.chat.id
     now = time.time()
-    # Увеличена задержка до 1 секунды + небольшой запас
     if uid in last_request_time and now - last_request_time[uid] < 1.0:
         await callback.answer("Подожди немного...")
         return
-    last_request_time[uid] = now + 0.2  # +0.2 сек запаса, чтобы не было ровно на грани
+    last_request_time[uid] = now + 0.2
     data = callback.data
     logging.info(f"[CALLBACK] {data} от {uid}")
     game = games.get(uid)
@@ -287,7 +285,6 @@ async def process_callback(callback: types.CallbackQuery):
     kb = None
     action_taken = False
 
-    # Переходы в подменю
     if data == "action_2":
         game.push_screen("inventory")
         text = game.get_inventory_text()
@@ -320,7 +317,6 @@ async def process_callback(callback: types.CallbackQuery):
         text = "Что использовать?"
         kb = kb_u
 
-    # Назад
     elif data == "back":
         prev = game.pop_screen()
         if prev == "main":
@@ -351,19 +347,16 @@ async def process_callback(callback: types.CallbackQuery):
             text = game.get_ui()
             kb = get_main_kb(game)
 
-    # Крафт и использование (из crafts.py)
     elif data.startswith("craft_") or data.startswith("use_item_"):
         text, kb = handle_craft(data, game, uid)
         if text is None:
             text = game.get_inventory_text()
             kb = inventory_inline_kb
 
-    # Сюжетные действия (из stories.py)
     elif data in ("wolf_flee", "wolf_fight", "peek_den", "cat_leave", "cat_take", "story_next"):
         text, kb = handle_story(data, game, uid)
 
-    # Основные действия
-    elif data == "action_1":  # Исследовать
+    elif data == "action_1":
         if game.ap <= 0:
             game.add_log("Действия на сегодня закончились.")
             text = game.get_ui()
@@ -378,7 +371,7 @@ async def process_callback(callback: types.CallbackQuery):
             kb = get_main_kb(game)
             action_taken = True
 
-    elif data == "action_3":  # Пить
+    elif data == "action_3":
         if game.ap <= 0:
             game.add_log("Действия на сегодня закончились.")
         elif game.inventory["Бутылка воды"] > 0:
@@ -391,7 +384,7 @@ async def process_callback(callback: types.CallbackQuery):
         text = game.get_ui()
         kb = get_main_kb(game)
 
-    elif data == "action_4":  # Спать
+    elif data == "action_4":
         if game.ap <= 0:
             game.add_log("Действия на сегодня закончились.")
         else:
