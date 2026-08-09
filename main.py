@@ -26,7 +26,7 @@ if not TOKEN:
     raise ValueError("TOKEN не найден!")
 
 BASE_URL = os.getenv("RENDER_EXTERNAL_URL")
-WEBHOOK_PATH = f"/bot/{TOKEN}"
+WEBHOOK_PATH = "/webhook"  # Чистый статический путь без токена в названии
 WEBHOOK_URL = f"{BASE_URL}{WEBHOOK_PATH}" if BASE_URL else None
 
 MONGO_URI = os.getenv("MONGO_URI")
@@ -36,22 +36,25 @@ if not MONGO_URI:
 logging.basicConfig(level=logging.INFO)
 logging.info(f"Бот запущен. TOKEN: {TOKEN[:10]}... BASE_URL: {BASE_URL}")
 
+app = FastAPI()
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-app = FastAPI(title="Forest Survival Bot")
 
+# Глобальные словари для трекинга состояний (запросы, сообщения)
 last_request_time = {}
 last_active_msg_id = {}
-research_count_day2 = {}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # MONGODB
 # ──────────────────────────────────────────────────────────────────────────────
-mongo_client = MongoClient(MONGO_URI)
+# directConnection=true avoids DNS SRV lookup issues on Render
+mongo_client = MongoClient(
+    MONGO_URI,
+    directConnection=True,
+    serverSelectionTimeoutMS=3000
+)
 db = mongo_client['forest_game']
 players_collection = db['players']
-# mongo_client.server_info()  # Temp commented for testing
-# logging.info("MongoDB подключён успешно")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # КЛАСС ИГРЫ
@@ -109,9 +112,9 @@ class Game:
         self.nav_stack = ["main"]
 
     def get_ui(self):
-        weather_icon = {"clear": " ", "cloudy": " ", "rain": " "}.get(self.weather, " ")
+        weather_icon = {"clear": "☀️", "cloudy": "☁️", "rain": "🌧️"}.get(self.weather, "☀️")
         return (
-            f" {self.hp}    {self.hunger}    {self.thirst}    {self.ap}    {weather_icon} {self.day}\n"
+            f"❤️ {self.hp} | 🍖 {self.hunger} | 💧 {self.thirst} | ⚡ {self.ap} | {weather_icon} День: {self.day}\n"
             "━━━━━━━━━━━━━━━━━━━\n"
             + "\n".join(f"> {line}" for line in self.log) + "\n"
             "━━━━━━━━━━━━━━━━━━━"
@@ -122,9 +125,8 @@ class Game:
         equipped_hand = self.equipment.get("hand")
         for item, count in self.inventory.items():
             if count > 0:
-                marker = " " if item == "Факел" else ""
-                equipped_mark = " " if item == equipped_hand else ""
-                line = f"• {item} x{count}{marker}{equipped_mark}" if count > 1 else f"• {item}{marker}{equipped_mark}"
+                equipped_mark = " (в руке)" if item == equipped_hand else ""
+                line = f"• {item} x{count}{equipped_mark}" if count > 1 else f"• {item}{equipped_mark}"
                 lines.append(line)
         text = "Инвентарь:\n" + "\n".join(lines) if lines else "Инвентарь пуст"
         text += "\n━━━━━━━━━━━━━━━━━━━"
@@ -185,14 +187,13 @@ games = {}
 # ──────────────────────────────────────────────────────────────────────────────
 GUIDE_TEXT = (
     "Добро пожаловать в лес выживания!\n\n"
-    "Краткий гайд\n"
-    "100 - здоровье\n"
-    "100 - сытость\n"
-    "100 - жажда\n"
-    "5 - действия на день\n"
-    "100 - день\n\n"
+    "Краткий гайд:\n"
+    "❤️ Здоровье\n"
+    "🍖 Сытость\n"
+    "💧 Жажда\n"
+    "⚡ Действия на день\n\n"
     "Карма поможет выбраться.\n\n"
-    "Попробуй выжить друг мой..."
+    "Попробуй выжить, друг мой..."
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -285,7 +286,6 @@ async def process_callback(callback: types.CallbackQuery):
         return
     text = None
     kb = None
-    action_taken = False
 
     if data == "action_2":
         game.push_screen("inventory")
@@ -374,7 +374,6 @@ async def process_callback(callback: types.CallbackQuery):
             game.add_log(f"Нашёл: {found}")
             text = game.get_ui()
             kb = get_main_kb(game)
-            action_taken = True
 
     elif data == "action_3":
         if game.ap <= 0:
@@ -383,7 +382,6 @@ async def process_callback(callback: types.CallbackQuery):
             game.inventory["Бутылка воды"] -= 1
             game.thirst = min(100, game.thirst + 30)
             game.add_log("Ты сделал глоток воды. Жажда уменьшилась.")
-            action_taken = True
         else:
             game.add_log("Воды больше нет.")
         text = game.get_ui()
@@ -399,7 +397,6 @@ async def process_callback(callback: types.CallbackQuery):
             game.day += 1
             game.ap = 5
             game.add_log("Ты уснул. Новый день начался.")
-            action_taken = True
         text = game.get_ui()
         kb = get_main_kb(game)
 
@@ -417,7 +414,7 @@ async def process_callback(callback: types.CallbackQuery):
     await callback.answer()
 
 # ──────────────────────────────────────────────────────────────────────────────
-# WEBHOOK
+# WEBHOOK ENDPOINT (Единый и правильный)
 # ──────────────────────────────────────────────────────────────────────────────
 @app.on_event("startup")
 async def on_startup():
@@ -429,9 +426,13 @@ async def on_startup():
 
 @app.post(WEBHOOK_PATH)
 async def webhook(request: Request):
-    if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != TOKEN:
+    # Опциональная проверка секретного токена (если используется)
+    secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+    if secret and secret != TOKEN:
         raise HTTPException(status_code=403)
-    update = Update.model_validate(await request.json(), context={"bot": bot})
+    
+    update_data = await request.json()
+    update = Update.model_validate(update_data, context={"bot": bot})
     await dp.feed_update(bot, update)
     return PlainTextResponse("OK")
 
