@@ -47,10 +47,8 @@ last_active_msg_id = {}
 # ──────────────────────────────────────────────────────────────────────────────
 # MONGODB
 # ──────────────────────────────────────────────────────────────────────────────
-# directConnection=true avoids DNS SRV lookup issues on Render
 mongo_client = MongoClient(
     MONGO_URI,
-    directConnection=True,
     serverSelectionTimeoutMS=3000
 )
 db = mongo_client['forest_game']
@@ -414,7 +412,7 @@ async def process_callback(callback: types.CallbackQuery):
     await callback.answer()
 
 # ──────────────────────────────────────────────────────────────────────────────
-# WEBHOOK ENDPOINT (Единый и правильный)
+# WEBHOOK ENDPOINT
 # ──────────────────────────────────────────────────────────────────────────────
 @app.on_event("startup")
 async def on_startup():
@@ -426,7 +424,6 @@ async def on_startup():
 
 @app.post(WEBHOOK_PATH)
 async def webhook(request: Request):
-    # Опциональная проверка секретного токена (если используется)
     secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
     if secret and secret != TOKEN:
         raise HTTPException(status_code=403)
