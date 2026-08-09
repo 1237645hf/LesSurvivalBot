@@ -16,6 +16,7 @@ from pymongo import MongoClient
 from keyboards import get_main_kb, inventory_inline_kb, character_inline_kb, wolf_kb, peek_kb, cat_kb, next_kb
 from crafts import handle_craft
 from stories import handle_story
+from location_stories import handle_location_2_ruchey
 
 # ──────────────────────────────────────────────────────────────────────────────
 # НАСТРОЙКИ
@@ -49,8 +50,8 @@ research_count_day2 = {}
 mongo_client = MongoClient(MONGO_URI)
 db = mongo_client['forest_game']
 players_collection = db['players']
-mongo_client.server_info()
-logging.info("MongoDB подключён успешно")
+# mongo_client.server_info()  # Temp commented for testing
+# logging.info("MongoDB подключён успешно")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # КЛАСС ИГРЫ
@@ -61,7 +62,7 @@ class Game:
         self.hunger = 20
         self.thirst = 60
         self.ap = 5
-        self.karma = 0
+        self.karma = {"heroic": 20, "brutal": 5, "gentle": 10, "clever": 15, "reckless": 8, "mysterious": 12}
         self.karma_goal = 100
         self.day = 1
         self.log = ["Ты проснулся в лесу. Что будешь делать?"]
@@ -73,8 +74,9 @@ class Game:
             "Бутылка воды": 10
         })
         self.weather = "clear"
-        self.location = "лес"
-        self.unlocked_locations = ["лес", "тёмный лес", "озеро", "заброшенный лагерь"]
+        self.location = "Лесной старт"
+        self.unlocked_locations = ["Лесной старт", "Ручей с Змеями", "Скромоная Лощина", "Просека Охотников", "Яр Слизней", "Мохнатая Пещера", "Вершина Святилища"]
+        self.current_location_state = "forest_start"
         self.water_capacity = 10
         self.equipment = {
             "head": None,
@@ -352,6 +354,9 @@ async def process_callback(callback: types.CallbackQuery):
         if text is None:
             text = game.get_inventory_text()
             kb = inventory_inline_kb
+
+    elif data.startswith("river_") or data.startswith("snake_") or data.startswith("cat_") or data.startswith("wolf_") or data.startswith("story_") or data.startswith("peek_"):
+        text, kb = handle_location_2_ruchey(data, game, uid)
 
     elif data in ("wolf_flee", "wolf_fight", "peek_den", "cat_leave", "cat_take", "story_next"):
         text, kb = handle_story(data, game, uid)

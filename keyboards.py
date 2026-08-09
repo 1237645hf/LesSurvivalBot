@@ -4,7 +4,7 @@ def get_main_kb(game):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Исследовать", callback_data="action_1"),
          InlineKeyboardButton(text="Инвентарь", callback_data="action_2")],
-        [InlineKeyboardButton(text=f"Пить ({game.inventory['Бутылка воды']}/{game.water_capacity})", callback_data="action_3") if game.inventory['Бутылка воды'] > 0 else InlineKeyboardButton(text="Пить (пусто)", callback_data="action_3"),
+        [InlineKeyboardButton(text=f"Пить ({game.inventory.get('Вода', 0)}/{game.water_capacity})", callback_data="action_3") if game.inventory.get('Вода', 0) > 0 else InlineKeyboardButton(text="Пить (пусто)", callback_data="action_3"),
          InlineKeyboardButton(text="Спать", callback_data="action_4")]
     ])
     if game.weather == "rain":
