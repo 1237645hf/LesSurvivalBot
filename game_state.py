@@ -17,8 +17,10 @@ class GameState:
         "Вода": 2,
         "Еда": 3,
         "Спички 🔥": 1,
+        "Спички ": 1,  # Для совместимости со старым кодом
         "Ветка": 1,
         "Факел": 1,
+        "Бутылка воды": 2,  # Для совместимости с Game
     })
     
     # Емкость ресурсов
@@ -49,21 +51,27 @@ class GameState:
     # Ключевой предмет локации (что запускает сцену)
     current_location_key: str = "Факел"
     
+    # Система кармы (6 измерений для эмоционального разветвления)
+    karma: Dict[str, int] = field(default_factory=lambda: {
+        "heroic": 20,
+        "brutal": 5,
+        "gentle": 10,
+        "clever": 15,
+        "reckless": 8,
+        "mysterious": 12,
+    })
+    
     current_location: str = "Лесной старт"
     location_index: int = 0
     
-    # Система кармы
-    karma: Dict[str, int] = field(default_factory=lambda: {
-        "heroic": 5,      # Славный герой
-        "brutal": 3,      # Жёсткий боец
-        "gentle": 5,      # Нежный душа
-        "clever": 5,      # Хитрый умен
-        "reckless": 3,    # Безрассудный
-        "mysterious": 5,  # Таинственный
-    })
+    # Дополнительные поля для совместимости с Game
+    ap: int = 5  # Действия в день
+    day: int = 1  # Текущий день
     
     # История событий
-    event_log: List[str] = field(default_factory=list)
+    event_log: List[str] = field(default_factory=lambda: [
+        "[00:00] Ты проснулся в лесу. Что будешь делать?",
+    ])
     
     # Статус кот-компаньона
     companion_name: str = "Кот"
@@ -75,8 +83,9 @@ class GameState:
     # Метод сброса навигации (для завершения локации)
     def reset_nav(self):
         """Сбрасывает навигацию для следующей локации."""
-        pass
-    
+        self.current_location = "Лесной старт"
+        self.location_index = 0
+        
     def __post_init__(self):
         """Инициализация после создания."""
         if not self.is_initialized:
@@ -143,6 +152,71 @@ class GameState:
             max_karma = max(self.karma.items(), key=lambda x: x[1])
             return f"{max_karma[0].capitalize()} {max_karma[1]}"
         return "Герой"
+    
+    def get_karma_progress(self) -> Dict[str, int]:
+        """Получить прогресс кармы для финальных развязок."""
+        # Проверяем, достигла ли карма определённого порога
+        progress = {}
+        thresholds = {
+            "heroic": 30,
+            "brutal": 25,
+            "gentle": 25,
+            "clever": 25,
+            "reckless": 20,
+            "mysterious": 25,
+        }
+        for category, threshold in thresholds.items():
+            current = self.karma.get(category, 0)
+            progress[category] = {
+                "current": current,
+                "threshold": threshold,
+                "reached": current >= threshold,
+                "level": current // 10,  # Уровень кармы
+            }
+        return progress
+    
+    def get_event_log(self, limit: int = 10) -> List[str]:
+        """Получить последние записи из лога событий."""
+        return self.event_log[-limit:] if len(self.event_log) > limit else self.event_log
+    
+    def get_ui(self) -> str:
+        """Получить текст UI для отображения в боте."""
+        weather_icon = {"clear": "☀️", "cloudy": "☁️", "rain": "🌧️", "dry": "☀️", "cool": "❄️"}.get(self.weather, "☀️")
+        # Получить последние 5 записей из лога
+        recent_events = self.get_event_log(5)
+        log_text = "\n".join(f"> {line}" for line in recent_events)
+        
+        return (
+            f"❤️ {self.hp} | 🍖 {self.hunger} | 💧 {self.thirst} | {weather_icon} {self.current_location}\n"
+            "━━━━━━━━━━━━━━━━━━━\n"
+            f"{log_text}\n"
+            "━━━━━━━━━━━━━━━━━━━"
+        )
+    
+    def get_inventory_text(self) -> str:
+        """Получить текст инвентаря для отображения в боте."""
+        lines = []
+        for item, count in self.inventory.items():
+            if count > 0:
+                line = f"• {item} x{count}" if count > 1 else f"• {item}"
+                lines.append(line)
+        
+        text = "Инвентарь:\n" + "\n".join(lines) if lines else "Инвентарь пуст"
+        text += "\n━━━━━━━━━━━━━━━━━━━"
+        return text
+    
+    def get_character_text(self) -> str:
+        """Получить текст персонажа для отображения в боте."""
+        slots = {
+            "head": "Голова",
+            "chest": "Грудь",
+            "legs": "Ноги",
+            "hands": "Руки",
+            "feet": "Ноги",
+            "back": "Спина",
+        }
+        lines = [f"{name}: {self.equipment.get(slot) or 'Пусто'}" for slot, name in slots.items()]
+        return "Персонаж:\n\n" + "\n".join(lines)
 
 
 # Глобальное состояние игры

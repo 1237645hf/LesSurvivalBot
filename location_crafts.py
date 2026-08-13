@@ -223,3 +223,69 @@ handle_use_item = handle_use_item
 # Make location-specific handlers available
 handle_craft_location_3 = handle_craft_location_3_slate_hollow
 handle_craft_location_6 = handle_craft_location_6_furry_cave
+
+
+def handle_craft_location_4_hunters_glade(data, game, uid):
+    """Крафт для Локации 4: Просека Охотников — охотничье снаряжение."""
+    
+    text = None
+    kb = None
+    
+    if data == "craft_Hunter_Trap":
+        # Охотничья ловушка из веток + кожи
+        if game.inventory.get("Ветка", 0) < 2 or game.inventory.get("Кожа", 0) < 1:
+            return None, None
+        game.inventory["Ветка"] -= 2
+        game.inventory["Кожа"] -= 1
+        game.inventory["Охотничья ловушка"] = game.inventory.get("Охотничья ловушка", 0) + 1
+        game.add_log("Скрафтили охотничью ловушку!")
+        text = game.get_inventory_text()
+        kb = get_main_kb(game)
+    
+    return text, kb
+
+
+def handle_craft_location_5_slug_pit(data, game, uid):
+    """Крафт для Локации 5: Яр Слизней — грибные артефакты."""
+    
+    text = None
+    kb = None
+    
+    if data == "craft_Mushroom_Cap":
+        # Грибная шапка из слизи + грибов
+        if game.inventory.get("Грибы", 0) < 1 or game.inventory.get("Слизь", 0) < 1:
+            return None, None
+        game.inventory["Грибы"] -= 1
+        game.inventory["Слизь"] -= 1
+        game.inventory["Грибная шапка"] = game.inventory.get("Грибная шапка", 0) + 1
+        game.add_log("Скрафтили грибную шапку! Странный предмет...")
+        text = game.get_inventory_text()
+        kb = get_main_kb(game)
+    
+    return text, kb
+
+
+def handle_craft_location_7_sanctuary_peak(data, game, uid):
+    """Крафт для Локации 7: Вершина Святилища — священные артефакты."""
+    
+    text = None
+    kb = None
+    
+    if data == "craft_Sacred_Water":
+        # Святая вода - конечный крафт
+        if game.inventory.get("Вода", 0) < 1:
+            return None, None
+        # Святая вода крафтится только если игрок достиг святилища
+        game.inventory["Вода"] -= 1
+        game.inventory["Святая вода"] = game.inventory.get("Святая вода", 0) + 1
+        game.add_log("Ты наполнил чашу святилища. Вода светится... святой!")
+        text = game.get_inventory_text()
+        kb = get_main_kb(game)
+    
+    return text, kb
+
+
+# Aliases для удобства
+handle_craft_location_4 = handle_craft_location_4_hunters_glade
+handle_craft_location_5 = handle_craft_location_5_slug_pit
+handle_craft_location_7 = handle_craft_location_7_sanctuary_peak

@@ -3,6 +3,15 @@ from keyboards import get_main_kb, peek_kb, cat_kb, next_kb
 def handle_story(data, game, uid):
     text = None
     kb = None
+    
+    # Apply karma modifiers for narrative flavor
+    if game.karma.get("heroic", 0) > 25:
+        text = f"{text}Ты действуешь с героической решимостью!\n"
+    if game.karma.get("gentle", 0) > 20:
+        text = f"{text}Твой подход мягкий и заботливый.\n"
+    if game.karma.get("clever", 0) > 20:
+        text = f"{text}Умная мысль помогает тебе здесь.\n"
+    
     if data == "wolf_flee":
         game.add_log(
             "Ты медленно пятишься назад, стараясь не хрустнуть ни одной веткой.\n"
@@ -52,7 +61,8 @@ def handle_story(data, game, uid):
             "Ты встаёшь, разворачиваешься и уходишь.\n"
             "За спиной остаётся только тишина леса и ощущение, что ты только что прошёл мимо чего-то важного."
         )
-        game.karma -= 50
+        # Уменьшим вместо этого значение одного из измерений кармы
+        game.karma["gentle"] = max(0, game.karma.get("gentle", 0) - 5)
         game.story_state = None
         game.reset_nav()
         text = game.get_ui()

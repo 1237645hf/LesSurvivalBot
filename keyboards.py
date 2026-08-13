@@ -41,3 +41,8 @@ cat_kb = InlineKeyboardMarkup(inline_keyboard=[
 next_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="Дальше", callback_data="story_next")]
 ])
+
+def get_location_kb(game, location_id: int):
+    """Получить клавиатуру для конкретной локации."""
+    # Для теперь просто возвращаем основную клавиатуру
+    return get_main_kb(game)

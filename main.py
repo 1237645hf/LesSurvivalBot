@@ -16,7 +16,14 @@ from pymongo import MongoClient
 from keyboards import get_main_kb, inventory_inline_kb, character_inline_kb, wolf_kb, peek_kb, cat_kb, next_kb
 from crafts import handle_craft
 from stories import handle_story
-from location_stories import handle_location_2_ruchey
+from location_stories import (
+    handle_location_2_ruchey, 
+    handle_location_3_slate_hollow, 
+    handle_location_4_hunters_glade,
+    handle_location_5_slug_pit,
+    handle_location_6_furry_cave,
+    handle_location_7_sanctuary_peak
+)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # НАСТРОЙКИ
@@ -43,6 +50,21 @@ dp = Dispatcher()
 # Глобальные словари для трекинга состояний (запросы, сообщения)
 last_request_time = {}
 last_active_msg_id = {}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# WEBHOOK ENDPOINT
+# ──────────────────────────────────────────────────────────────────────────────
+@app.post("/webhook_legacy")
+async def webhook_endpoint_legacy(request: Request):
+    """Обработчик вебхука от Telegram — принимает апдейты для aiogram Dispatcher."""
+    logging.info(f"Вебхук получен: {request.url}")
+    try:
+        data = await request.json()
+        if data:
+            logging.info(f"Данные апдейта: {data.get('event')}")
+    except:
+        pass
+    return PlainTextResponse("ok")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # MONGODB
@@ -355,6 +377,39 @@ async def process_callback(callback: types.CallbackQuery):
 
     elif data.startswith("river_") or data.startswith("snake_") or data.startswith("cat_") or data.startswith("wolf_") or data.startswith("story_") or data.startswith("peek_"):
         text, kb = handle_location_2_ruchey(data, game, uid)
+        if text is None:
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    
+    elif data.startswith("slate_") or data.startswith("climb_") or data.startswith("rest_") or data.startswith("examine"):
+        text, kb = handle_location_3_slate_hollow(data, game, uid)
+        if text is None:
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    
+    elif data.startswith("hunters_") or data.startswith("glade_"):
+        text, kb = handle_location_4_hunters_glade(data, game, uid)
+        if text is None:
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    
+    elif data.startswith("slug_") or data.startswith("pit_"):
+        text, kb = handle_location_5_slug_pit(data, game, uid)
+        if text is None:
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    
+    elif data.startswith("furry_") or data.startswith("warm_") or data.startswith("sleep") or data.startswith("cave_"):
+        text, kb = handle_location_6_furry_cave(data, game, uid)
+        if text is None:
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    
+    elif data.startswith("sanctuary_"):
+        text, kb = handle_location_7_sanctuary_peak(data, game, uid)
+        if text is None:
+            text = game.get_ui()
+            kb = get_main_kb(game)
 
     elif data in ("wolf_flee", "wolf_fight", "peek_den", "cat_leave", "cat_take", "story_next"):
         text, kb = handle_story(data, game, uid)
@@ -387,22 +442,34 @@ async def process_callback(callback: types.CallbackQuery):
 
     elif data == "action_4":
         if game.ap <= 0:
-            game.add_log("Действия на сегодня закончились.")
+            game.add_log("Действия на сегодня закончились. Спать нельзя — нужно найти отдых!")
+            text = game.get_ui()
+            kb = get_main_kb(game)
         else:
-            game.hp = min(100, game.hp + 40)
-            game.hunger = max(0, game.hunger - 20)
-            game.thirst = max(0, game.thirst - 15)
+            game.ap -= 1
             game.day += 1
-            game.ap = 5
-            game.add_log("Ты уснул. Новый день начался.")
-        text = game.get_ui()
-        kb = get_main_kb(game)
+            game.inventory["Бутылка воды"] = min(10, game.inventory.get("Бутылка воды", 0) + 5)
+            game.add_log(f"Ночь {game.day} началась. Ты отоспался. В запасе: +5 воды.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
 
     elif data == "action_collect_water":
         if game.weather == "rain" and game.inventory["Бутылка воды"] < game.water_capacity:
             add = min(5, game.water_capacity - game.inventory["Бутылка воды"])
             game.inventory["Бутылка воды"] += add
             game.add_log(f"Собрал {add} воды в бутылку.")
+        text = game.get_ui()
+        kb = get_main_kb(game)
+    
+    elif data == "karma_escape":
+        # Простая проверка кармы: все измерения должны быть > 0
+        karma_ok = all(v > 0 for v in game.karma.values())
+        if karma_ok:
+            game.add_log("Карма идеальна — ты сбежал из леса!")
+            game.story_state = "karma_escape"
+        else:
+            game.add_log("Карма не идеальна — остаёшься в лесу.")
+            game.story_state = "karma_stuck"
         text = game.get_ui()
         kb = get_main_kb(game)
 
@@ -436,3 +503,4 @@ async def webhook(request: Request):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+# TEST ROO EDIT
