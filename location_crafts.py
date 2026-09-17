@@ -6,6 +6,10 @@ location_crafts.py — Локальные системы крафта для к�
 from keyboards import get_main_kb, get_location_kb
 
 
+def craft_success_text(game, item_name):
+    return f"Успешно создано: {item_name}\n\n{game.get_inventory_text()}"
+
+
 def handle_craft_location_2_ruchey(data, game, uid):
     """Крафт и использование предметов для Локации 2: Ручей с Змеями."""
     
@@ -14,12 +18,12 @@ def handle_craft_location_2_ruchey(data, game, uid):
     
     if data == "craft_Slate_Plate":
         # Сланцевая пластина — ключ к крафту сет-браны
-        if game.inventory.get("Спички 🔥", 0) < 1:
+        if game.inventory.get("Спички", 0) < 1:
             return None, None
-        game.inventory["Спички 🔥"] -= 1
+        game.inventory["Спички"] -= 1
         game.inventory["Сланцевая пластина"] = game.inventory.get("Сланцевая пластина", 0) + 1
         game.add_log("Вы скрафтили сланцевую пластину — основу для сет-браны!")
-        text = game.get_inventory_text()
+        text = craft_success_text(game, "Сланцевая пластина")
         kb = get_main_kb(game)
         
     elif data == "use_item_Slate_Plate":
@@ -43,7 +47,7 @@ def handle_craft_location_2_ruchey(data, game, uid):
         game.inventory["Вода"] -= 1
         game.inventory["Сланевый шлем"] = game.inventory.get("Сланевый шлем", 0) + 1
         game.add_log("Скрафтили Сланевый шлем! Теперь голова защищена.")
-        text = game.get_inventory_text()
+        text = craft_success_text(game, "Сланевый шлем")
         kb = get_main_kb(game)
         
     elif data == "use_item_Slate_Helmet":
@@ -67,7 +71,7 @@ def handle_craft_location_2_ruchey(data, game, uid):
         game.inventory["Ветка"] -= 1
         game.inventory["Сланевая броня"] = game.inventory.get("Сланевая броня", 0) + 1
         game.add_log("Скрафтили Сланевую броню! Грудь защищена.")
-        text = game.get_inventory_text()
+        text = craft_success_text(game, "Сланевая броня")
         kb = get_main_kb(game)
         
     elif data == "use_item_Slate_Chest":
@@ -99,7 +103,7 @@ def handle_craft_location_3_slate_hollow(data, game, uid):
         game.inventory["Глина"] -= 1
         game.inventory["Сланцевой слиток"] = game.inventory.get("Сланцевой слиток", 0) + 1
         game.add_log("Вы нашли сланцевой слиток — сердце крафтов локации!")
-        text = game.get_inventory_text()
+        text = craft_success_text(game, "Сланцевой слиток")
         kb = get_main_kb(game)
         
     elif data == "craft_Slate_Helmet_2":
@@ -110,7 +114,7 @@ def handle_craft_location_3_slate_hollow(data, game, uid):
         game.inventory["Вода"] -= 1
         game.inventory["Сланевый шлем II"] = game.inventory.get("Сланевый шлем II", 0) + 1
         game.add_log("Скрафтили улучшенный шлем из сланца!")
-        text = game.get_inventory_text()
+        text = craft_success_text(game, "Сланевый шлем II")
         kb = get_main_kb(game)
         
     elif data == "craft_Slate_Chest_2":
@@ -121,7 +125,7 @@ def handle_craft_location_3_slate_hollow(data, game, uid):
         game.inventory["Еда"] -= 1
         game.inventory["Сланевая броня II"] = game.inventory.get("Сланевая броня II", 0) + 1
         game.add_log("Скрафтили улучшенную броню из сланца!")
-        text = game.get_inventory_text()
+        text = craft_success_text(game, "Сланевая броня II")
         kb = get_main_kb(game)
     
     return text, kb
@@ -140,7 +144,7 @@ def handle_craft_location_6_furry_cave(data, game, uid):
         game.inventory["Мех"] -= 1
         game.inventory["Меховой шкуры"] = game.inventory.get("Меховой шкуры", 0) + 1
         game.add_log("Вы нашли меховой шкур — уют для пещеры!")
-        text = game.get_inventory_text()
+        text = craft_success_text(game, "Меховой шкуры")
         kb = get_main_kb(game)
         
     elif data == "craft_Fur_Helmet":
@@ -151,7 +155,7 @@ def handle_craft_location_6_furry_cave(data, game, uid):
         game.inventory["Вода"] -= 1
         game.inventory["Меховой шлем"] = game.inventory.get("Меховой шлем", 0) + 1
         game.add_log("Скрафтили Меховой шлем! Тепло и уютно.")
-        text = game.get_inventory_text()
+        text = craft_success_text(game, "Меховой шлем")
         kb = get_main_kb(game)
         
     elif data == "craft_Fur_Chest":
@@ -162,7 +166,7 @@ def handle_craft_location_6_furry_cave(data, game, uid):
         game.inventory["Ветка"] -= 1
         game.inventory["Меховая броня"] = game.inventory.get("Меховая броня", 0) + 1
         game.add_log("Скрафтили Меховую броню! Тепло и защищено.")
-        text = game.get_inventory_text()
+        text = craft_success_text(game, "Меховая броня")
         kb = get_main_kb(game)
     
     return text, kb
@@ -237,7 +241,7 @@ def handle_craft_location_4_hunters_glade(data, game, uid):
         game.inventory["Кожа"] -= 1
         game.inventory["Охотничья ловушка"] = game.inventory.get("Охотничья ловушка", 0) + 1
         game.add_log("Скрафтили охотничью ловушку!")
-        text = game.get_inventory_text()
+        text = craft_success_text(game, "Охотничья ловушка")
         kb = get_main_kb(game)
     
     return text, kb
@@ -257,7 +261,7 @@ def handle_craft_location_5_slug_pit(data, game, uid):
         game.inventory["Слизь"] -= 1
         game.inventory["Грибная шапка"] = game.inventory.get("Грибная шапка", 0) + 1
         game.add_log("Скрафтили грибную шапку! Странный предмет...")
-        text = game.get_inventory_text()
+        text = craft_success_text(game, "Грибная шапка")
         kb = get_main_kb(game)
     
     return text, kb
@@ -277,7 +281,7 @@ def handle_craft_location_7_sanctuary_peak(data, game, uid):
         game.inventory["Вода"] -= 1
         game.inventory["Святая вода"] = game.inventory.get("Святая вода", 0) + 1
         game.add_log("Ты наполнил чашу святилища. Вода светится... святой!")
-        text = game.get_inventory_text()
+        text = craft_success_text(game, "Святая вода")
         kb = get_main_kb(game)
     
     return text, kb

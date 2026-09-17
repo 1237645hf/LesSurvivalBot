@@ -1,4 +1,64 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+)
+
+
+def get_bottom_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🚀 Начать / Старт")],
+            [
+                KeyboardButton(text="📊 Статус"),
+                KeyboardButton(text="🎒 Инвентарь"),
+                KeyboardButton(text="⚙️ Настройки"),
+            ],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+
+
+def get_settings_kb(game):
+    mode_text = "📱 Телефон" if game.display_mode == "phone" else "💻 Компьютер"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="📱 Телефон", callback_data="settings_mode_phone"),
+            InlineKeyboardButton(text="💻 Компьютер", callback_data="settings_mode_pc"),
+        ],
+        [
+            InlineKeyboardButton(text="Длина -", callback_data="settings_length_minus"),
+            InlineKeyboardButton(text=f"{game.max_line_length} ({mode_text})", callback_data="settings_noop"),
+            InlineKeyboardButton(text="Длина +", callback_data="settings_length_plus"),
+        ],
+        [
+            InlineKeyboardButton(text="Высота -", callback_data="settings_height_minus"),
+            InlineKeyboardButton(text=f"{game.max_lines_per_msg} строк", callback_data="settings_noop"),
+            InlineKeyboardButton(text="Высота +", callback_data="settings_height_plus"),
+        ],
+        [InlineKeyboardButton(text="Назад", callback_data="back")],
+    ])
+
+
+def get_use_item_kb(game):
+    usable_items = [
+        item for item, count in game.inventory.items()
+        if count > 0 and (item in ("Еда", "Вода") or "зель" in item.lower())
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=item, callback_data=f"use_consumable_{item}")]
+        for item in usable_items
+    ] + [[InlineKeyboardButton(text="Назад", callback_data="back")]])
+
+
+def get_drop_item_kb(game):
+    items = [item for item, count in game.inventory.items() if count > 0]
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"Выкинуть: {item}", callback_data=f"drop_item_{item}")]
+        for item in items
+    ] + [[InlineKeyboardButton(text="Назад", callback_data="back")]])
 
 def get_main_kb(game):
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -7,8 +67,10 @@ def get_main_kb(game):
         [InlineKeyboardButton(text=f"Пить ({game.inventory.get('Вода', 0)}/{game.water_capacity})", callback_data="action_3") if game.inventory.get('Вода', 0) > 0 else InlineKeyboardButton(text="Пить (пусто)", callback_data="action_3"),
          InlineKeyboardButton(text="Спать", callback_data="action_4")]
     ])
-    if game.weather == "rain":
-        kb.inline_keyboard.append([InlineKeyboardButton(text="Собрать воду", callback_data="action_collect_water")])
+    if game.weather in {"rain", "storm"}:
+        kb.inline_keyboard.append([
+            InlineKeyboardButton(text="[ 🌧️ Собрать дождевую воду ]", callback_data="action_collect_water")
+        ])
     kb.inline_keyboard.append([
         InlineKeyboardButton(text="Локации", callback_data="locations_menu")
     ])

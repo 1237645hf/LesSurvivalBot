@@ -3,6 +3,7 @@ import logging
 import os
 import time
 import random
+from textwrap import wrap
 from pathlib import Path
 from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
@@ -30,7 +31,16 @@ def load_env_file(path: str = ".env"):
 
 load_env_file()
 
-from keyboards import get_main_kb, get_locations_kb, inventory_inline_kb, character_inline_kb
+from keyboards import (
+    get_main_kb,
+    get_locations_kb,
+    get_settings_kb,
+    get_bottom_menu,
+    get_use_item_kb,
+    get_drop_item_kb,
+    inventory_inline_kb,
+    character_inline_kb,
+)
 from crafts import handle_craft
 from location_stories import (
     handle_story,
@@ -115,7 +125,7 @@ class Game(GameState):
         self.day = 1
         self.log = ["Ты проснулся в лесу. Что будешь делать?"]
         self.inventory = {
-            "Спички 🔥": 1,
+            "Спички": 1,
             "Вилка": 1,
             "Кусок коры": 1,
             "Сухпай": 3,
@@ -157,9 +167,9 @@ class Game(GameState):
         self.nav_stack = ["main"]
 
     def get_ui(self):
-        weather_icon = {"clear": "☀️", "cloudy": "☁️", "rain": "🌧️"}.get(self.weather, "☀️")
+        max_width = self.max_line_length if self.display_mode == "phone" else None
         return (
-            f"❤️ {self.hp} | 🍖 {self.hunger} | 💧 {self.thirst} | ⚡ {self.ap} | {weather_icon} День: {self.day}\n"
+            f"{self.get_status_bar(max_width)}\n"
             "━━━━━━━━━━━━━━━━━━━\n"
             + "\n".join(f"> {line}" for line in self.log) + "\n"
             "━━━━━━━━━━━━━━━━━━━"
@@ -170,6 +180,7 @@ class Game(GameState):
         equipped_hand = self.equipment.get("hand")
         for item, count in self.inventory.items():
             if count > 0:
+                item = item.replace(" 🔥", "").replace("🔥", "")
                 equipped_mark = " (в руке)" if item == equipped_hand else ""
                 line = f"• {item} x{count}{equipped_mark}" if count > 1 else f"• {item}{equipped_mark}"
                 lines.append(line)
@@ -203,7 +214,8 @@ def load_game(uid: int) -> Game | None:
             inventory = game_data.get("inventory", {})
             normalized_inventory = {}
             for key, value in inventory.items():
-                canonical = key.replace("Спички ", "Спички 🔥").replace("Бутылка воды", "Вода")
+                canonical = key.replace("Спички 🔥", "Спички").replace("Спички ", "Спички")
+                canonical = canonical.replace("Бутылка воды", "Вода")
                 normalized_inventory[canonical] = value
             game_data["inventory"] = normalized_inventory
             return Game.from_document(game_data)
@@ -223,6 +235,70 @@ def save_game(uid: int, game: Game):
         logging.error(f"Ошибка сохранения {uid}: {e}")
 
 games = {}
+
+ITEM_DESCRIPTIONS = {
+    "Спички": "Нужны для розжига и создания факела.",
+    "Ветка": "Подходит для крафта простых предметов.",
+    "Факел": "Освещает путь и помогает пережить опасные встречи.",
+    "Сланцевая пластина": "Ключевой материал для снаряжения у ручья.",
+    "Сланевый шлем": "Защищает голову от опасностей локации.",
+    "Сланевая броня": "Защищает грудь в путешествии.",
+}
+
+
+def get_inspectable_items(game):
+    return [
+        item for item, count in game.inventory.items()
+        if count > 0 and item in ITEM_DESCRIPTIONS
+    ]
+
+
+def get_usable_items(game):
+    return [
+        item for item, count in game.inventory.items()
+        if count > 0 and (item in ("Еда", "Вода") or "зель" in item.lower())
+    ]
+
+
+def get_callback_answer(callback):
+    data = callback.data or ""
+    game = games.get(callback.from_user.id)
+    if data == "inv_inspect" and (not game or not get_inspectable_items(game)):
+        return "У вас нет ключевых предметов для подробного осмотра", True
+    if data in ("inv_use", "inv_drop") and (
+        not game or not any(count > 0 for count in game.inventory.values())
+    ):
+        return ("Нечего использовать" if data == "inv_use" else "Нечего выкидывать"), True
+    if data == "inv_use" and not get_usable_items(game):
+        return "Нечего использовать", True
+    return None, False
+
+
+def use_consumable(item, game):
+    if item == "Вода":
+        water_cost = 1 + max(0, (30 - game.hunger) // 10)
+        if game.inventory.get("Вода", 0) < water_cost:
+            return f"Нужно воды: {water_cost}. В инвентаре недостаточно воды."
+        game.inventory["Вода"] -= water_cost
+        if game.inventory["Вода"] <= 0:
+            del game.inventory["Вода"]
+        game.thirst = min(100, game.thirst + 10)
+        result = f"Жажда восстановлена на 10. Потрачено воды: {water_cost}."
+    elif item == "Еда":
+        game.hunger = min(100, game.hunger + 30)
+        result = "Голод утолен."
+    elif "зель" in item.lower():
+        game.hp = min(100, game.hp + 25)
+        result = "Здоровье восстановлено."
+    else:
+        return None
+
+    if item != "Вода":
+        game.inventory[item] -= 1
+        if game.inventory[item] <= 0:
+            del game.inventory[item]
+    game.add_log(f"Использовано: {item}. {result}")
+    return f"Использовано: {item}. {result}\n\n{game.get_ui()}"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ПРИВЕТСТВИЕ
@@ -277,6 +353,8 @@ async def safe_edit_message(chat_id: int, msg_id: int, text: str, reply_markup=N
 
 
 async def update_or_send_message(chat_id: int, uid: int, text: str, reply_markup=None):
+    game = games.get(uid)
+    text = format_game_text(text, game)
     msg_id = last_active_msg_id.get(uid)
     if msg_id:
         edited = await safe_edit_message(chat_id, msg_id, text, reply_markup)
@@ -305,6 +383,37 @@ async def update_or_send_message(chat_id: int, uid: int, text: str, reply_markup
         logging.exception(f"Неожиданная ошибка send_message: {exc}")
         return None
 
+
+def format_game_text(text: str, game) -> str:
+    """Отформатировать сообщение под выбранный режим экрана игрока."""
+    if not game:
+        return text
+
+    line_length = game.max_line_length if game.display_mode == "phone" else None
+    lines = []
+    for line in text.splitlines() or [""]:
+        if line_length:
+            lines.extend(wrap(line, width=line_length, replace_whitespace=False) or [""])
+        else:
+            lines.append(line)
+
+    max_lines = game.max_lines_per_msg
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        if lines:
+            lines[-1] = f"{lines[-1]}\n…"
+    return "\n".join(lines)
+
+
+def get_settings_text(game):
+    mode = "📱 Телефон" if game.display_mode == "phone" else "💻 Компьютер"
+    return (
+        "⚙️ Настройки отображения\n\n"
+        f"Режим: {mode}\n"
+        f"Длина строки: {game.max_line_length}\n"
+        f"Строк на сообщение: {game.max_lines_per_msg}"
+    )
+
 # ──────────────────────────────────────────────────────────────────────────────
 # ХЕНДЛЕРЫ
 # ──────────────────────────────────────────────────────────────────────────────
@@ -330,16 +439,17 @@ async def cmd_start(message: Message):
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
             [types.InlineKeyboardButton(text="Начать", callback_data="start_new_game")]
         ])
+    await message.answer("Нижнее меню включено.", reply_markup=get_bottom_menu())
     await update_or_send_message(chat_id, uid, text, kb)
 
 @dp.callback_query()
 async def process_callback(callback: types.CallbackQuery):
+    await callback.answer(*get_callback_answer(callback))
     uid = callback.from_user.id
     chat_id = callback.message.chat.id
     try:
         now = time.time()
         if uid in last_request_time and now - last_request_time[uid] < 1.0:
-            await callback.answer("Подожди немного...")
             return
         last_request_time[uid] = now + 0.2
         data = callback.data
@@ -350,23 +460,47 @@ async def process_callback(callback: types.CallbackQuery):
             games[uid] = game
             save_game(uid, game)
             await update_or_send_message(chat_id, uid, game.get_ui(), get_main_kb(game))
-            await callback.answer()
             return
         if data == "load_game":
             game = load_game(uid) or Game()
             games[uid] = game
             save_game(uid, game)
             await update_or_send_message(chat_id, uid, game.get_ui(), get_main_kb(game))
-            await callback.answer()
             return
         if not game:
-            await callback.answer("Сначала начни игру /start")
             return
 
         text = None
         kb = None
 
-        if data == "locations_menu":
+        if data == "settings_mode_phone":
+            game.display_mode = "phone"
+            text = get_settings_text(game)
+            kb = get_settings_kb(game)
+        elif data == "settings_mode_pc":
+            game.display_mode = "pc"
+            text = get_settings_text(game)
+            kb = get_settings_kb(game)
+        elif data == "settings_length_minus":
+            game.max_line_length = max(10, game.max_line_length - 5)
+            text = get_settings_text(game)
+            kb = get_settings_kb(game)
+        elif data == "settings_length_plus":
+            game.max_line_length = min(100, game.max_line_length + 5)
+            text = get_settings_text(game)
+            kb = get_settings_kb(game)
+        elif data == "settings_height_minus":
+            game.max_lines_per_msg = max(3, game.max_lines_per_msg - 1)
+            text = get_settings_text(game)
+            kb = get_settings_kb(game)
+        elif data == "settings_height_plus":
+            game.max_lines_per_msg = min(30, game.max_lines_per_msg + 1)
+            text = get_settings_text(game)
+            kb = get_settings_kb(game)
+        elif data == "settings_noop":
+            text = get_settings_text(game)
+            kb = get_settings_kb(game)
+        elif data == "locations_menu":
             game.push_screen("locations")
             text = "Куда направиться?"
             kb = get_locations_kb(game)
@@ -401,26 +535,53 @@ async def process_callback(callback: types.CallbackQuery):
         elif data == "inv_craft":
             game.push_screen("craft")
             kb_c = types.InlineKeyboardMarkup(inline_keyboard=[])
-            if game.inventory.get("Спички 🔥", 0) >= 1 and game.inventory.get("Ветка", 0) >= 1:
+            if game.inventory.get("Спички", 0) >= 1 and game.inventory.get("Ветка", 0) >= 1:
                 kb_c.inline_keyboard.append([
                     types.InlineKeyboardButton(text="Факел (1 ветка + 1 спичка)", callback_data="craft_Факел")
                 ])
                 craft_text = "Доступный крафт:"
             else:
-                craft_text = "Пока ничего нельзя скрафтить.\n(нужна Ветка и Спички 🔥)"
+                craft_text = "Пока ничего нельзя скрафтить.\n(нужна Ветка и Спички)"
             kb_c.inline_keyboard.append([types.InlineKeyboardButton(text="Назад", callback_data="back")])
             text = craft_text
             kb = kb_c
         elif data == "inv_use":
+            if not get_usable_items(game):
+                return
             game.push_screen("use")
-            kb_u = types.InlineKeyboardMarkup(inline_keyboard=[])
-            if game.inventory.get("Факел", 0) > 0 and game.equipment.get("hand") is None:
-                kb_u.inline_keyboard.append([types.InlineKeyboardButton(text="Факел ", callback_data="use_item_Факел")])
-            if not kb_u.inline_keyboard:
-                kb_u.inline_keyboard.append([types.InlineKeyboardButton(text="Нечего использовать", callback_data="dummy")])
-            kb_u.inline_keyboard.append([types.InlineKeyboardButton(text="Назад", callback_data="back")])
             text = "Что использовать?"
-            kb = kb_u
+            kb = get_use_item_kb(game)
+
+        elif data == "inv_inspect":
+            items = get_inspectable_items(game)
+            if not items:
+                return
+            text = "Подробный осмотр:\n" + "\n".join(
+                f"• {item}: {ITEM_DESCRIPTIONS[item]}" for item in items
+            )
+            kb = inventory_inline_kb
+
+        elif data == "inv_drop":
+            if not any(count > 0 for count in game.inventory.values()):
+                return
+            text = "Выберите предмет для удаления:"
+            kb = get_drop_item_kb(game)
+
+        elif data.startswith("use_consumable_"):
+            item = data.removeprefix("use_consumable_")
+            result = use_consumable(item, game)
+            if result is not None:
+                text = result
+                kb = get_main_kb(game)
+
+        elif data.startswith("drop_item_"):
+            item = data.removeprefix("drop_item_")
+            if game.inventory.get(item, 0) > 0:
+                game.inventory[item] -= 1
+                if game.inventory[item] <= 0:
+                    del game.inventory[item]
+                text = f"Удалено: {item}.\n\n{game.get_inventory_text()}"
+                kb = inventory_inline_kb
 
         elif data == "back":
             prev = game.pop_screen()
@@ -435,19 +596,22 @@ async def process_callback(callback: types.CallbackQuery):
                 kb = character_inline_kb
             elif prev == "craft":
                 kb_c = types.InlineKeyboardMarkup(inline_keyboard=[])
-                if game.inventory.get("Спички 🔥", 0) >= 1 and game.inventory.get("Ветка", 0) >= 1:
+                if game.inventory.get("Спички", 0) >= 1 and game.inventory.get("Ветка", 0) >= 1:
                     kb_c.inline_keyboard.append([
                         types.InlineKeyboardButton(text="Факел (1 ветка + 1 спичка)", callback_data="craft_Факел")
                     ])
                     craft_text = "Доступный крафт:"
                 else:
-                    craft_text = "Пока ничего нельзя скрафтить.\n(нужна Ветка и Спички 🔥)"
+                    craft_text = "Пока ничего нельзя скрафтить.\n(нужна Ветка и Спички)"
                 kb_c.inline_keyboard.append([types.InlineKeyboardButton(text="Назад", callback_data="back")])
                 text = craft_text
                 kb = kb_c
             elif prev == "use":
                 text = game.get_ui()
                 kb = get_main_kb(game)
+            elif prev == "settings":
+                text = get_settings_text(game)
+                kb = get_settings_kb(game)
             else:
                 text = game.get_ui()
                 kb = get_main_kb(game)
@@ -511,6 +675,10 @@ async def process_callback(callback: types.CallbackQuery):
                 possible = ["Ветка", "Камень", "Ягода", "Гриб"]
                 found = random.choice(possible)
                 game.inventory[found] = game.inventory.get(found, 0) + 1
+                hunger_cost = 2 * 3 if game.weather == "storm" else 2
+                thirst_cost = 0 if game.weather == "cloudy" else 1
+                game.hunger = max(1, game.hunger - hunger_cost)
+                game.thirst = max(1, game.thirst - thirst_cost)
                 game.add_log(f"Нашёл: {found}")
                 text = game.get_ui()
                 kb = get_main_kb(game)
@@ -529,20 +697,24 @@ async def process_callback(callback: types.CallbackQuery):
 
         elif data == "action_4":
             game.day += 1
-            game.ap = 5
+            game.weather = game.roll_weather_for_new_day()
+            game.reset_daily_ap()
             game.inventory["Вода"] = min(10, game.inventory.get("Вода", 0) + 5)
-            game.add_log(f"День {game.day} начался. Снова 5 действий в запасе.")
-            game.add_log("Ночь закончилась. Ты отдохнул и пополнил запасы воды.")
+            game.add_log(f"День {game.day} начался. Снова {game.ap} действий в запасе.")
+            game.add_log(f"Погода сегодня: {game.weather}.")
             text = game.get_ui()
             kb = get_main_kb(game)
 
         elif data == "action_collect_water":
-            if game.weather == "rain" and game.inventory.get("Вода", 0) < game.water_capacity:
-                add = min(5, game.water_capacity - game.inventory.get("Вода", 0))
-                game.inventory["Вода"] += add
-                game.add_log(f"Собрал {add} воды в бутылку.")
-            text = game.get_ui()
-            kb = get_main_kb(game)
+            if game.weather in {"rain", "storm"} and game.ap > 0:
+                game.ap -= 1
+                game.inventory["Вода"] = game.inventory.get("Вода", 0) + 1
+                game.add_log("Ты набрал дождевой воды!")
+                text = "Ты набрал дождевой воды!"
+                kb = get_main_kb(game)
+            else:
+                text = game.get_ui()
+                kb = get_main_kb(game)
         
         elif data == "karma_escape":
             karma_ok = all(v > 0 for v in game.karma.values())
@@ -559,13 +731,8 @@ async def process_callback(callback: types.CallbackQuery):
             game.record_route(data)
             await update_or_send_message(chat_id, uid, text, kb)
             save_game(uid, game)
-        await callback.answer()
     except Exception as exc:
         logging.exception(f"Ошибка callback {data if 'data' in locals() else 'unknown'} для {uid}: {exc}")
-        try:
-            await callback.answer("Произошла ошибка. Попробуйте ещё раз.")
-        except Exception:
-            pass
 
 @dp.message(F.text & ~F.text.startswith("/"))
 async def process_text_message(message: Message):
@@ -574,8 +741,26 @@ async def process_text_message(message: Message):
     try:
         raw_text = message.text.strip() if message.text else ""
         text = raw_text[:80] if raw_text else ""
+        if text == "🚀 Начать / Старт":
+            await cmd_start(message)
+            return
         game = games.get(uid) or load_game(uid)
         if not game:
+            return
+
+        if text == "📊 Статус":
+            games[uid] = game
+            await update_or_send_message(chat_id, uid, game.get_ui(), get_main_kb(game))
+            return
+        if text == "🎒 Инвентарь":
+            games[uid] = game
+            await update_or_send_message(chat_id, uid, game.get_inventory_text(), inventory_inline_kb)
+            return
+        if text == "⚙️ Настройки":
+            games[uid] = game
+            game.push_screen("settings")
+            await update_or_send_message(chat_id, uid, get_settings_text(game), get_settings_kb(game))
+            save_game(uid, game)
             return
 
         if game.story_state == "WAITING_FOR_PET_NAME":
@@ -611,7 +796,7 @@ async def process_text_message(message: Message):
             # Правильный путь: редактируем активное сообщение, а не создаём новое
             msg_id = last_active_msg_id.get(uid)
             if msg_id:
-                await safe_edit_message(chat_id, msg_id, final_text, kb)
+                await safe_edit_message(chat_id, msg_id, format_game_text(final_text, game), kb)
             else:
                 await update_or_send_message(chat_id, uid, final_text, kb)
 

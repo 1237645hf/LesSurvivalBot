@@ -3,6 +3,7 @@ game_state.py — Центральное хранилище состояния �
 Здесь живут кармы, инвентарь, экипировка и история событий.
 """
 
+import random
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
 from datetime import datetime
@@ -13,12 +14,17 @@ class GameState:
     """Состояние игры — единый источник правды."""
 
     schema_version: int = 2
+
+    # Настройки отображения игрока
+    display_mode: str = "pc"
+    max_line_length: int = 35
+    max_lines_per_msg: int = 10
     
     # Базовые ресурсы
     inventory: Dict[str, int] = field(default_factory=lambda: {
         "Вода": 2,
         "Еда": 3,
-        "Спички 🔥": 1,
+        "Спички": 1,
         "Ветка": 1,
         "Факел": 1,
     })
@@ -45,10 +51,27 @@ class GameState:
     })
     
     # Атмосфера
-    weather: str = "dry"
+    weather: str = "clear"
     
     # Состояние сюжета
     story_state: Optional[str] = None
+
+    def roll_weather_for_new_day(self) -> str:
+        """Случайно определить погоду на новый день.
+
+        Шансы: ясное 50%, пасмурное 25%, дождь 15%, гроза 10%.
+        """
+        weights = {
+            "clear": 50,
+            "cloudy": 25,
+            "rain": 15,
+            "storm": 10,
+        }
+        return random.choices(
+            population=list(weights.keys()),
+            weights=list(weights.values()),
+            k=1,
+        )[0]
     
     # Ключевой предмет локации (что запускает сцену)
     current_location_key: str = "Факел"
@@ -125,6 +148,31 @@ class GameState:
     def energy(self, value):
         self.ap = value
 
+    def calculate_daily_ap(self) -> int:
+        """Рассчитать дневные действия по HP с учетом бонусов экипировки."""
+        if self.hp >= 50:
+            base_ap = 5
+        elif self.hp >= 40:
+            base_ap = 4
+        elif self.hp >= 30:
+            base_ap = 3
+        elif self.hp >= 10:
+            base_ap = 2
+        else:
+            base_ap = 1
+
+        equipment_bonus = 0
+        for item in self.equipment.values():
+            if isinstance(item, dict):
+                equipment_bonus += int(item.get("ap_bonus", item.get("ap_modifier", 0)))
+        equipment_bonus += int(getattr(self, "equipment_ap_bonus", 0))
+        return max(1, base_ap + equipment_bonus)
+
+    def reset_daily_ap(self) -> int:
+        """Сбросить AP в начале дня по текущему состоянию персонажа."""
+        self.ap = self.calculate_daily_ap()
+        return self.ap
+
     def _init_default_values(self):
         """Установить дефолтные значения для UI."""
         # Умные заглушки для UI
@@ -195,6 +243,9 @@ class GameState:
         """Вернуть MongoDB-документ состояния без служебных объектов dataclass."""
         return {
             "schema_version": self.schema_version,
+            "display_mode": self.display_mode,
+            "max_line_length": self.max_line_length,
+            "max_lines_per_msg": self.max_lines_per_msg,
             "inventory": dict(self.inventory),
             "equipment": dict(self.equipment),
             "karma": dict(self.karma),
@@ -244,6 +295,11 @@ class GameState:
             if key in allowed:
                 setattr(game, key, value)
         game.schema_version = cls.schema_version
+        game.display_mode = game.display_mode if game.display_mode in ("phone", "pc") else "pc"
+        game.max_line_length = max(10, min(100, int(game.max_line_length)))
+        game.max_lines_per_msg = max(3, min(30, int(game.max_lines_per_msg)))
+        game.hunger = max(1, int(game.hunger))
+        game.thirst = max(1, int(game.thirst))
         game.inventory = dict(game.inventory or {})
         game.equipment = dict(game.equipment or {})
         game.story_flags = dict(game.story_flags or {})
@@ -296,19 +352,20 @@ class GameState:
         """Получить последние записи из лога событий."""
         return self.event_log[-limit:] if len(self.event_log) > limit else self.event_log
     
-    def get_ui(self) -> str:
-        """Получить текст UI для отображения в боте."""
-        weather_icon = {"clear": "☀️", "cloudy": "☁️", "rain": "🌧️", "dry": "☀️", "cool": "❄️"}.get(self.weather, "☀️")
-        # Получить последние 5 записей из лога
-        recent_events = self.get_event_log(5)
-        log_text = "\n".join(f"> {line}" for line in recent_events)
-        
-        return (
-            f"❤️ {self.hp} | 🍖 {self.hunger} | 💧 {self.thirst} | {weather_icon} {self.current_location}\n"
-            "━━━━━━━━━━━━━━━━━━━\n"
-            f"{log_text}\n"
-            "━━━━━━━━━━━━━━━━━━━"
+    def get_status_bar(self, max_width: Optional[int] = None) -> str:
+        """Сформировать статус-бар с компактным отображением номера дня."""
+        weather_icon = {"clear": "☀️", "cloudy": "☁️", "rain": "🌧️", "storm": "⛈️"}.get(self.weather, "☀️")
+        status_str = (
+            f"❤️{self.hp}|🍖{self.hunger}|💧{self.thirst}|⚡{self.ap}|{weather_icon}День {self.day}"
         )
+        if max_width is not None and len(status_str) > max_width:
+            status_str = status_str.replace(f"{weather_icon}День ", weather_icon, 1)
+        return status_str
+
+    def get_ui(self) -> str:
+        """Получить компактный статус-бар персонажа и дневную погоду."""
+        max_width = self.max_line_length if self.display_mode == "phone" else None
+        return self.get_status_bar(max_width)
     
     def get_inventory_text(self) -> str:
         """Получить текст инвентаря для отображения в боте."""

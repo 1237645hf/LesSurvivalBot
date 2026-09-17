@@ -4,14 +4,14 @@ def handle_craft(data, game, uid):
     text = None
     kb = None
     if data == "craft_Факел":
-        spichki_key = "Спички 🔥"
+        spichki_key = "Спички"
         if game.inventory.get(spichki_key, 0) < 1 or game.inventory.get("Ветка", 0) < 1:
             return None, None
         game.inventory[spichki_key] -= 1
         game.inventory["Ветка"] -= 1
         game.inventory["Факел"] = game.inventory.get("Факел", 0) + 1
         game.add_log("Вы скрафтили факел.")
-        text = game.get_inventory_text()
+        text = f"Успешно создано: Факел\n\n{game.get_inventory_text()}"
         kb = inventory_inline_kb
     elif data == "use_item_Факел":
         if game.inventory.get("Факел", 0) > 0:
