@@ -4,6 +4,7 @@ import os
 import time
 import random
 from pathlib import Path
+from aiohttp import web
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Message
 from aiogram.filters import CommandStart
@@ -623,8 +624,21 @@ async def process_text_message(message: Message):
         except Exception:
             pass
 
+async def handle_health_check(request):
+    return web.Response(text="OK")
+
+async def start_health_check_server():
+    app = web.Application()
+    app.router.add_get("/", handle_health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.getenv("PORT", 8080))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+
 async def run_bot():
     """Запустить polling и гарантированно закрыть внешние ресурсы при остановке."""
+    await start_health_check_server()
     try:
         await bot.delete_webhook(drop_pending_updates=False)
         await dp.start_polling(bot)
