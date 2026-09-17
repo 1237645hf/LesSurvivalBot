@@ -1,14 +1,12 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from keyboards import inventory_inline_kb, get_main_kb
 
 def handle_craft(data, game, uid):
     text = None
     kb = None
     if data == "craft_Факел":
-        # Используем Спички вместо "Спички " для совместимости
-        spichki_key = "Спички " if "Спички " in game.inventory else "Спички 🔥"
+        spichki_key = "Спички 🔥"
         if game.inventory.get(spichki_key, 0) < 1 or game.inventory.get("Ветка", 0) < 1:
-            return None, None  # Handled in main with answer
+            return None, None
         game.inventory[spichki_key] -= 1
         game.inventory["Ветка"] -= 1
         game.inventory["Факел"] = game.inventory.get("Факел", 0) + 1

@@ -3,9 +3,7 @@ location_crafts.py — Локальные системы крафта для к�
 Каждая локация имеет свои уникальные предметы-ключи и сет брони, крафтящийся из локальных ресурсов.
 """
 
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from keyboards import get_main_kb, get_location_kb
-from game_state import GameState
 
 
 def handle_craft_location_2_ruchey(data, game, uid):
@@ -16,9 +14,9 @@ def handle_craft_location_2_ruchey(data, game, uid):
     
     if data == "craft_Slate_Plate":
         # Сланцевая пластина — ключ к крафту сет-браны
-        if game.inventory.get("Спички", 0) < 1:
+        if game.inventory.get("Спички 🔥", 0) < 1:
             return None, None
-        game.inventory["Спички"] -= 1
+        game.inventory["Спички 🔥"] -= 1
         game.inventory["Сланцевая пластина"] = game.inventory.get("Сланцевая пластина", 0) + 1
         game.add_log("Вы скрафтили сланцевую пластину — основу для сет-браны!")
         text = game.get_inventory_text()

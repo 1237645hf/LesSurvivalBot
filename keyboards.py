@@ -9,7 +9,23 @@ def get_main_kb(game):
     ])
     if game.weather == "rain":
         kb.inline_keyboard.append([InlineKeyboardButton(text="Собрать воду", callback_data="action_collect_water")])
+    kb.inline_keyboard.append([
+        InlineKeyboardButton(text="Локации", callback_data="locations_menu")
+    ])
     return kb
+
+
+def get_locations_kb(game):
+    """Временная панель входа; условия доступности подключаются позже."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Ручей", callback_data="location_enter_2")],
+        [InlineKeyboardButton(text="Лощина", callback_data="location_enter_3")],
+        [InlineKeyboardButton(text="Просека", callback_data="location_enter_4")],
+        [InlineKeyboardButton(text="Яр", callback_data="location_enter_5")],
+        [InlineKeyboardButton(text="Пещера", callback_data="location_enter_6")],
+        [InlineKeyboardButton(text="Святилище", callback_data="location_enter_7")],
+        [InlineKeyboardButton(text="Назад", callback_data="back")],
+    ])
 
 inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="Осмотреть", callback_data="inv_inspect"),
@@ -25,8 +41,8 @@ character_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
 ])
 
 wolf_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="Уйти тихо", callback_data="wolf_flee")],
-    [InlineKeyboardButton(text="Использовать факел", callback_data="wolf_fight")]
+    [InlineKeyboardButton(text="Уйти тихо", callback_data="wolf_leave")],
+    [InlineKeyboardButton(text="Использовать факел", callback_data="wolf_torch")]
 ])
 
 peek_kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -34,8 +50,8 @@ peek_kb = InlineKeyboardMarkup(inline_keyboard=[
 ])
 
 cat_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="Оставить его здесь", callback_data="cat_leave")],
-    [InlineKeyboardButton(text="Забрать с собой", callback_data="cat_take")]
+    [InlineKeyboardButton(text="Оставить его здесь", callback_data="pet_leave")],
+    [InlineKeyboardButton(text="Забрать с собой", callback_data="pet_take")]
 ])
 
 next_kb = InlineKeyboardMarkup(inline_keyboard=[

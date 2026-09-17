@@ -11,16 +11,16 @@ from datetime import datetime
 @dataclass
 class GameState:
     """Состояние игры — единый источник правды."""
+
+    schema_version: int = 2
     
     # Базовые ресурсы
     inventory: Dict[str, int] = field(default_factory=lambda: {
         "Вода": 2,
         "Еда": 3,
         "Спички 🔥": 1,
-        "Спички ": 1,  # Для совместимости со старым кодом
         "Ветка": 1,
         "Факел": 1,
-        "Бутылка воды": 2,  # Для совместимости с Game
     })
     
     # Емкость ресурсов
@@ -40,6 +40,8 @@ class GameState:
         "hands": None,
         "feet": None,
         "back": None,
+        "pet": None,
+        "hand": None,
     })
     
     # Атмосфера
@@ -60,6 +62,19 @@ class GameState:
         "reckless": 8,
         "mysterious": 12,
     })
+
+    # Каноническая карма сюжетных финалов из сценарной спецификации.
+    narrative_karma: Dict[str, int] = field(default_factory=lambda: {
+        "intervention": 0,
+        "compassion": 0,
+        "pragmatism": 0,
+        "observation": 0,
+    })
+
+    # Одноразовые результаты выборов и компактная запись пройденного пути.
+    story_flags: Dict[str, Any] = field(default_factory=dict)
+    compact_route: List[str] = field(default_factory=list)
+    nav_stack: List[str] = field(default_factory=lambda: ["main"])
     
     current_location: str = "Лесной старт"
     location_index: int = 0
@@ -85,6 +100,15 @@ class GameState:
         """Сбрасывает навигацию для следующей локации."""
         self.current_location = "Лесной старт"
         self.location_index = 0
+        self.nav_stack = ["main"]
+
+    def push_screen(self, screen: str):
+        self.nav_stack.append(screen)
+
+    def pop_screen(self):
+        if len(self.nav_stack) > 1:
+            self.nav_stack.pop()
+        return self.nav_stack[-1]
         
     def __post_init__(self):
         """Инициализация после создания."""
@@ -92,6 +116,15 @@ class GameState:
             self._init_default_values()
             self.is_initialized = True
     
+    @property
+    def energy(self):
+        """Совместимый алиас действия/энергии для старого и нового кода."""
+        return self.ap
+
+    @energy.setter
+    def energy(self, value):
+        self.ap = value
+
     def _init_default_values(self):
         """Установить дефолтные значения для UI."""
         # Умные заглушки для UI
@@ -99,6 +132,8 @@ class GameState:
         self.equipment["chest"] = "Куртка"
         self.equipment["head"] = "Шапка"
         self.equipment["feet"] = "Ботинки"
+        self.equipment.setdefault("pet", None)
+        self.equipment.setdefault("hand", None)
     
     def add_log(self, message: str, source: str = "game"):
         """Добавить запись в лог событий."""
@@ -139,6 +174,88 @@ class GameState:
         if category in self.karma:
             self.karma[category] += amount
             self.add_log(f"Карма {category} изменилась на {amount}", "karma")
+
+    def adjust_narrative_karma(self, category: str, amount: int):
+        """Изменить шкалу, используемую условиями семи финалов."""
+        if category in self.narrative_karma:
+            self.narrative_karma[category] += amount
+
+    def set_story_flag(self, name: str, value: Any = True):
+        """Записать сюжетный флаг и вернуть, изменилось ли его значение."""
+        changed = self.story_flags.get(name) != value
+        self.story_flags[name] = value
+        return changed
+
+    def record_route(self, code: str):
+        """Добавить выбор в компактный маршрут без повторной записи подряд."""
+        if not self.compact_route or self.compact_route[-1] != code:
+            self.compact_route.append(code)
+
+    def to_document(self) -> Dict[str, Any]:
+        """Вернуть MongoDB-документ состояния без служебных объектов dataclass."""
+        return {
+            "schema_version": self.schema_version,
+            "inventory": dict(self.inventory),
+            "equipment": dict(self.equipment),
+            "karma": dict(self.karma),
+            "narrative_karma": dict(self.narrative_karma),
+            "story_flags": dict(self.story_flags),
+            "compact_route": list(self.compact_route),
+            "story_state": self.story_state,
+            "current_location": self.current_location,
+            "current_location_key": self.current_location_key,
+            "location_index": self.location_index,
+            "day": self.day,
+            "ap": self.ap,
+            "hp": self.hp,
+            "hunger": self.hunger,
+            "thirst": self.thirst,
+            "water_capacity": self.water_capacity,
+            "food_capacity": self.food_capacity,
+            "weather": self.weather,
+            "companion_name": self.companion_name,
+            "companion_status": self.companion_status,
+            "event_log": list(getattr(self, "log", self.event_log)),
+            "nav_stack": list(self.nav_stack),
+            "unlocked_locations": list(getattr(self, "unlocked_locations", [])),
+            "current_location_state": getattr(self, "current_location_state", "forest_start"),
+            "found_branch_once": getattr(self, "found_branch_once", False),
+        }
+
+    @classmethod
+    def from_document(cls, document: Dict[str, Any]):
+        """Восстановить состояние и мигрировать старые документы без мутации входа."""
+        data = dict(document or {})
+        legacy_log = data.pop("log", None)
+        if "event_log" not in data and legacy_log is not None:
+            data["event_log"] = list(legacy_log)
+        if "current_location" not in data and "location" in data:
+            data["current_location"] = data["location"]
+        if "narrative_karma" not in data:
+            data["narrative_karma"] = {
+                "intervention": 0,
+                "compassion": 0,
+                "pragmatism": 0,
+                "observation": 0,
+            }
+        game = cls()
+        allowed = set(game.to_document())
+        for key, value in data.items():
+            if key in allowed:
+                setattr(game, key, value)
+        game.schema_version = cls.schema_version
+        game.inventory = dict(game.inventory or {})
+        game.equipment = dict(game.equipment or {})
+        game.story_flags = dict(game.story_flags or {})
+        game.compact_route = list(game.compact_route or [])
+        game.nav_stack = list(game.nav_stack or ["main"])
+        if hasattr(game, "log"):
+            game.log = list(game.event_log)
+        if hasattr(game, "location"):
+            game.location = game.current_location
+        if hasattr(game, "unlocked_locations") and not game.unlocked_locations:
+            game.unlocked_locations = ["Лесной старт"]
+        return game
     
     def reset_navigate(self):
         """Сброс навигации после сюжетного события."""
