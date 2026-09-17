@@ -1,0 +1,28 @@
+# Exported from Render on 2026-09-17T07:37:51Z
+version: "1"
+projects:
+- name: My project
+  environments:
+  - name: Production
+    services:
+    - type: web
+      name: LesSurvivalBot
+      runtime: python
+      repo: https://github.com/1237645hf/LesSurvivalBot
+      plan: free
+      envVars:
+      - key: PIP_NO_CACHE_DIR
+        sync: false
+      - key: PIP_DISABLE_PIP_VERSION_CHECK
+        sync: false
+      - key: PIP_NO_WARN_SCRIPT_LOCATION
+        sync: false
+      - key: MONGO_URI
+        sync: false
+      - key: TOKEN
+        sync: false
+      region: frankfurt
+      buildCommand: pip install -r requirements.txt
+      startCommand: .venv/bin/uvicorn main:app --host 0.0.0.0 --port $PORT --workers
+        1
+      autoDeployTrigger: "off"
