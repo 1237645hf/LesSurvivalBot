@@ -1,3 +1,2 @@
-import asyncio
-# TEMP - will be replaced
-print('loading')
+"""Сначала выполни: python restore_main.py"""
+raise SystemExit("Запусти: python restore_main.py")
