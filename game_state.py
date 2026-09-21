@@ -60,6 +60,9 @@ class GameState:
     
     # Состояние сюжета
     story_state: Optional[str] = None
+    
+    # Охотничьи ловушки (ключ: location_id 3-7, значение: dict с is_active)
+    traps: Dict[int, Dict] = field(default_factory=dict)
 
     def roll_weather_for_new_day(self) -> str:
         """Случайно определить погоду на новый день.
@@ -103,6 +106,9 @@ class GameState:
     campfire_active: bool = False
     campfire_durability: int = 0
     campfire_max_durability: int = 8
+
+    # Вода во фляге (макс 10 делений)
+    flask_water: int = 10
 
     # Одноразовые результаты выборов и компактная запись пройденного пути.
     story_flags: Dict[str, Any] = field(default_factory=dict)
@@ -331,6 +337,7 @@ class GameState:
             "max_lines_per_msg": self.max_lines_per_msg,
             "inventory": dict(self.inventory),
             "equipment": dict(self.equipment),
+            "traps": dict(self.traps),
             "karma": dict(self.karma),
             "narrative_karma": dict(self.narrative_karma),
             "story_flags": dict(self.story_flags),
@@ -385,6 +392,8 @@ class GameState:
         game.thirst = max(1, int(game.thirst))
         game.inventory = dict(game.inventory or {})
         game.equipment = dict(game.equipment or {})
+        if "traps" in data:
+            game.traps = dict(game.traps or data["traps"])
         game.story_flags = dict(game.story_flags or {})
         game.compact_route = list(game.compact_route or [])
         game.nav_stack = list(game.nav_stack or ["main"])

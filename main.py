@@ -21,6 +21,11 @@ from game_math import (
 )
 from game_state import GameState
 from modules.hints import get_active_hints
+from modules.traps import (
+    HUNTABLE_ANIMALS,
+    TRAP_CHANCE_BY_LOCATION,
+    get_trap_loot,
+)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # РЕЦЕПТЫ КОСТРА
@@ -72,6 +77,18 @@ from keyboards import (
     character_inline_kb,
 )
 from crafts import handle_craft
+from traps import (
+    place_trap,
+    remove_trap,
+    activate_trap,
+    get_trap_for_location,
+    get_trap_description,
+    get_trap_chance_by_location,
+    get_trap_loot,
+    get_active_traps,
+    HUNTABLE_ANIMALS,
+    TRAP_CHANCE_BY_LOCATION,
+)
 from location_stories import (
     handle_story,
     handle_location_2_ruchey,
@@ -571,6 +588,28 @@ async def process_callback(callback: types.CallbackQuery):
             game.push_screen("locations")
             text = "Куда направиться?"
             kb = get_locations_kb(game)
+        elif data.startswith("trap_place_"):
+            location_id = int(data.replace("trap_place_", ""))
+            game.traps[location_id] = {
+                "location_id": location_id,
+                "is_active": True,
+                "is_broken": False,
+                "placed_day": game.day,
+            }
+            game.add_log(f"Ловушка установлена в {location_id}-й локации!")
+            text = f"Ловушка установлена в {location_id}-й локации!"
+            kb = get_main_kb(game)
+        elif data.startswith("trap_replace_"):
+            location_id = int(data.replace("trap_replace_", ""))
+            game.traps[location_id] = {
+                "location_id": location_id,
+                "is_active": True,
+                "is_broken": False,
+                "placed_day": game.day,
+            }
+            game.add_log(f"Новая ловушка установлена в {location_id}-й локации (старая сломана)!")
+            text = f"Новая ловушка в {location_id}-й локации!"
+            kb = get_main_kb(game)
         elif data == "location_enter_2":
             game.current_location = "Ручей с Змеями"
             text, kb = handle_location_2_ruchey("river_ferocious", game, uid)
@@ -684,6 +723,11 @@ async def process_callback(callback: types.CallbackQuery):
                     game.campfire_durability += to_use
                     text = f"🪵 Добавлено веток: {to_use}. Прочность костра: {game.campfire_durability}/{game.campfire_max_durability}."
                     kb = get_campfire_kb(game)
+                elif branches > 0:
+                    text = "Костёр полон или веток не хватает!"
+                    kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                        [types.InlineKeyboardButton(text="[ ⬅️ Назад в костёр ]", callback_data="menu_campfire")]
+                    ])
             else:
                 text = "Нет веток в инвентаре!"
                 kb = types.InlineKeyboardMarkup(inline_keyboard=[
@@ -937,8 +981,31 @@ async def process_callback(callback: types.CallbackQuery):
 
         elif data == "action_sleep":
             game.sleep_and_turn_day()
-            text = game.get_ui()
-            kb = get_main_kb(game)
+            
+            # Если ловушка активна — проверяем улов
+            active_trap = traps.get_trap_for_location(game, game.current_location)
+            if active_trap:
+                location_id = active_trap.get("location_id", game.current_location)
+                # Проверяем шанс ловли на этой локации
+                roll = traps.roll_trap_roll(game, location_id)
+                if roll:
+                    # roll is the updated trap dict from roll_trap_roll
+                    animal = roll["pending_animal"]
+                    # Update the reference to ensure we're modifying the right dict
+                    active_trap["pending_animal"] = animal
+                    loot = traps.get_trap_loot(animal)
+                    if loot:
+                        game.add_log(f"Ловушка {location_id} сработала! Поймал: {animal}")
+                        item_name = loot.get("item", "мясо")
+                        game.inventory[item_name] = game.inventory.get(item_name, 0) + loot.get("qty", 1)
+                        text = f"🕳️ Ловушка сработала! Поймал: **{animal}** ({item_name})"
+                    else:
+                        text = f"🕳️ Ловушка сработала! Поймал: **{animal}**"
+                else:
+                    text = "Ловушка простаивает..."
+            else:
+                text = game.get_ui()
+                kb = get_main_kb(game)
 
         elif data == "action_light_campfire":
             if game.light_campfire():

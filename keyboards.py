@@ -131,6 +131,38 @@ def get_locations_kb(game):
         [InlineKeyboardButton(text="Назад", callback_data="back")],
     ])
 
+def get_trap_buttons_kb(game):
+    """Кнопки ловушек для каждой локации (1-7)."""
+    kb = InlineKeyboardMarkup(inline_keyboard=[])
+    for loc_id in range(1, 8):
+        trap = game.traps.get(loc_id)
+        if trap and trap.get("is_active"):
+            location_name = {
+                2: "Ручей", 3: "Лощина", 4: "Просека", 5: "Яр",
+                6: "Пещера", 7: "Святилище"
+            }.get(loc_id, f"Локация {loc_id}")
+            kb.inline_keyboard.append([
+                InlineKeyboardButton(
+                    text=f"🕳️ {location_name}",
+                    callback_data=f"trap_place_{loc_id}"
+                )
+            ])
+        elif trap and trap.get("is_broken"):
+            # Ловушка сломана — кнопка для установки новой
+            location_name = {
+                2: "Ручей", 3: "Лощина", 4: "Просека", 5: "Яр",
+                6: "Пещера", 7: "Святилище"
+            }.get(loc_id, f"Локация {loc_id}")
+            kb.inline_keyboard.append([
+                InlineKeyboardButton(
+                    text=f"🔨 {location_name}",
+                    callback_data=f"trap_replace_{loc_id}"
+                )
+            ])
+    if kb.inline_keyboard:
+        kb.inline_keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="menu_main")])
+    return kb
+
 inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="Осмотреть", callback_data="inv_inspect"),
      InlineKeyboardButton(text="Использовать", callback_data="inv_use")],
