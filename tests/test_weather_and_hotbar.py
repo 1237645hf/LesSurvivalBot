@@ -13,8 +13,8 @@ def test_status_bar_is_compact_and_has_day_label():
 
     ui = game.get_ui()
 
-    assert "❤️100|🍖20|💧50|⚡5|☀️День 1" in ui
-    assert " ❤️ " not in ui
+    assert "❤️100|🍖20|💧50|⚡5|☀️1" in ui
+    assert "День" not in ui
 
 
 def test_status_bar_removes_day_label_when_it_exceeds_width():

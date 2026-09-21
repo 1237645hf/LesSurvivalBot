@@ -8,6 +8,11 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
+from game_math import (
+    get_base_resource_cost,
+    get_thirst_base_cost,
+)
+
 
 @dataclass
 class GameState:
@@ -94,6 +99,11 @@ class GameState:
         "observation": 0,
     })
 
+    # Состояние Костра
+    campfire_active: bool = False
+    campfire_durability: int = 0
+    campfire_max_durability: int = 8
+
     # Одноразовые результаты выборов и компактная запись пройденного пути.
     story_flags: Dict[str, Any] = field(default_factory=dict)
     compact_route: List[str] = field(default_factory=list)
@@ -149,7 +159,8 @@ class GameState:
         self.ap = value
 
     def calculate_daily_ap(self) -> int:
-        """Рассчитать дневные действия по HP с учетом бонусов экипировки."""
+        """Рассчитать AP строго по уровню HP с учетом экипировки."""
+        # 1. Базовое AP по порогам HP
         if self.hp >= 50:
             base_ap = 5
         elif self.hp >= 40:
@@ -161,12 +172,66 @@ class GameState:
         else:
             base_ap = 1
 
+        # 2. Бонусы от экипировки
         equipment_bonus = 0
-        for item in self.equipment.values():
+        for item in getattr(self, "equipment", {}).values():
             if isinstance(item, dict):
                 equipment_bonus += int(item.get("ap_bonus", item.get("ap_modifier", 0)))
         equipment_bonus += int(getattr(self, "equipment_ap_bonus", 0))
-        return max(1, base_ap + equipment_bonus)
+
+        return base_ap + equipment_bonus
+
+    def consume_action(self, action_type: str = "default", base_hunger: int = 2, base_thirst: int = 1) -> bool:
+        """Списание AP и ресурсов с фиксацией нижнего порога в 1 единицу."""
+        if self.ap <= 0:
+            return False
+        
+        self.ap = max(0, self.ap - 1)
+
+        hunger_cost = get_base_resource_cost(self, base_cost=base_hunger)
+        thirst_cost = get_thirst_base_cost(self, base_cost=base_thirst)
+        
+        # Несгораемый минимум — 1
+        self.hunger = max(1, self.hunger - hunger_cost)
+        self.thirst = max(1, self.thirst - thirst_cost)
+        
+        # Если костёр горит, уменьшаем прочность
+        if self.campfire_active:
+            self.campfire_durability -= 1
+            if self.campfire_durability <= 0:
+                self.campfire_durability = 0
+                self.campfire_active = False
+        
+        self.add_log(f"Действие '{action_type}': AP -1, Голод -{hunger_cost}, Жажда -{thirst_cost}")
+        return True
+
+    def light_campfire(self) -> bool:
+        """Развести костёр: списывает 2 AP, -7 Голода, -20 Жажды."""
+        if self.ap <= 0:
+            return False
+        
+        self.ap = max(0, self.ap - 2)
+        
+        hunger_cost = get_base_resource_cost(self, base_cost=7)
+        thirst_cost = get_thirst_base_cost(self, base_cost=20)
+        
+        self.hunger = max(1, self.hunger - hunger_cost)
+        self.thirst = max(1, self.thirst - thirst_cost)
+        
+        # Базовое макс AP
+        base_ap = self.max_ap
+        
+        # Если в руке Факел, +1 к базовому AP
+        if self.equipment.get("hand") == "Факел":
+            base_ap += 1
+        
+        # Вычисляем прочность: base_ap + 3
+        self.campfire_max_durability = base_ap + 3
+        self.campfire_durability = self.campfire_max_durability
+        self.campfire_active = True
+        
+        self.add_log(f"🔥 Костёр разведён! Прочность: {self.campfire_durability}/{self.campfire_max_durability}")
+        return True
 
     def reset_daily_ap(self) -> int:
         """Сбросить AP в начале дня по текущему состоянию персонажа."""
@@ -189,10 +254,28 @@ class GameState:
         self.event_log.append(f"[{timestamp}] {message}")
         # Не ограничивать длину, чтобы история росла
     
+    def sleep_and_turn_day(self) -> int:
+        """Сменить день (сон): списать ресурсы, обновить AP и обработать сгоревший факел."""
+        # 1. Списание AP и ресурсов (если есть)
+        if self.ap > 0:
+            self.consume_action(action_type="sleep", base_hunger=1, base_thirst=1)
+        
+        # 2. Проверка на сгоревший факел
+        torch_in_hand = self.equipment.get("hand") == "Факел"
+        if torch_in_hand:
+            # Снимаем факел с руки
+            self.equipment["hand"] = None
+            self.add_log("За ночь твой факел прогорел.", "sleep")
+        
+        # 3. Сброс AP для нового дня
+        self.reset_daily_ap()
+        return self.ap
+    
     def get_ui_value(self, key: str, fallback: Any = None) -> Any:
         """Умное получение значения для UI с умными заглушками."""
         if key in self.equipment:
             value = self.equipment[key]
+            # Если предмет "исторический" (факел), показываем его даже если это заглушка
             if value and value != "Руки" and value != "Куртка":
                 return value
             return self.equipment.get(key, fallback)
@@ -356,7 +439,7 @@ class GameState:
         """Сформировать статус-бар с компактным отображением номера дня."""
         weather_icon = {"clear": "☀️", "cloudy": "☁️", "rain": "🌧️", "storm": "⛈️"}.get(self.weather, "☀️")
         status_str = (
-            f"❤️{self.hp}|🍖{self.hunger}|💧{self.thirst}|⚡{self.ap}|{weather_icon}День {self.day}"
+            f"❤️{self.hp}|🍖{self.hunger}|💧{self.thirst}|⚡{self.ap}|{weather_icon}{self.day}"
         )
         if max_width is not None and len(status_str) > max_width:
             status_str = status_str.replace(f"{weather_icon}День ", weather_icon, 1)
@@ -365,7 +448,14 @@ class GameState:
     def get_ui(self) -> str:
         """Получить компактный статус-бар персонажа и дневную погоду."""
         max_width = self.max_line_length if self.display_mode == "phone" else None
-        return self.get_status_bar(max_width)
+        status_bar = self.get_status_bar(max_width)
+        
+        # Добавляем активные подсказки, если они есть
+        hints = get_active_hints(self)
+        if hints:
+            status_bar += "\n" + "\n".join(hints)
+        
+        return status_bar
     
     def get_inventory_text(self) -> str:
         """Получить текст инвентаря для отображения в боте."""

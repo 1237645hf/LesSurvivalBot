@@ -9,7 +9,7 @@ from aiogram.types import (
 def get_bottom_menu():
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🚀 Начать / Старт")],
+            [KeyboardButton(text="🏠 Главное меню / Перезапуск")],
             [
                 KeyboardButton(text="📊 Статус"),
                 KeyboardButton(text="🎒 Инвентарь"),
@@ -71,11 +71,53 @@ def get_main_kb(game):
         kb.inline_keyboard.append([
             InlineKeyboardButton(text="[ 🌧️ Собрать дождевую воду ]", callback_data="action_collect_water")
         ])
+    # Кнопка костра, если он активен
+    if game.campfire_active:
+        kb.inline_keyboard.append([
+            InlineKeyboardButton(text="🔥 Костёр", callback_data="menu_campfire")
+        ])
     kb.inline_keyboard.append([
         InlineKeyboardButton(text="Локации", callback_data="locations_menu")
     ])
     return kb
 
+
+def get_campfire_kb(game):
+    """Меню Костра."""
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🥩 Пожарить предмет", callback_data="campfire_cook_single")],
+        [InlineKeyboardButton(text="📜 Рецепты", callback_data="campfire_recipes")],
+        [InlineKeyboardButton(text="🪵 Подкинуть дров", callback_data="campfire_add_fuel_menu")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu_main")],
+    ])
+    return kb
+
+def get_campfire_fuel_kb(game):
+    """Подменю выбора количества дров."""
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="[ До максимума ]", callback_data="campfire_fuel_max")],
+        [InlineKeyboardButton(text="[ Своё количество ]", callback_data="campfire_fuel_custom")],
+        [InlineKeyboardButton(text="[ ⬅️ Назад в костёр ]", callback_data="menu_campfire")],
+    ])
+    return kb
+
+def get_campfire_recipes_kb(game):
+    """Меню рецептов костра — динамический список с маркерами доступности."""
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🍖 Жареное мясо", callback_data="campfire_recipe_meat")],
+        [InlineKeyboardButton(text="⬅️ Назад в костёр", callback_data="menu_campfire")],
+    ])
+    return kb
+
+def get_campfire_recipe_kb(game, recipe_name: str):
+    """Кнопки для выбора ингредиентов рецепта."""
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🥩 Мясо", callback_data=f"campfire_ingredient_{recipe_name}_meat")],
+        [InlineKeyboardButton(text="🍄 Грибы", callback_data=f"campfire_ingredient_{recipe_name}_mushroom")],
+        [InlineKeyboardButton(text="🥕 Овощи", callback_data=f"campfire_ingredient_{recipe_name}_veg")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="campfire_recipes")],
+    ])
+    return kb
 
 def get_locations_kb(game):
     """Временная панель входа; условия доступности подключаются позже."""
@@ -119,6 +161,25 @@ cat_kb = InlineKeyboardMarkup(inline_keyboard=[
 next_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="Дальше", callback_data="story_next")]
 ])
+
+def get_campfire_kb(game):
+    """Меню Костра."""
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🥩 Пожарить предмет", callback_data="campfire_cook_single")],
+        [InlineKeyboardButton(text="📜 Рецепты", callback_data="campfire_recipes")],
+        [InlineKeyboardButton(text="🪵 Подкинуть дров", callback_data="campfire_add_fuel_menu")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu_main")],
+    ])
+    return kb
+
+def get_campfire_fuel_kb(game):
+    """Подменю выбора количества дров."""
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="[ До максимума ]", callback_data="campfire_fuel_max")],
+        [InlineKeyboardButton(text="[ Своё количество ]", callback_data="campfire_fuel_custom")],
+        [InlineKeyboardButton(text="[ ⬅️ Назад в костёр ]", callback_data="menu_campfire")],
+    ])
+    return kb
 
 def get_location_kb(game, location_id: int):
     """Получить клавиатуру для конкретной локации."""

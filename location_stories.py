@@ -6,6 +6,12 @@ location_stories.py — Локационно-специфичные наррат
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from keyboards import get_main_kb, wolf_kb, peek_kb, cat_kb, next_kb
 
+from game_math import (
+    process_damage,
+    get_resource_multiplier,
+    get_base_resource_cost,
+)
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ЛОКАЦИЯ 1: ЛЕСНОЙ СТАРТ
@@ -197,8 +203,14 @@ def handle_location_2_ruchey(data, game, uid):
             "Но вода спасает — она гасит огонь в крови.\n\n"
             "Жажда снизилась, но есть лёгкое отравление..."
         )
-        game.hp = min(100, game.hp - 15)
-        game.hunger = max(0, game.hunger - 10)
+        # Урон 15 с учётом физиологии
+        new_hp, damage_log = process_damage(game, raw_damage=15)
+        game.hp = new_hp
+        
+        # Списание из Голода (базовая стоимость 10)
+        hunger_cost = get_base_resource_cost(game, base_cost=10)
+        game.hunger = max(1, game.hunger - hunger_cost)
+        
         game.karma["brutal"] = game.karma.get("brutal", 0) + 1
         game.karma["gentle"] = game.karma.get("gentle", 0) - 1
         game.story_state = "snake_poisoned"
@@ -226,7 +238,9 @@ def handle_location_2_ruchey(data, game, uid):
             "Змеи прячутся в тени, наблюдая за тобой из-под кустов.\n\n"
             "Освежающая ванна в диком ручье."
         )
-        game.thirst = min(100, game.thirst - 25)
+        # Жажда восстанавливается с учётом коэффициента
+        thirst_restore = 25 * get_resource_multiplier(game, "thirst")
+        game.thirst = min(100, game.thirst + thirst_restore)
         game.karma["mysterious"] = game.karma.get("mysterious", 0) + 1
         game.story_state = "river_cooldown"
         kb = get_main_kb(game)
@@ -296,7 +310,11 @@ def handle_location_2_ruchey(data, game, uid):
         game.inventory["Вода"] = game.inventory.get("Вода", 0) + 2
         game.karma["reckless"] = game.karma.get("reckless", 0) + 2
         game.karma["mysterious"] = game.karma.get("mysterious", 0) + 1
-        game.hunger = max(0, game.hunger - 10)
+        
+        # Голод с учётом коэффициента
+        hunger_mult = get_resource_multiplier(game, "hunger")
+        game.hunger = max(1, game.hunger - 10 * hunger_mult)
+        
         game.story_state = "river_danced"
         kb = get_main_kb(game)
     
@@ -441,7 +459,9 @@ def handle_location_4_hunters_glade(data, game, uid):
             "Олень медленно встаёт и уходит в лес, живой благодаря тебе.\n\n"
             "Одна жизнь спасена. Может быть, это важно."
         )
-        game.inventory["Вода"] = max(0, game.inventory.get("Вода", 0) - 1)
+        # Вода с учётом коэффициента голода
+        water_cost = 1 * get_resource_multiplier(game, "hunger")
+        game.inventory["Вода"] = max(0, game.inventory.get("Вода", 0) - water_cost)
         game.karma["gentle"] = game.karma.get("gentle", 0) + 3
         game.karma["heroic"] = game.karma.get("heroic", 0) + 1
         game.story_state = "hunters_helped"
@@ -457,8 +477,14 @@ def handle_location_4_hunters_glade(data, game, uid):
         )
         game.karma["clever"] = game.karma.get("clever", 0) + 2
         game.karma["brutal"] = game.karma.get("brutal", 0) + 1
-        game.thirst = min(100, game.thirst - 10)
-        game.hunger = max(0, game.hunger - 5)
+        
+        # Жажда и Голод с учётом коэффициентов
+        thirst_restore = 10 * get_resource_multiplier(game, "thirst")
+        game.thirst = min(100, game.thirst + thirst_restore)
+        
+        hunger_mult = get_resource_multiplier(game, "hunger")
+        game.hunger = max(1, game.hunger + 5 * hunger_mult)
+        
         game.story_state = "hunters_fired"
         kb = get_main_kb(game)
 

@@ -52,34 +52,51 @@ Telegram-бот с текстовым survival-приключением: игр�
 
 ### Паттерн: "Fat Module, Thin Loader"
 ```
-main.py (оркестратор) 
+main.py (оркестратор)
     ↓
-game_state.py (центральное хранилище)
+game_state.py (центральное хранилище состояния)
     ↓
-location_stories.py (истории)
-location_crafts.py (крафт)
-keyboards.py (UI)
+location_stories.py   — сюжеты локаций + финалы
+location_crafts.py    — локальный крафт
+crafts.py             — глобальный крафт (факел и т.п.)
+keyboards.py          — все клавиатуры Telegram
+location_sources.py   — канонические тексты историй
 ```
 
+### Структура файлов и за что они отвечают
+
+| Файл | Назначение | Ключевые функции / классы |
+|------|------------|---------------------------|
+| **main.py** | Точка входа, оркестратор. Telegram-хэндлеры, сохранение/загрузка, основные действия игрока (исследовать, пить, спать). | `Game`, `load_game`, `save_game`, `use_consumable`, `process_callback`, `cmd_start`, `run_bot` |
+| **game_state.py** | Центральное состояние игры: инвентарь, экипировка, HP/голод/жажда, карма, навигация, погода, логи. | `GameState`, `add_log`, `get_ui`, `get_inventory_text`, `adjust_karma`, `to_document` / `from_document`, `roll_weather_for_new_day` |
+| **location_stories.py** | Все сюжетные ветки 7 локаций + резолвер 7 финалов. | `handle_story`, `handle_location_1…7_…`, `resolve_ending`, `ending_text` |
+| **location_crafts.py** | Локальный крафт и экипировка предметов по локациям (сланец, мех, ловушки и т.д.). | `handle_craft_location_2…7_…`, `handle_use_item`, `craft_success_text` |
+| **crafts.py** | Глобальный крафт (то, что доступно везде). Сейчас — в основном факел. | `handle_craft` |
+| **keyboards.py** | Все inline- и reply-клавиатуры Telegram. | `get_main_kb`, `get_locations_kb`, `get_location_kb`, `get_settings_kb`, `get_use_item_kb`, `get_drop_item_kb` |
+| **location_sources.py** | Канонические исходные тексты локаций L1–L6 (большие строки). L7 лежит в stories. | `LOCATION_SOURCE_TEXTS`, `get_location_source_text` |
+| **BASIS.md** | Внутренний архитектурный базис и правила разработки (подробнее, чем README). | — |
+| **tests/** | Юнит-тесты (погода, hotbar и др.). | `test_weather_and_hotbar.py` |
+| **requirements.txt** | Зависимости Python. | — |
+| **Procfile** / **render.yaml** | Запуск на Render (worker). | — |
+
 ### GameState (центр системы)
-Содержит состояние игры:
+Основные поля состояния:
 
 ```python
 inventory: Dict[str, int]          # Ресурсы и предметы
-water_capacity: int = 5            # Лимит воды
+water_capacity: int = 5 / 10       # Лимит воды
 food_capacity: int = 10            # Лимит еды
 hp: int = 100                      # Здоровье
-hunger: int = 50                   # Голод
-thirst: int = 75                   # Жажда
-equipment: Dict[str, str]          # Экипировка (head, chest, legs, hands, feet, back)
+hunger: int                        # Голод
+thirst: int                        # Жажда
+equipment: Dict[str, str]          # Экипировка (head, torso/chest, hand, pet…)
 karma: Dict[str, int]              # 6 измерений кармы
-story_state: str                   # Текущая фаза истории
-current_location: str              # Текущая локация
- weather: str                       # Текущая погода
-companion_name: str                # Имя кота
-companion_status: str              # Статус кота
-ap: int = 5                        # Действия в день
-day: int = 1                       # Текущий день
+narrative_karma: Dict[str, int]    # 4 шкалы для финалов
+story_state / story_flags          # Фаза и флаги сюжета
+current_location / location_index  # Текущая локация
+weather: str                       # clear / cloudy / rain / storm
+ap / day                           # Действия в день и номер дня
+nav_stack                          # Стек экранов для «Назад»
 ```
 
 ### Система кармы (6 измерений)
@@ -94,8 +111,48 @@ day: int = 1                       # Текущий день
 | **reckless** | Безрассудство | — |
 | **mysterious** | Таинственные события | — |
 
----
 
+### Куда класть новый код (правила для дополнений)
+
+Когда добавляешь что-то новое — сначала определи **тип** изменения, потом клади в нужный файл.  
+Код и ИИ должны опираться на эту таблицу.
+
+| Что хочешь добавить | Куда класть | Пример / образец в коде | Что ещё нужно сделать |
+|---------------------|-------------|-------------------------|------------------------|
+| **Сюжет / ветка локации** (текст, выборы, флаги, карма, выдача предметов по истории) | `location_stories.py` → функция `handle_location_N_...` | `handle_location_2_ruchey`, `handle_story` | В `main.py` в `process_callback` уже есть `elif data.startswith(...)` — при новом префиксе добавь вызов |
+| **Локальный крафт** (предмет крафтится только на этой локации) | `location_crafts.py` → `handle_craft_location_N_...` | `handle_craft_location_2_ruchey`, `craft_Slate_Helmet` | Подключить вызов в `main.py` (если ещё нет) и кнопку в `keyboards.py` |
+| **Глобальный крафт** (доступен везде, напр. факел) | `crafts.py` → `handle_craft` | `craft_Факел` | Кнопка крафта в инвентаре / `keyboards.py` |
+| **Новая кнопка / экран UI** | `keyboards.py` | `get_main_kb`, `get_location_kb` | Обработчик callback в `main.py` → `process_callback` |
+| **Новое поле состояния** (HP, флаг, ресурс, слот экипировки) | `game_state.py` → класс `GameState` | `inventory`, `story_flags`, `equipment` | Учесть в `to_document` / `from_document` (сохранение) |
+| **Логика «Исследовать» / находки ресурсов** | Сейчас: `main.py` → `action_1`. **Планируется:** вынести в отдельную функцию/таблицу по локациям | `possible = ["Ветка", "Камень", ...]` | При локальных ресурсах — таблица `LOCATION_FINDS` (лучше в `game_state.py` или новый маленький модуль) + вызов из `action_1` |
+| **Канонический длинный текст истории** | `location_sources.py` (L1–L6) или конец `location_stories.py` (L7/финалы) | `LOCATION_SOURCE_TEXTS` | Не дублировать логику — только текст |
+| **Использование предмета** (съесть, экипировать) | Расходники: `main.py` → `use_consumable`. Экипировка: `location_crafts.py` / `crafts.py` → `use_item_...` | `use_consumable`, `use_item_Факел` | Добавить предмет в `get_usable_items` при необходимости |
+| **Финал / концовка** | `location_stories.py` → `resolve_ending`, `ending_text` | `ENDING_TITLES`, `THRESHOLDS` | — |
+| **Тест** | `tests/` | `test_weather_and_hotbar.py` | — |
+
+#### Быстрые примеры «куда положить»
+
+- «Хочу новую ветку на Ручье» → `location_stories.py` → `handle_location_2_ruchey`
+- «Хочу крафт шлема только в Лощине» → `location_crafts.py` → `handle_craft_location_3_slate_hollow`
+- «Хочу, чтобы на Пещере при исследовании падал Мех» → логика находок (сейчас `main.py` / `action_1`, потом — таблица по локациям)
+- «Хочу новую кнопку на главном экране» → `keyboards.py` (`get_main_kb`) + обработка в `main.py`
+- «Хочу сохранить новый флаг сюжета» → `game_state.py` (`story_flags` или новое поле) + запись в обработчике истории
+
+#### Имена callback_data (чтобы main.py понимал)
+
+- Сюжет локации 2: `river_...`, `snake_...`, `story_...`
+- Локация 3: `slate_...`, `rest_...`, `examine...`
+- Локация 4: `hunters_...`, `glade_...`
+- Локация 5: `slug_...`, `pit_...`
+- Локация 6: `furry_...`, `cave_...`, `warm_...`, `sleep...`
+- Локация 7: `sanctuary_...`
+- Крафт: `craft_<Имя>`
+- Экипировка: `use_item_<Имя>`
+- Глобальные действия: `action_1` (исследовать), `action_3` (пить), `action_4` (спать)
+
+Новые префиксы обязательно добавляй в соответствующий `elif data.startswith(...)` в `main.py`.
+
+---
 ## 🗺️ 7 локаций игры
 
 | # | Локация | Статус | Веток | Броня |
@@ -201,7 +258,7 @@ python main.py
 ---
 
 ## 📊 Текущий статус
-**Дата обновления:** 2026-09-17
+**Дата обновления:** 2026-09-21
 
 ### ✅ ЗАВЕРШЕНО
 - ✅ Все 7 обработчиков локаций подключены в `main.py`
@@ -338,5 +395,5 @@ print(game.karma)
 
 ---
 
-**Последнее обновление:** 2026-09-17  
+**Последнее обновление:** 2026-09-21  
 **Статус:** локальные тесты проходят; для production нужны Telegram token и MongoDB. Render запускает worker командой из `Procfile`.
