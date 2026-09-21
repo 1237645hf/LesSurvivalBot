@@ -54,30 +54,34 @@ Telegram-бот с текстовым survival-приключением: игр�
 ```
 main.py (оркестратор)
     ↓
-game_state.py (центральное хранилище состояния)
+game_state.py / game_math.py
     ↓
-location_stories.py   — сюжеты локаций + финалы
+location_stories.py   — сюжеты + финалы
 location_crafts.py    — локальный крафт
-crafts.py             — глобальный крафт (факел и т.п.)
-keyboards.py          — все клавиатуры Telegram
-location_sources.py   — канонические тексты историй
+crafts.py             — глобальный крафт
+keyboards.py          — UI
+location_sources.py   — канонические тексты
+modules/              — расширения (hints, finds, items, traps…)
 ```
 
 ### Структура файлов и за что они отвечают
 
-| Файл | Назначение | Ключевые функции / классы |
-|------|------------|---------------------------|
-| **main.py** | Точка входа, оркестратор. Telegram-хэндлеры, сохранение/загрузка, основные действия игрока (исследовать, пить, спать). | `Game`, `load_game`, `save_game`, `use_consumable`, `process_callback`, `cmd_start`, `run_bot` |
-| **game_state.py** | Центральное состояние игры: инвентарь, экипировка, HP/голод/жажда, карма, навигация, погода, логи. | `GameState`, `add_log`, `get_ui`, `get_inventory_text`, `adjust_karma`, `to_document` / `from_document`, `roll_weather_for_new_day` |
-| **location_stories.py** | Все сюжетные ветки 7 локаций + резолвер 7 финалов. | `handle_story`, `handle_location_1…7_…`, `resolve_ending`, `ending_text` |
-| **location_crafts.py** | Локальный крафт и экипировка предметов по локациям (сланец, мех, ловушки и т.д.). | `handle_craft_location_2…7_…`, `handle_use_item`, `craft_success_text` |
-| **crafts.py** | Глобальный крафт (то, что доступно везде). Сейчас — в основном факел. | `handle_craft` |
-| **keyboards.py** | Все inline- и reply-клавиатуры Telegram. | `get_main_kb`, `get_locations_kb`, `get_location_kb`, `get_settings_kb`, `get_use_item_kb`, `get_drop_item_kb` |
-| **location_sources.py** | Канонические исходные тексты локаций L1–L6 (большие строки). L7 лежит в stories. | `LOCATION_SOURCE_TEXTS`, `get_location_source_text` |
-| **BASIS.md** | Внутренний архитектурный базис и правила разработки (подробнее, чем README). | — |
-| **tests/** | Юнит-тесты (погода, hotbar и др.). | `test_weather_and_hotbar.py` |
-| **requirements.txt** | Зависимости Python. | — |
-| **Procfile** / **render.yaml** | Запуск на Render (worker). | — |
+| Файл / папка | Назначение | Ключевые функции / классы |
+|--------------|------------|---------------------------|
+| **main.py** | Оркестратор: Telegram, callback’и, исследовать/пить/спать, save/load | `Game`, `load_game`, `save_game`, `use_consumable`, `process_callback`, `cmd_start` |
+| **game_state.py** | Состояние: инвентарь, экипировка, HP, карма, флаги, навигация | `GameState`, `add_log`, `get_ui`, `to_document` / `from_document` |
+| **game_math.py** | Урон, множители голода/жажды, AP по HP | `process_damage`, `get_resource_multiplier`, `calculate_ap_by_hp` |
+| **location_stories.py** | Сюжет 7 локаций + 7 финалов | `handle_location_1…7_…`, `handle_story`, `resolve_ending` |
+| **location_crafts.py** | Крафт и экипировка по локациям | `handle_craft_location_2…7_…`, `handle_use_item` |
+| **crafts.py** | Глобальный крафт | `handle_craft` |
+| **keyboards.py** | Клавиатуры | `get_main_kb`, `get_locations_kb`, `get_location_kb`… |
+| **location_sources.py** | Длинные тексты L1–L6 | `LOCATION_SOURCE_TEXTS`, `get_location_source_text` |
+| **modules/** | Расширения без раздувания корня | `hints.py`; планируются `finds.py`, `items.py`, `traps.py` |
+| **modules/hints.py** | Контекстные подсказки игроку | `get_active_hints` |
+| **TASKLIST.md** | Список задач для разработки / AI | — |
+| **BASIS.md** | Подробный архитектурный базис | — |
+| **tests/** | Только тесты (не создавать test_*.py в корне) | — |
+| **requirements.txt** / **Procfile** / **render.yaml** | Зависимости и деплой | — |
 
 ### GameState (центр системы)
 Основные поля состояния:
@@ -111,46 +115,31 @@ nav_stack                          # Стек экранов для «Назад
 | **reckless** | Безрассудство | — |
 | **mysterious** | Таинственные события | — |
 
+### Куда класть новый код
 
-### Куда класть новый код (правила для дополнений)
+| Что добавляешь | Куда | Пример / как подключать |
+|----------------|------|-------------------------|
+| **Сюжет / ветка локации** | `location_stories.py` → `handle_location_N_...` | + `elif data.startswith(...)` в `main.py` |
+| **Локальный крафт** | `location_crafts.py` → `handle_craft_location_N_...` | кнопки в `keyboards.py` |
+| **Глобальный крафт** | `crafts.py` → `handle_craft` | как `craft_Факел` |
+| **Лут по локациям + шансы** | `modules/finds.py` (новый) | `LOCATION_FINDS` + `roll_find(loc_id)`; вызов из `main.py` → `action_1` |
+| **Свойства предметов** (еда: +голод/+жажда) | `modules/items.py` (новый) | словарь `ITEMS`; `use_consumable` читает оттуда |
+| **Ловушки / животные** | `modules/traps.py` (новый) | callback в `main.py`, кнопки в `keyboards.py` |
+| **Подсказки игроку** | `modules/hints.py` | `get_active_hints` (уже есть) |
+| **Математика урона / расхода** | `game_math.py` | не дублировать в `main.py` |
+| **Новое поле состояния** | `game_state.py` | + `to_document` / `from_document` |
+| **Кнопка UI** | `keyboards.py` | + обработчик в `main.py` |
+| **Длинный текст истории** | `location_sources.py` (L1–L6) или конец `location_stories.py` (L7) | только текст |
+| **Финал** | `location_stories.py` → `resolve_ending` | — |
+| **Тест** | только `tests/` | запрет `test_*.py` в корне |
 
-Когда добавляешь что-то новое — сначала определи **тип** изменения, потом клади в нужный файл.  
-Код и ИИ должны опираться на эту таблицу.
+**Быстрые примеры**
+- ветка на Ручье → `location_stories.py` / `handle_location_2_ruchey`
+- Мех при исследовании на Пещере → `modules/finds.py` + `action_1`
+- съедобная Ягода (+голод) → `modules/items.py` + `use_consumable`
+- ловушка → `modules/traps.py`
 
-| Что хочешь добавить | Куда класть | Пример / образец в коде | Что ещё нужно сделать |
-|---------------------|-------------|-------------------------|------------------------|
-| **Сюжет / ветка локации** (текст, выборы, флаги, карма, выдача предметов по истории) | `location_stories.py` → функция `handle_location_N_...` | `handle_location_2_ruchey`, `handle_story` | В `main.py` в `process_callback` уже есть `elif data.startswith(...)` — при новом префиксе добавь вызов |
-| **Локальный крафт** (предмет крафтится только на этой локации) | `location_crafts.py` → `handle_craft_location_N_...` | `handle_craft_location_2_ruchey`, `craft_Slate_Helmet` | Подключить вызов в `main.py` (если ещё нет) и кнопку в `keyboards.py` |
-| **Глобальный крафт** (доступен везде, напр. факел) | `crafts.py` → `handle_craft` | `craft_Факел` | Кнопка крафта в инвентаре / `keyboards.py` |
-| **Новая кнопка / экран UI** | `keyboards.py` | `get_main_kb`, `get_location_kb` | Обработчик callback в `main.py` → `process_callback` |
-| **Новое поле состояния** (HP, флаг, ресурс, слот экипировки) | `game_state.py` → класс `GameState` | `inventory`, `story_flags`, `equipment` | Учесть в `to_document` / `from_document` (сохранение) |
-| **Логика «Исследовать» / находки ресурсов** | Сейчас: `main.py` → `action_1`. **Планируется:** вынести в отдельную функцию/таблицу по локациям | `possible = ["Ветка", "Камень", ...]` | При локальных ресурсах — таблица `LOCATION_FINDS` (лучше в `game_state.py` или новый маленький модуль) + вызов из `action_1` |
-| **Канонический длинный текст истории** | `location_sources.py` (L1–L6) или конец `location_stories.py` (L7/финалы) | `LOCATION_SOURCE_TEXTS` | Не дублировать логику — только текст |
-| **Использование предмета** (съесть, экипировать) | Расходники: `main.py` → `use_consumable`. Экипировка: `location_crafts.py` / `crafts.py` → `use_item_...` | `use_consumable`, `use_item_Факел` | Добавить предмет в `get_usable_items` при необходимости |
-| **Финал / концовка** | `location_stories.py` → `resolve_ending`, `ending_text` | `ENDING_TITLES`, `THRESHOLDS` | — |
-| **Тест** | `tests/` | `test_weather_and_hotbar.py` | — |
-
-#### Быстрые примеры «куда положить»
-
-- «Хочу новую ветку на Ручье» → `location_stories.py` → `handle_location_2_ruchey`
-- «Хочу крафт шлема только в Лощине» → `location_crafts.py` → `handle_craft_location_3_slate_hollow`
-- «Хочу, чтобы на Пещере при исследовании падал Мех» → логика находок (сейчас `main.py` / `action_1`, потом — таблица по локациям)
-- «Хочу новую кнопку на главном экране» → `keyboards.py` (`get_main_kb`) + обработка в `main.py`
-- «Хочу сохранить новый флаг сюжета» → `game_state.py` (`story_flags` или новое поле) + запись в обработчике истории
-
-#### Имена callback_data (чтобы main.py понимал)
-
-- Сюжет локации 2: `river_...`, `snake_...`, `story_...`
-- Локация 3: `slate_...`, `rest_...`, `examine...`
-- Локация 4: `hunters_...`, `glade_...`
-- Локация 5: `slug_...`, `pit_...`
-- Локация 6: `furry_...`, `cave_...`, `warm_...`, `sleep...`
-- Локация 7: `sanctuary_...`
-- Крафт: `craft_<Имя>`
-- Экипировка: `use_item_<Имя>`
-- Глобальные действия: `action_1` (исследовать), `action_3` (пить), `action_4` (спать)
-
-Новые префиксы обязательно добавляй в соответствующий `elif data.startswith(...)` в `main.py`.
+**Префиксы callback_data:** `river_`/`snake_` (L2), `slate_` (L3), `hunters_`/`glade_` (L4), `slug_`/`pit_` (L5), `furry_`/`cave_` (L6), `sanctuary_` (L7), `craft_`, `use_item_`, `action_1`/`action_3`/`action_4`.
 
 ---
 ## 🗺️ 7 локаций игры
@@ -198,18 +187,21 @@ nav_stack                          # Стек экранов для «Назад
 ### 🎮 Основные файлы
 - `main.py` — Telegram-бот и polling-worker
 - `game_state.py` — Центральное хранилище GameState
+- `game_math.py` — урон и расход ресурсов
+- `modules/` — hints, finds, items, traps…
+- `TASKLIST.md` — задачи
 - `location_stories.py` — обработчики историй для всех 7 локаций
 - `location_sources.py` — встроенные канонические тексты L1-L7
 - `location_crafts.py` — крафт по локациям
 - `keyboards.py` — Telegram InlineKeyboard-разметка
 - `crafts.py` — базовый крафт
-- `location_stories.py` — общие истории волка и кота, локационные ветки и финалы
 - `requirements.txt` — зависимости проекта
 - `tests/` — автоматические тесты
 
 ### 📖 Документация
-- `README.md` — описание проекта и запуск
+- `README.md` — описание проекта, карта файлов, куда класть код
 - `BASIS.md` — рабочие архитектурные заметки
+- `TASKLIST.md` — текущие задачи
 
 ### Локальные файлы
 - локальные среды `.venv/`, `venv/`, `env/`, кэш Python и pytest, настройки IDE, `.env` и логи игнорируются Git
@@ -250,11 +242,6 @@ $env:MONGO_URI="mongodb://localhost:27017/test"
 python main.py
 ```
 
-Либо:
-```powershell
-python main.py
-```
-
 ---
 
 ## 📊 Текущий статус
@@ -265,59 +252,27 @@ python main.py
 - ✅ Сюжетные исходники L1-L6 загружаются без нормализации текста
 - ✅ Состояние сериализуется через `GameState.to_document()` и восстанавливается через `from_document()`
 - ✅ Система концовок покрыта тестами приоритетов и порогов
-- ✅ Локальный прогон: `6 passed`
 - ⚠️ Для реального запуска нужен `TOKEN`; MongoDB необходима для постоянных сохранений
 
 ### 📈 СТАТИСТИКА
 - **Локаций:** 7
 - **Канонических исходников локаций:** 7
 - **Финалов:** 7
-- **Автоматических тестов:** 6
 
 ---
 
 ## 🎯 СЛЕДУЮЩИЕ ЗАДАЧИ
 
-### Интеграционный каркас сюжетов (2026-09-15)
-- Исходные тексты семи локаций доступны через `location_sources.get_location_source_text()` без нормализации.
-- `GameState` содержит версию схемы, сюжетные флаги, компактный маршрут и четыре шкалы сюжетной кармы.
-- Сохранение использует `GameState.to_document()` и миграцию через `GameState.from_document()`.
-- Добавлены входы в локации 2-7 и конфигурируемый резолвер семи финалов в `location_stories.py`.
-- Для межустройственной синхронизации MongoDB должна быть доступна; локальный fallback остаётся только режимом разработки.
+См. также `TASKLIST.md`.
 
 ### 1️⃣ Финальные тесты интеграции
-- Полный прогон всех веток в реальном Telegram боте
-- Проверка MongoDB сохранений
-- Валидация всех концовок
-
 ### 2️⃣ Балансировка сложности
-- Убедиться что игра сбалансирована по трудности
-- Настроить урон, ресурсы, голод
-
 ### 3️⃣ Динамическая погода
-- Погода влияет на геймплей
-- Разные действия доступны в разную погоду
-
 ### 4️⃣ Побочные квесты
-- Скрытые задания и награды
-- Различные пути прохождения
-
 ### 5️⃣ Расширение диалогов
-- Больше эмоциональности и глубины
-- Диалоги кота-компаньона
-- Моменты рефлексии игрока
-
 ### 6️⃣ Система достижений
-- Награды за разные пути прохождения
-- Разблокировка скрытых концовок
-
 ### 7️⃣ Боевая система (PvE)
-- Максимум 1-2 опасные встречи
-- Простая боевая механика (атака, побег, прятка)
-
 ### 8️⃣ Система сохранений
-- Полная валидация MongoDB
-- Resume из сохранения
 
 ---
 
@@ -326,74 +281,32 @@ python main.py
 ### Как добавить новую ветку истории
 
 1. **Отредактируй `location_stories.py`**
-   ```python
-   def handle_location_X(data, game, uid):
-       if data == "branch_name":
-           # Измени карму
-           game.karma["heroic"] += 1
-           # Измени инвентарь
-           game.inventory["Вода"] += 2
-           # Текст истории
-           text = "Ты видишь..."
-           # Клавиатура для следующего шага
-           kb = next_kb
-           return (text, kb)
-   ```
-
-2. **Добавь обработчик в `main.py`**
-   ```python
-   elif data.startswith("location_X_"):
-       text, kb = handle_location_X(data, game, uid)
-   ```
+2. **Добавь обработчик в `main.py`** (`elif data.startswith(...)`)
 
 ### Как добавить новый крафт
 
-1. **Отредактируй `location_crafts.py`**
-   ```python
-   def craft_ItemName(game, uid):
-       # Проверь ресурсы
-       if game.inventory.get("Ветка", 0) >= 1:
-           # Убери ресурсы
-           game.inventory["Ветка"] -= 1
-           # Добавь результат
-           game.inventory["Факел"] = game.inventory.get("Факел", 0) + 1
-           return ("Успешно! Ты скрафтил факел!", kb)
-       return ("Недостаточно ресурсов!", kb)
-   ```
-
-2. **Вызови из `handle_craft()`**
-   ```python
-   if data == "craft_torch":
-       return craft_ItemName(game, uid)
-   ```
+1. Локальный — `location_crafts.py`; глобальный — `crafts.py`
+2. Кнопка в `keyboards.py`, вызов в `main.py`
 
 ### Как тестировать локально
 
 ```powershell
-# Запусти Python интерпретатор
 python
-
-# Импортируй классы
 from game_state import GameState
 from location_stories import handle_location_2_ruchey
-
-# Создай тестовый игрока
 game = GameState()
 text, kb = handle_location_2_ruchey("river_ferocious", game, 123)
-print(text)
-print(game.karma)
 ```
 
 ---
 
 ## 📞 КОНТАКТЫ И ПОМОЩЬ
 
-Все вопросы о проекте решай через:
-1. Этот файл (`README.md`) — он содержит всю информацию
-2. Код в файлах (`main.py`, `game_state.py` и т.д.) — читай комментарии
-3. Смотри тесты для примеров использования
+1. Этот файл (`README.md`) — карта файлов и куда класть код
+2. Код в файлах — комментарии
+3. `tests/` — примеры
 
 ---
 
 **Последнее обновление:** 2026-09-21  
-**Статус:** локальные тесты проходят; для production нужны Telegram token и MongoDB. Render запускает worker командой из `Procfile`.
+**Статус:** локальные тесты проходят; для production нужны Telegram token и MongoDB.
