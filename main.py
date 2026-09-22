@@ -24,15 +24,16 @@ from modules.hints import get_active_hints
 from modules.traps import (
     HUNTABLE_ANIMALS,
     TRAP_CHANCE_BY_LOCATION,
+    place_trap,
+    remove_trap,
+    activate_trap,
+    get_trap_for_location,
+    get_trap_description,
     get_trap_loot,
+    get_active_traps,
+    roll_trap_roll,
+    process_trap_rollover,
 )
-
-# ──────────────────────────────────────────────────────────────────────────────
-# РЕЦЕПТЫ КОСТРА
-# ──────────────────────────────────────────────────────────────────────────────
-CAMPFIRE_RECIPES = {
-    "Жареное мясо": {"ingredients": {"Сырое мясо": 1}, "output": "Жареное мясо"},
-}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # РЕЦЕПТЫ КОСТРА
@@ -73,22 +74,11 @@ from keyboards import (
     get_campfire_kb,
     get_campfire_fuel_kb,
     get_campfire_recipes_kb,
+    get_campfire_recipe_kb,
     inventory_inline_kb,
     character_inline_kb,
 )
 from crafts import handle_craft
-from traps import (
-    place_trap,
-    remove_trap,
-    activate_trap,
-    get_trap_for_location,
-    get_trap_description,
-    get_trap_chance_by_location,
-    get_trap_loot,
-    get_active_traps,
-    HUNTABLE_ANIMALS,
-    TRAP_CHANCE_BY_LOCATION,
-)
 from location_stories import (
     handle_story,
     handle_location_2_ruchey,
@@ -101,8 +91,6 @@ from location_stories import (
     resolve_ending,
     ENDING_TITLES,
 )
-from game_state import GameState
-
 # ──────────────────────────────────────────────────────────────────────────────
 # НАСТРОЙКИ
 # ──────────────────────────────────────────────────────────────────────────────
@@ -123,12 +111,7 @@ last_request_time = {}
 last_active_msg_id = {}
 
 # Регистрация системных команд Telegram для синей кнопки Menu
-bot.set_my_commands([
-    types.BotCommand("start", "Начать выживание"),
-    types.BotCommand("inventory", "Инвентарь"),
-    types.BotCommand("status", "Статус"),
-    types.BotCommand("settings", "Настройки"),
-])
+# set_my_commands вызывается в run_bot() с await
 
 # ──────────────────────────────────────────────────────────────────────────────
 # MONGODB
@@ -723,11 +706,6 @@ async def process_callback(callback: types.CallbackQuery):
                     game.campfire_durability += to_use
                     text = f"🪵 Добавлено веток: {to_use}. Прочность костра: {game.campfire_durability}/{game.campfire_max_durability}."
                     kb = get_campfire_kb(game)
-                elif branches > 0:
-                    text = "Костёр полон или веток не хватает!"
-                    kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                        [types.InlineKeyboardButton(text="[ ⬅️ Назад в костёр ]", callback_data="menu_campfire")]
-                    ])
             else:
                 text = "Нет веток в инвентаре!"
                 kb = types.InlineKeyboardMarkup(inline_keyboard=[
@@ -809,32 +787,6 @@ async def process_callback(callback: types.CallbackQuery):
             ingredient = data.removeprefix("campfire_ingredient_").split("_")[-1]
             text = f"Выбираем {ingredient}..."
             kb = get_campfire_recipe_kb(game, recipe)
-        elif data == "campfire_add_fuel_menu":
-            # Подменю выбора дров
-            text = "Выберите, сколько дров подкинуть:"
-            kb = get_campfire_fuel_kb(game)
-        elif data == "campfire_fuel_max":
-                kb_c = types.InlineKeyboardMarkup(inline_keyboard=[])
-                if game.inventory.get("Спички", 0) >= 1 and game.inventory.get("Ветка", 0) >= 1:
-                    kb_c.inline_keyboard.append([
-                        types.InlineKeyboardButton(text="Факел (1 ветка + 1 спичка)", callback_data="craft_Факел")
-                    ])
-                    craft_text = "Доступный крафт:"
-                else:
-                    craft_text = "Пока ничего нельзя скрафтить.\n(нужна Ветка и Спички)"
-                kb_c.inline_keyboard.append([types.InlineKeyboardButton(text="Назад", callback_data="back")])
-                text = craft_text
-                kb = kb_c
-            elif prev == "use":
-                text = game.get_ui()
-                kb = get_main_kb(game)
-            elif prev == "settings":
-                text = get_settings_text(game)
-                kb = get_settings_kb(game)
-            else:
-                text = game.get_ui()
-                kb = get_main_kb(game)
-
         elif data == "inv_inspect":
             items = get_inspectable_items(game)
             if not items:
@@ -979,33 +931,48 @@ async def process_callback(callback: types.CallbackQuery):
                     text = game.get_ui()
                     kb = get_main_kb(game)
 
-        elif data == "action_sleep":
+        elif data in ("action_sleep", "action_4"):
             game.sleep_and_turn_day()
-            
-            # Если ловушка активна — проверяем улов
-            active_trap = traps.get_trap_for_location(game, game.current_location)
-            if active_trap:
-                location_id = active_trap.get("location_id", game.current_location)
-                # Проверяем шанс ловли на этой локации
-                roll = traps.roll_trap_roll(game, location_id)
-                if roll:
-                    # roll is the updated trap dict from roll_trap_roll
-                    animal = roll["pending_animal"]
-                    # Update the reference to ensure we're modifying the right dict
-                    active_trap["pending_animal"] = animal
-                    loot = traps.get_trap_loot(animal)
-                    if loot:
-                        game.add_log(f"Ловушка {location_id} сработала! Поймал: {animal}")
-                        item_name = loot.get("item", "мясо")
-                        game.inventory[item_name] = game.inventory.get(item_name, 0) + loot.get("qty", 1)
-                        text = f"🕳️ Ловушка сработала! Поймал: **{animal}** ({item_name})"
+            trap_msgs = []
+            # Проверка всех активных ловушек после сна
+            for loc_id, trap in list(getattr(game, "traps", {}).items()):
+                if not trap.get("is_active"):
+                    continue
+                rolled = roll_trap_roll(game, int(loc_id))
+                if rolled and rolled.get("pending_animal"):
+                    animal = rolled["pending_animal"]
+                    loot_info = get_trap_loot(game, int(loc_id))
+                    if loot_info and loot_info.get("loot"):
+                        item_name = loot_info["loot"].get("item", "Сырое мясо")
+                        qty = loot_info["loot"].get("qty", 1)
+                        game.inventory[item_name] = game.inventory.get(item_name, 0) + qty
+                        # сброс pending после забора
+                        trap["pending_animal"] = None
+                        trap["pending_loot"] = None
+                        msg = f"Ловушка на локации {loc_id}: попался {animal} (+{qty} {item_name})"
+                        game.add_log(msg)
+                        trap_msgs.append(msg)
                     else:
-                        text = f"🕳️ Ловушка сработала! Поймал: **{animal}**"
-                else:
-                    text = "Ловушка простаивает..."
+                        trap_msgs.append(f"Ловушка на локации {loc_id}: попался {animal}")
+            if trap_msgs:
+                text = game.get_ui() + "\n" + "\n".join(trap_msgs)
             else:
                 text = game.get_ui()
-                kb = get_main_kb(game)
+            kb = get_main_kb(game)
+
+        elif data == "action_3":
+            if game.ap <= 0:
+                game.add_log("Действия на сегодня закончились.")
+            elif game.inventory.get("Вода", 0) > 0:
+                game.inventory["Вода"] -= 1
+                if game.inventory["Вода"] <= 0:
+                    del game.inventory["Вода"]
+                game.thirst = min(100, game.thirst + 30)
+                game.add_log("Ты сделал глоток воды. Жажда уменьшилась.")
+            else:
+                game.add_log("Воды больше нет.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
 
         elif data == "action_light_campfire":
             if game.light_campfire():
@@ -1026,6 +993,10 @@ async def process_callback(callback: types.CallbackQuery):
                 text = game.get_ui()
                 kb = get_main_kb(game)
         
+        elif data == "menu_main":
+            text = game.get_ui()
+            kb = get_main_kb(game)
+
         elif data == "karma_escape":
             karma_ok = all(v > 0 for v in game.karma.values())
             if karma_ok:
@@ -1208,6 +1179,12 @@ async def run_bot():
     """Запустить polling и гарантированно закрыть внешние ресурсы при остановке."""
     await start_health_check_server()
     try:
+        await bot.set_my_commands([
+            types.BotCommand("start", "Начать выживание"),
+            types.BotCommand("inventory", "Инвентарь"),
+            types.BotCommand("status", "Статус"),
+            types.BotCommand("settings", "Настройки"),
+        ])
         await bot.delete_webhook(drop_pending_updates=False)
         await dp.start_polling(bot)
     finally:
