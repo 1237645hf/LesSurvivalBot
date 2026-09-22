@@ -13,6 +13,8 @@ from game_math import (
     get_thirst_base_cost,
 )
 
+from modules.hints import get_active_hints
+
 
 @dataclass
 class GameState:

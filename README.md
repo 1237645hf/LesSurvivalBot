@@ -50,6 +50,8 @@ Telegram-бот с текстовым survival-приключением: игр�
 
 ## 🎮 Архитектура системы
 
+
+
 ### Паттерн: "Fat Module, Thin Loader"
 ```
 main.py (оркестратор)
@@ -241,6 +243,14 @@ $env:MONGO_URI="mongodb://localhost:27017/test"
 ```powershell
 python main.py
 ```
+## Windows / PowerShell (важно для тестов)
+
+Глобальный `python` может быть не в PATH. Используй venv проекта:
+
+```powershell
+& ".\.venv\Scripts\python.exe" -m pytest tests/ -v
+& ".\.venv\Scripts\python.exe" -m py_compile main.py
+& ".\.venv\Scripts\python.exe" main.py
 
 ---
 
