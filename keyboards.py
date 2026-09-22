@@ -45,7 +45,11 @@ def get_settings_kb(game):
 def get_use_item_kb(game):
     usable_items = [
         item for item, count in game.inventory.items()
-        if count > 0 and (item in ("Еда", "Вода") or "зель" in item.lower())
+        if count > 0 and (
+            item in ("Еда", "Вода") or
+            "зель" in item.lower() or
+            ITEMS.get(item, {}).get("can_use", True)
+        )
     ]
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=item, callback_data=f"use_consumable_{item}")]

@@ -210,7 +210,6 @@ class GameState:
                 self.campfire_durability = 0
                 self.campfire_active = False
         
-        self.add_log(f"Действие '{action_type}': AP -1, Голод -{hunger_cost}, Жажда -{thirst_cost}")
         return True
 
     def light_campfire(self) -> bool:
