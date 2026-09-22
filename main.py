@@ -33,17 +33,13 @@ from modules.traps import (
     get_active_traps,
     roll_trap_roll,
     process_trap_rollover,
+    apply_trap_loot_to_inventory,
+    traps_unlocked,
 )
+from modules.finds import roll_find, apply_finds_to_inventory, location_id_from_game
+from modules.cooking import COOKING_RECIPES, cook_item, list_recipes
 
-# ──────────────────────────────────────────────────────────────────────────────
-# РЕЦЕПТЫ КОСТРА
-# ──────────────────────────────────────────────────────────────────────────────
-CAMPFIRE_RECIPES = {
-    "Жареное мясо": {"ingredients": {"Сырое мясо": 1}, "output": "Жареное мясо"},
-    "Жареная рыба": {"ingredients": {"Сырая рыба": 1}, "output": "Жареная рыба"},
-    "Жареные грибы": {"ingredients": {"Грибы": 1}, "output": "Жареные грибы"},
-    "Травяной отвар": {"ingredients": {"Лекарственные травы": 1, "Чистая вода": 1}, "output": "Травяной отвар"},
-}
+# Готовка: единый источник — modules/cooking.py (еда.txt). CAMPFIRE_RECIPES удалён.
 
 
 def load_env_file(path: str = ".env"):
@@ -621,46 +617,23 @@ async def process_callback(callback: types.CallbackQuery):
             game.push_screen("character")
             text = game.get_character_text()
         elif data.startswith("cook_"):
-            # Универсальный обработчик готовки на костре
-            recipe_key = data.replace("cook_", "")
-            recipe = CAMPFIRE_RECIPES.get(recipe_key)
-            
-            if not recipe:
-                await callback.answer("❌ Рецепт не найден!", show_alert=True)
-                return
-                
-            # 1. Проверка костра
+            # Готовка через modules/cooking.py (еда.txt)
+            recipe_id = data  # cook_roast_berries и т.п.
             if not game.campfire_active or game.campfire_durability <= 0:
                 await callback.answer("🔥 Костёр погас! Разведите его снова.", show_alert=True)
                 return
-                
-            # 2. Проверка ингредиентов
-            for item, req_qty in recipe["ingredients"].items():
-                if game.inventory.get(item, 0) < req_qty:
-                    await callback.answer(f"❌ Не хватает: {item}!", show_alert=True)
-                    return
-                    
-            # 3. Выполнение крафта
-            for item, req_qty in recipe["ingredients"].items():
-                game.inventory[item] -= req_qty
-                if game.inventory[item] <= 0:
-                    del game.inventory[item]
-                    
-            result_item = recipe["output"]
-            game.inventory[result_item] = game.inventory.get(result_item, 0) + 1
-            
-            # Трата AP и прочности костра
+            ok, message = cook_item(game, recipe_id)
+            if not ok:
+                await callback.answer(message, show_alert=True)
+                return
             game.consume_action(1)
-            game.campfire_durability -= 1
-            
+            game.campfire_durability = max(0, game.campfire_durability - 1)
             save_game(uid, game)
-            
-            text = f"🍳 Вы успешно приготовили {result_item}! (Остаток огня: {game.campfire_durability}/{game.campfire_max_durability})"
-            kb = get_campfire_recipes_kb(game)
-            
+            text = f"{message}\n(Остаток огня: {game.campfire_durability}/{game.campfire_max_durability})"
+            kb = get_campfire_kb(game)
             await safe_edit_message(chat_id, callback.message.message_id, text, kb)
             await callback.answer()
-            kb = character_inline_kb
+            return
         elif data == "inv_craft":
             game.push_screen("craft")
             kb_c = types.InlineKeyboardMarkup(inline_keyboard=[])
@@ -727,60 +700,24 @@ async def process_callback(callback: types.CallbackQuery):
                 [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="menu_campfire")],
             ])
         elif data == "campfire_recipes":
-            # Список рецептов — динамический статус ингредиентов
-            text = "📜 РЕЦЕПТЫ КОСТРА"
+            # Список рецептов из modules/cooking.py (еда.txt)
+            text = "📜 РЕЦЕПТЫ КОСТРА (кора + теги ягоды/грибы, вода 0–3)"
             kb = types.InlineKeyboardMarkup(inline_keyboard=[])
-            for recipe_name, recipe_data in CAMPFIRE_RECIPES.items():
-                ingredients = recipe_data["ingredients"]
-                # Проверяем, хватает ли всех ингредиентов
-                all_available = all(
-                    game.inventory.get(ing, 0) >= qty
-                    for ing, qty in ingredients.items()
-                )
-                status = "🟢" if all_available else "⚪"
-                button_text = f"{status} {recipe_name}"
+            for recipe_id, label in list_recipes():
                 kb.inline_keyboard.append([
-                    types.InlineKeyboardButton(text=button_text, callback_data=f"campfire_recipe_{recipe_name}")
+                    types.InlineKeyboardButton(text=label, callback_data=recipe_id)
                 ])
             kb.inline_keyboard.append([
                 types.InlineKeyboardButton(text="⬅️ Назад в костёр", callback_data="menu_campfire")
             ])
-            text += f"\n{len(CAMPFIRE_RECIPES)} рецептов доступно."
+            text += f"\n{len(COOKING_RECIPES)} рецептов."
         elif data.startswith("campfire_recipe_"):
-            # Выбор конкретного рецепта
-            recipe_name = data.removeprefix("campfire_recipe_")
-            recipe_data = CAMPFIRE_RECIPES.get(recipe_name, {})
-            ingredients = recipe_data.get("ingredients", {})
-            
-            # Проверка костра
-            if not game.campfire_active or game.campfire_durability <= 0:
-                text = "🔥 Костёр погас! Разведите его снова."
-                kb = get_campfire_kb(game)
-            elif not all(
-                game.inventory.get(ing, 0) >= qty
-                for ing, qty in ingredients.items()
-            ):
-                text = f"❌ Не хватает ингредиентов для {recipe_name}!\n\n{game.get_inventory_text()}"
-                kb = get_campfire_kb(game)
-            else:
-                # Готовим блюдо
-                text = f"🍳 Готовим: {recipe_data.get('output', recipe_name)}..."
-                # Тратим AP и деление прочности костра
-                game.consume_action(1)
-                game.campfire_durability -= 1
-                
-                # Уменьшаем ингредиенты
-                for ing, qty in ingredients.items():
-                    game.inventory[ing] -= qty
-                    if game.inventory[ing] <= 0:
-                        del game.inventory[ing]
-                
-                # Добавляем готовое блюдо
-                output_name = recipe_data.get("output", recipe_name)
-                game.inventory[output_name] = game.inventory.get(output_name, 0) + 1
-                
-                text = f"🍳 Вы успешно приготовили {output_name}!\n\n{game.get_inventory_text()}"
-                kb = get_campfire_kb(game)
+            # Старый callback — перенаправляем на список
+            text = "Выберите рецепт из списка."
+            kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                [types.InlineKeyboardButton(text="📜 Рецепты", callback_data="campfire_recipes")],
+                [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="menu_campfire")],
+            ])
         elif data.startswith("campfire_ingredient_"):
             # Выбор ингредиента для рецепта
             recipe = data.removeprefix("campfire_ingredient_")
@@ -922,38 +859,40 @@ async def process_callback(callback: types.CallbackQuery):
                     game.add_log(f"{torch_research_count}-е исследование с факелом! Запускаем Главную Сюжетную Историю.")
                     text, kb = handle_story(data, game, uid)
                 else:
-                    # Обычное выпадение лута
-                    possible = ["Ветка", "Камень", "Ягода", "Гриб"]
-                    found = random.choice(possible)
-                    game.inventory[found] = game.inventory.get(found, 0) + 1
-                    
-                    game.add_log(f"Нашёл: {found}")
+                    # Лут по локации (еда.txt → modules/finds.py)
+                    loc_id = location_id_from_game(game)
+                    found_list = roll_find(loc_id)
+                    msg = apply_finds_to_inventory(game, found_list)
+                    game.add_log(msg)
                     text = game.get_ui()
                     kb = get_main_kb(game)
 
         elif data in ("action_sleep", "action_4"):
             game.sleep_and_turn_day()
             trap_msgs = []
-            # Проверка всех активных ловушек после сна
-            for loc_id, trap in list(getattr(game, "traps", {}).items()):
-                if not trap.get("is_active"):
+            # Утро: 40% ломка / 60% успех + лут по таблице локации (еда.txt)
+            for event in process_trap_rollover(game):
+                loc_id = event.get("location_id")
+                if event.get("broken"):
+                    msg = f"Ловушка на локации {loc_id}: сломалась, добычи нет."
+                    game.add_log(msg)
+                    trap_msgs.append(msg)
                     continue
-                rolled = roll_trap_roll(game, int(loc_id))
-                if rolled and rolled.get("pending_animal"):
-                    animal = rolled["pending_animal"]
-                    loot_info = get_trap_loot(game, int(loc_id))
-                    if loot_info and loot_info.get("loot"):
-                        item_name = loot_info["loot"].get("item", "Сырое мясо")
-                        qty = loot_info["loot"].get("qty", 1)
-                        game.inventory[item_name] = game.inventory.get(item_name, 0) + qty
-                        # сброс pending после забора
-                        trap["pending_animal"] = None
-                        trap["pending_loot"] = None
-                        msg = f"Ловушка на локации {loc_id}: попался {animal} (+{qty} {item_name})"
-                        game.add_log(msg)
-                        trap_msgs.append(msg)
-                    else:
-                        trap_msgs.append(f"Ловушка на локации {loc_id}: попался {animal}")
+                animal = event.get("animal")
+                loot = event.get("loot") or {}
+                if loot:
+                    apply_trap_loot_to_inventory(game, loot)
+                    loot_txt = ", ".join(f"{k}×{v}" for k, v in loot.items())
+                    msg = f"Ловушка на локации {loc_id}: {animal} (+{loot_txt})"
+                else:
+                    msg = f"Ловушка на локации {loc_id}: {animal}"
+                # сброс pending
+                trap = getattr(game, "traps", {}).get(loc_id)
+                if trap:
+                    trap["pending_animal"] = None
+                    trap["pending_loot"] = None
+                game.add_log(msg)
+                trap_msgs.append(msg)
             if trap_msgs:
                 text = game.get_ui() + "\n" + "\n".join(trap_msgs)
             else:
