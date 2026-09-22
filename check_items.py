@@ -1,7 +1,18 @@
-"""Quick verification of the ITEMS dict structure."""
-from modules.items import ITEMS
+import game_state
+import modules.items
 
-print(f"Number of items: {len(ITEMS)}")
-print("First item:", list(ITEMS.keys())[:3])
-print("Last item:", list(ITEMS.keys())[-3:])
-print("Sample item:", ITEMS["Печёные ягоды"])
+print("=== INVENTORY vs ITEMS ===")
+items = [item for item, count in game_state.game.inventory.items() if count > 0]
+print(f"Inventory items: {items}")
+print("")
+print("In ITEMS dict:")
+for item in items:
+    item_data = modules.items.ITEMS.get(item, "MISSING")
+    if item_data:
+        print(f"  {item}: {item_data}")
+    else:
+        print(f"  {item}: MISSING")
+
+print("\n=== ITEMS dict keys only ===")
+for key in sorted(modules.items.ITEMS.keys()):
+    print(f"  {key}")
