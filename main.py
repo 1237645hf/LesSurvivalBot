@@ -1114,7 +1114,7 @@ async def keep_alive_pinger(interval_seconds: int = 300):
     чтобы предотвратить их уход в спящий режим.
     """
     await asyncio.sleep(15)  # Пауза перед первым запуском после старта бота
-    async with aiohttp.ClientSession() as session:
+    async with ClientSession() as session:
         while True:
             for url in PING_URLS:
                 try:
@@ -1139,16 +1139,36 @@ async def start_health_check_server():
 async def run_bot():
     """Запустить polling и гарантированно закрыть внешние ресурсы при остановке."""
     await start_health_check_server()
-    asyncio.create_task(keep_alive_pinger(300))  # Запуск параллельного пинга каждые 5 минут
+    
+    # Запуск пинга в отдельном task — чтобы не мешал запуску бота
+    pinger_task = asyncio.create_task(keep_alive_pinger(300))
+    
     try:
-        await bot.set_my_commands([
-            types.BotCommand(command="start", description="Начать выживание"),
-            types.BotCommand(command="inventory", description="Инвентарь"),
-            types.BotCommand(command="status", description="Статус"),
-            types.BotCommand(command="settings", description="Настройки"),
-        ])
-        await bot.delete_webhook(drop_pending_updates=False)
-        await dp.start_polling(bot)
+        # Даем серверу "отдохнуть" перед установкой команд
+        logging.info("Сервер запущен — даем ему 10 секунд на 'разогрев'...")
+        await asyncio.sleep(10)
+        logging.info("Запускаем команды бота...")
+        # Обертываем команды в try/except — aiogram может ронять Unauthorized на уже запущонном боте
+        try:
+            await bot.set_my_commands([
+                types.BotCommand(command="start", description="Начать выживание"),
+                types.BotCommand(command="inventory", description="Инвентарь"),
+                types.BotCommand(command="status", description="Статус"),
+                types.BotCommand(command="settings", description="Настройки"),
+            ])
+            await bot.delete_webhook(drop_pending_updates=False)
+            logging.info("Команды установлены — запускаем polling...")
+            await dp.start_polling(bot)
+        except Exception as cmd_err:
+            logging.error(f"Ошибка при настройке команд: {cmd_err}")
+            # Продолжаем polling — он сам обработает команды
+            await dp.start_polling(bot)
+    except Exception as e:
+        logging.error(f"Ошибка в основном потоке бота: {e}")
+        # Перезапускаем пинг, если бот упал
+        if pinger_task.done() and not pinger_task.cancelled():
+            logging.warning("Пингер завершил работу — перезапускаем его...")
+            pinger_task = asyncio.create_task(keep_alive_pinger(300))
     finally:
         if mongo_client is not None:
             mongo_client.close()
