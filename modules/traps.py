@@ -122,6 +122,19 @@ def remove_trap(game_state, location_id: int) -> Optional[Dict]:
     return None
 
 
+def activate_trap(game_state) -> Optional[Dict]:
+    """
+    Совместимость с импортом в main.py.
+    Реальная проверка утром — process_trap_rollover / roll_trap_roll.
+    Здесь только сброс is_active у уже сломанных ловушек.
+    """
+    traps = getattr(game_state, "traps", {}) or {}
+    for loc_id, trap in traps.items():
+        if trap.get("is_broken"):
+            trap["is_active"] = False
+    return traps
+
+
 def _pick_animal(location_id: int) -> Optional[Dict[str, Any]]:
     table = TRAP_LOOT_TABLE.get(int(location_id), [])
     if not table:
