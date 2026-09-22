@@ -5,7 +5,7 @@ import time
 import random
 from textwrap import wrap
 from pathlib import Path
-from aiohttp import web
+from aiohttp import web, ClientSession
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Message
 from aiogram.filters import CommandStart
@@ -1099,8 +1099,30 @@ async def process_text_message(message: Message):
         logging.exception(f"Ошибка process_text_message для {uid}: {exc}")
         try:
             await message.answer("Я не смог обработать это сообщение. Попробуйте ещё раз.")
-        except Exception:
+        except Exception as e:
             pass
+
+# ЖЁСТКО ЗАФИКСИРОВАННЫЕ ССЫЛКИ ДЛЯ ПИНГА (НЕ УДАЛЯТЬ И НЕ СОКРАЩАТЬ)
+PING_URLS = [
+    "https://lessurvivalbot-5u4p.onrender.com",
+    "https://lessurvivalbot.onrender.com"
+]
+
+async def keep_alive_pinger(interval_seconds: int = 300):
+    """
+    КРИТИЧЕСКАЯ ФУНКЦИЯ: Отправляет HTTP GET запросы каждые 5 минут на оба сервиса Render,
+    чтобы предотвратить их уход в спящий режим.
+    """
+    await asyncio.sleep(15)  # Пауза перед первым запуском после старта бота
+    async with aiohttp.ClientSession() as session:
+        while True:
+            for url in PING_URLS:
+                try:
+                    async with session.get(url, timeout=10) as response:
+                        logging.info(f"[Keep-Alive] Пинг {url} -> Статус: {response.status}")
+                except Exception as e:
+                    logging.warning(f"[Keep-Alive] Ошибка при пинге {url}: {e}")
+            await asyncio.sleep(interval_seconds)
 
 async def handle_health_check(request):
     return web.Response(text="OK")
@@ -1117,6 +1139,7 @@ async def start_health_check_server():
 async def run_bot():
     """Запустить polling и гарантированно закрыть внешние ресурсы при остановке."""
     await start_health_check_server()
+    asyncio.create_task(keep_alive_pinger(300))  # Запуск параллельного пинга каждые 5 минут
     try:
         await bot.set_my_commands([
             types.BotCommand(command="start", description="Начать выживание"),
