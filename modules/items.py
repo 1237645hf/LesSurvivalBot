@@ -1,327 +1,272 @@
 """
-modules/items.py — Модуль для описания предметов (инвентарь).
-Отвечает за свойства предметов: еда, экипировка, ловушки, лут из ловушек.
+modules/items.py — Единый реестр предметов (источник правды: еда.txt).
 """
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 
-# Таблицы тегов для ягод и грибов (для гибкого подбора ингредиентов в рецептах)
+# Региональные ягоды (тег [Ягоды]) — из еда.txt
 BERRY_ITEMS: Tuple[str, ...] = (
+    "Лесная ягода",
     "Красная ягода",
-    "Белая ягода",
-    "Золотая ягода",
-    "Синяя ягода",
-    "Тёмная ягода",
+    "Фиолетовая ягода",
+    "Болотная ягода",
+    "Горная ягода",
 )
 
+# Региональные грибы (тег [Грибы]) — из еда.txt
 MUSHROOM_ITEMS: Tuple[str, ...] = (
-    "Лисичка",
-    "Подберёзник",
-    "Мухомор",
-    "Печёнка",
-    "Моховик",
+    "Лесной гриб",
+    "Дикий гриб",
+    "Болотный гриб",
+    "Пещерный гриб",
+    "Горный гриб",
 )
 
 
-# Таблица предметов с их описаниями и эффектами
-ITEMS: Dict[str, Dict[str, any]] = {
-    # Ловушки
+ITEMS: Dict[str, Dict] = {
     "Охотничья ловушка": {
-        "description": "Простая ловушка из дерева и верёвки. Ожидает, что в неё попадёт животное.",
+        "description": "Простая ловушка из дерева и верёвки.",
         "type": "trap",
         "stackable": True,
     },
-    # Кора для костра
     "Кусок коры": {
-        "description": "Плоский кусок коры. Идеальная подставка для жарки.",
+        "description": "Плоский кусок коры. Посуда для готовки на костре.",
         "type": "tool",
         "stackable": True,
     },
-    # Вода во фляге
-    "Вода": {
-        "description": "Простая вода из ручья. Утоляет жажду.",
-        "type": "drink",
-        "effects": {
-            "thirst": 4,
-        },
+    "Глина": {
+        "description": "Липкая глина. Находится в лощине.",
+        "type": "resource",
         "stackable": True,
     },
-    # Мясо из ловушек
-    "Сырое мясо": {
-        "description": "Свежее мясо от пойманного животного. Отлично восстанавливает здоровье.",
-        "type": "food",
-        "effects": {
-            "hunger": 3,  # Насыщает на 3 единицы
-        },
-        "stackable": True,
-    },
-    # Еда из базового набора
-    "Ягода": {
-        "description": "Сладкая ягода из леса. Быстро утоляет голод.",
-        "type": "food",
-        "effects": {
-            "hunger": 2,
-        },
-        "stackable": True,
-    },
-    "Ветчина": {
-        "description": "Высушенное мясо, которое хранится долго.",
-        "type": "food",
-        "effects": {
-            "hunger": 5,
-        },
-        "stackable": True,
-    },
-    # Вода
-    "Вода": {
-        "description": "Простая вода из ручья. Утоляет жажду.",
-        "type": "drink",
-        "effects": {
-            "thirst": 4,
-        },
-        "stackable": True,
-    },
-    # Экипировка
-    "Кожаный жилет": {
-        "description": "Лёгкая защита для туловища от когтей и зубов.",
-        "type": "torso",
-        "effects": {
-            "armor": 10,
-        },
-        "stackable": False,
-    },
-    "Меховой капюшон": {
-        "description": "Шерсть животного, защищающая голову от холода и укусов.",
-        "type": "head",
-        "effects": {
-            "armor": 8,
-        },
-        "stackable": False,
-    },
-    # Инструменты
     "Факел": {
-        "description": "Свет в тёмном лесу. Отпугивает некоторых существ.",
+        "description": "Свет в тёмном лесу.",
         "type": "tool",
-        "effects": {
-            "light": 30,  # Минуты света
-        },
+        "effects": {"light": 30},
         "stackable": True,
     },
-    # Приготовленные блюда
-    "Печёные ягоды": {
-        "description": "Ягоды, запечённые на костре. Универсальный перекус.",
+    "Ветка": {
+        "description": "Сухая ветка. Топливо и крафт.",
+        "type": "resource",
+        "stackable": True,
+    },
+    "Камень": {
+        "description": "Обычный камень.",
+        "type": "resource",
+        "stackable": True,
+    },
+    "Мох": {
+        "description": "Мягкий мох.",
+        "type": "resource",
+        "stackable": True,
+    },
+    "Сухой мох": {
+        "description": "Высушенный мох.",
+        "type": "resource",
+        "stackable": True,
+    },
+    "Пещерный мох": {
+        "description": "Мох из пещеры.",
+        "type": "resource",
+        "stackable": True,
+    },
+    "Горный лишайник": {
+        "description": "Лишайник с вершины.",
+        "type": "resource",
+        "stackable": True,
+    },
+    "Сухая трава": {
+        "description": "Пучок сухой травы.",
+        "type": "resource",
+        "stackable": True,
+    },
+    "Слизь": {
+        "description": "Липкая слизь.",
+        "type": "resource",
+        "stackable": True,
+    },
+    "Светящийся гриб": {
+        "description": "Редкий светящийся гриб (не для обычной готовки).",
+        "type": "resource",
+        "effects": {"hunger": 1},
+        "stackable": True,
+    },
+    "Сланец": {
+        "description": "Кусок сланца.",
+        "type": "resource",
+        "stackable": True,
+    },
+    "Сланцевая пластина": {
+        "description": "Обработанная пластина сланца.",
+        "type": "resource",
+        "stackable": True,
+    },
+    "Сланцевая заготовка": {
+        "description": "Заготовка из сланца.",
+        "type": "resource",
+        "stackable": True,
+    },
+    "Кость": {
+        "description": "Кость животного.",
+        "type": "resource",
+        "stackable": True,
+    },
+    "Кожа": {
+        "description": "Шкура/кожа.",
+        "type": "resource",
+        "stackable": True,
+    },
+    "Мех": {
+        "description": "Клок меха.",
+        "type": "resource",
+        "stackable": True,
+    },
+    "Кости": {
+        "description": "Несколько костей.",
+        "type": "resource",
+        "stackable": True,
+    },
+    "Вода": {
+        "description": "Вода. Утоляет жажду (инвентарь).",
+        "type": "drink",
+        "effects": {"thirst": 4},
+        "stackable": True,
+    },
+    "Сырое мясо": {
+        "description": "Свежее мясо с ловушки.",
         "type": "food",
-        "effects": {
-            "hunger": 15,
-            "poison": 0,  # Нет отравления
-        },
+        "effects": {"hunger": 3},
+        "stackable": True,
+    },
+    "Лесная ягода": {
+        "description": "Ягода лесного старта.",
+        "type": "berry",
+        "effects": {"hunger": 2},
+        "stackable": True,
+    },
+    "Красная ягода": {
+        "description": "Ягода у ручья.",
+        "type": "berry",
+        "effects": {"hunger": 2},
+        "stackable": True,
+    },
+    "Фиолетовая ягода": {
+        "description": "Ягода лощины.",
+        "type": "berry",
+        "effects": {"hunger": 2},
+        "stackable": True,
+    },
+    "Болотная ягода": {
+        "description": "Ягода яра слизней.",
+        "type": "berry",
+        "effects": {"hunger": 2},
+        "stackable": True,
+    },
+    "Горная ягода": {
+        "description": "Ягода вершины.",
+        "type": "berry",
+        "effects": {"hunger": 2},
+        "stackable": True,
+    },
+    "Лесной гриб": {
+        "description": "Гриб лесного старта.",
+        "type": "mushroom",
+        "effects": {"hunger": 2},
+        "stackable": True,
+    },
+    "Дикий гриб": {
+        "description": "Гриб лощины.",
+        "type": "mushroom",
+        "effects": {"hunger": 2},
+        "stackable": True,
+    },
+    "Болотный гриб": {
+        "description": "Гриб яра слизней.",
+        "type": "mushroom",
+        "effects": {"hunger": 2},
+        "stackable": True,
+    },
+    "Пещерный гриб": {
+        "description": "Гриб мохнатой пещеры.",
+        "type": "mushroom",
+        "effects": {"hunger": 2},
+        "stackable": True,
+    },
+    "Горный гриб": {
+        "description": "Гриб вершины святилища.",
+        "type": "mushroom",
+        "effects": {"hunger": 2},
+        "stackable": True,
+    },
+    "Печёные ягоды": {
+        "description": "Ягоды, запечённые на коре.",
+        "type": "food",
+        "effects": {"hunger": 15, "poison": 0},
         "stackable": True,
     },
     "Жареные грибы": {
-        "description": "Грибы, обжаренные на коры. Сытный обед.",
+        "description": "Грибы, обжаренные на коре.",
         "type": "food",
-        "effects": {
-            "hunger": 20,
-            "poison": 0,
-        },
+        "effects": {"hunger": 20, "poison": 0},
         "stackable": True,
     },
     "Мясо на коре": {
-        "description": "Мясо, зажаренное на коре. Отличное питание.",
+        "description": "Мясо, зажаренное на коре.",
         "type": "food",
-        "effects": {
-            "hunger": 40,
-            "hp": 10,
-        },
+        "effects": {"hunger": 40, "hp": 10},
         "stackable": True,
     },
     "Ягодный отвар": {
-        "description": "Настой из ягод. Восстанавливает жажду и здоровье.",
+        "description": "Отвар из ягод.",
         "type": "drink",
-        "effects": {
-            "hunger": 15,
-            "thirst": 25,
-            "hp": 5,
-        },
+        "effects": {"hunger": 15, "thirst": 25, "hp": 5},
         "stackable": True,
     },
     "Грибная похлёбка": {
-        "description": "Наваристый суп из грибов. Сытно и вкусно.",
+        "description": "Похлёбка из грибов.",
         "type": "food",
-        "effects": {
-            "hunger": 25,
-            "thirst": 15,
-        },
+        "effects": {"hunger": 25, "thirst": 15},
         "stackable": True,
     },
     "Охотничья похлёбка": {
-        "description": "Суп из мяса и ягод. Кухня настоящего охотника.",
+        "description": "Мясо и ягоды.",
         "type": "food",
-        "effects": {
-            "hunger": 50,
-            "thirst": 30,
-            "hp": 15,
-        },
+        "effects": {"hunger": 50, "thirst": 30, "hp": 15},
         "stackable": True,
     },
     "Лесная тушёнка": {
-        "description": "Суп из мяса и грибов. Идеально для выживания.",
+        "description": "Мясо и грибы.",
         "type": "food",
-        "effects": {
-            "hunger": 60,
-            "thirst": 20,
-            "hp": 10,
-        },
-        "stackable": True,
-    },
-    # Ягоды для тага
-    "Красная ягода": {
-        "description": "Ярко-красная ягода. Отличается от других.",
-        "type": "berry",
-        "effects": {
-            "hunger": 2,
-        },
-        "stackable": True,
-    },
-    "Зелёная ягода": {
-        "description": "Необычная зелёная ягода. Свирепая!",
-        "type": "berry",
-        "effects": {
-            "hunger": 2,
-        },
-        "stackable": True,
-    },
-    "Жёлтая ягода": {
-        "description": "Ярко-жёлтая ягода. Яркая и сладкая.",
-        "type": "berry",
-        "effects": {
-            "hunger": 2,
-        },
-        "stackable": True,
-    },
-    "Белая ягода": {
-        "description": "Редкая белая ягода. Как снег в лесу.",
-        "type": "berry",
-        "effects": {
-            "hunger": 2,
-        },
-        "stackable": True,
-    },
-    "Тёмная ягода": {
-        "description": "Глубоко-фиолетовая ягода. Ночная красавица.",
-        "type": "berry",
-        "effects": {
-            "hunger": 2,
-        },
-        "stackable": True,
-    },
-    # Грибы для тага
-    "Лисичка": {
-        "description": "Изумрудно-жёлтая лисичка. Грибная классика.",
-        "type": "mushroom",
-        "effects": {
-            "hunger": 2,
-        },
-        "stackable": True,
-    },
-    "Подберёзник": {
-        "description": "Белый гриб с коричневой шляпкой. Сочный.",
-        "type": "mushroom",
-        "effects": {
-            "hunger": 2,
-        },
-        "stackable": True,
-    },
-    "Мухомор": {
-        "description": "Ядовитый красный гриб. Красивый, но опасный.",
-        "type": "mushroom",
-        "effects": {
-            "hunger": 2,
-            "poison": 5,
-        },
-        "stackable": True,
-    },
-    "Печёнка": {
-        "description": "Грибная печёнка. Неоново-зелёная.",
-        "type": "mushroom",
-        "effects": {
-            "hunger": 2,
-        },
-        "stackable": True,
-    },
-    "Моховик": {
-        "description": "Тёмно-фиолетовый гриб. Редкий экземпляр.",
-        "type": "mushroom",
-        "effects": {
-            "hunger": 2,
-        },
+        "effects": {"hunger": 60, "thirst": 20, "hp": 10},
         "stackable": True,
     },
 }
 
 
 def get_item_description(item_name: str) -> str:
-    """
-    Получить описание предмета по его названию.
-
-    Args:
-        item_name: Название предмета (например, "Охотничья ловушка").
-
-    Returns:
-        Описание или "Нет описания" если предмета нет в таблице.
-    """
-    item = ITEMS.get(item_name, {})
-    return item.get("description", "Нет описания")
+    return ITEMS.get(item_name, {}).get("description", "Нет описания")
 
 
 def get_item_type(item_name: str) -> str:
-    """
-    Получить тип предмета (для сортировки инвентаря).
-
-    Args:
-        item_name: Название предмета.
-
-    Returns:
-        Тип предмета: "trap", "food", "drink", "torso", "head", "tool" и т.д.
-    """
-    item = ITEMS.get(item_name, {})
-    return item.get("type", "misc")
+    return ITEMS.get(item_name, {}).get("type", "misc")
 
 
 def get_item_effects(item_name: str) -> Dict[str, int]:
-    """
-    Получить эффекты предмета (бонусы к голоду, жажде, защите).
-
-    Args:
-        item_name: Название предмета.
-
-    Returns:
-        Словарь эффектов: {"hunger": 3, "thirst": 4} или пустой словарь.
-    """
-    item = ITEMS.get(item_name, {})
-    return item.get("effects", {})
+    return dict(ITEMS.get(item_name, {}).get("effects", {}))
 
 
 def get_item_stackable(item_name: str) -> bool:
-    """
-    Проверить, можно ли складировать предмет.
-
-    Args:
-        item_name: Название предмета.
-
-    Returns:
-        True если предмет складированный, False — если уникальный.
-    """
-    item = ITEMS.get(item_name, {})
-    return item.get("stackable", True)
+    return ITEMS.get(item_name, {}).get("stackable", True)
 
 
 def get_all_items() -> Dict[str, Dict]:
-    """
-    Получить все предметы из таблицы.
-
-    Returns:
-        Копия словаря ITEMS.
-    """
     return ITEMS.copy()
+
+
+def is_berry(item_name: str) -> bool:
+    return item_name in BERRY_ITEMS or get_item_type(item_name) == "berry"
+
+
+def is_mushroom(item_name: str) -> bool:
+    return item_name in MUSHROOM_ITEMS or get_item_type(item_name) == "mushroom"
