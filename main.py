@@ -251,7 +251,7 @@ class Game(GameState):
         return text
 
     def get_character_text(self):
-        pet_text = f"Питомец: {self.equipment['pet']}" if self.equipment.get("pet") else "Питомец: Пусто"
+        pet_name = self.equipment.get("pet") or getattr(self, "companion_name", None) or "Пусто"
         slots = {
             "head": "Голова",
             "torso": "Торс",
@@ -259,10 +259,15 @@ class Game(GameState):
             "pants": "Штаны",
             "boots": "Ботинки",
             "trinket": "Безделушка",
-            "pet": pet_text,
+            "pet": "Питомец",
             "hand": "Рука",
         }
-        lines = [f"{name}: {self.equipment.get(slot) or 'Пусто'}" for slot, name in slots.items()]
+        lines = []
+        for slot, label in slots.items():
+            if slot == "pet":
+                lines.append(f"{label}: {pet_name}")
+            else:
+                lines.append(f"{label}: {self.equipment.get(slot) or 'Пусто'}")
         return "Персонаж:\n\n" + "\n".join(lines)
 
 # ──────────────────────────────────────────────────────────────────────────────

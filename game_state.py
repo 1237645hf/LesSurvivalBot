@@ -197,7 +197,7 @@ class GameState:
 
         return base_ap + equipment_bonus
 
-    def consume_action(self, action_type: str = "default", base_hunger: int = 2, base_thirst: int = 1, ap_cost: int = 0):
+    def consume_action(self, action_type: str = "default", base_hunger: int = 2, base_thirst: int = 1, ap_cost: int = 1):
         """Списание AP и ресурсов с возвратом ФАКТИЧЕСКИХ дельт.
 
         Если голод или жажда доходят до 0, остаток уходит в урон HP
@@ -230,7 +230,12 @@ class GameState:
         old_thirst = self.thirst
         old_hp = self.hp
 
-        self.ap = max(0, self.ap - 1)
+        cost = max(0, int(ap_cost))
+        if cost <= 0:
+            return result
+        if self.ap < cost:
+            return result
+        self.ap = max(0, self.ap - cost)
 
         hunger_cost = get_base_resource_cost(self, base_cost=base_hunger)
         thirst_cost = get_thirst_base_cost(self, base_cost=base_thirst)
