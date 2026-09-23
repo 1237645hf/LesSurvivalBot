@@ -24,7 +24,57 @@ MUSHROOM_ITEMS: Tuple[str, ...] = (
 )
 
 
+CONSUMABLE_EFFECT_KEYS = {"hunger", "thirst", "hp", "poison"}
+
+
 ITEMS: Dict[str, Dict] = {
+    "Спички": {
+        "description": "Нужны для розжига и создания факела.",
+        "type": "tool",
+        "can_use": False,
+        "stackable": True,
+    },
+    "Вилка": {
+        "description": "Столовая вилка. Нужна для приготовления блюд.",
+        "type": "tool",
+        "can_use": False,
+        "stackable": True,
+    },
+    "Сухпай": {
+        "description": "Армейский сухпай. Сытный и долгой варки.",
+        "type": "food",
+        "effects": {"hunger": 30},
+        "can_use": True,
+        "stackable": True,
+    },
+    "Еда": {
+        "description": "Обобщённая еда. Утоляет голод.",
+        "type": "food",
+        "effects": {"hunger": 30},
+        "can_use": True,
+        "stackable": True,
+    },
+    "Зелье здоровья": {
+        "description": "Лечебное зелье. Восстанавливает здоровье.",
+        "type": "potion",
+        "effects": {"hp": 25},
+        "can_use": True,
+        "stackable": True,
+    },
+    "Ягода": {
+        "description": "Съедобная ягода. Утоляет лёгкий голод.",
+        "type": "berry",
+        "effects": {"hunger": 2},
+        "can_use": True,
+        "stackable": True,
+    },
+    "Гриб": {
+        "description": "Съедобный гриб. Утоляет лёгкий голод.",
+        "type": "mushroom",
+        "effects": {"hunger": 2},
+        "can_use": True,
+        "stackable": True,
+    },
     "Охотничья ловушка": {
         "description": "Простая ловушка из дерева и верёвки.",
         "type": "trap",
@@ -309,3 +359,31 @@ def is_berry(item_name: str) -> bool:
 
 def is_mushroom(item_name: str) -> bool:
     return item_name in MUSHROOM_ITEMS or get_item_type(item_name) == "mushroom"
+
+
+def _item_can_use(item_name: str) -> bool:
+    return ITEMS.get(item_name, {}).get("can_use", True)
+
+
+def _has_consumable_effects(item_name: str) -> bool:
+    effects = ITEMS.get(item_name, {}).get("effects", {})
+    return any(k in CONSUMABLE_EFFECT_KEYS for k in effects)
+
+
+def _is_consumable_type(item_name: str) -> bool:
+    return get_item_type(item_name) in {"food", "drink", "berry", "mushroom", "potion"}
+
+
+def is_item_consumable(item_name: str) -> bool:
+    """
+    Определяет, должен ли предмет попадать в меню «Использовать» (расходники).
+
+    Условие: флаг can_use=True И (имеет эффекты характеристик ИЛИ тип — расходный).
+    """
+    if not _item_can_use(item_name):
+        return False
+    if _has_consumable_effects(item_name):
+        return True
+    if _is_consumable_type(item_name):
+        return True
+    return False

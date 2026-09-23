@@ -38,8 +38,31 @@ from modules.traps import (
 )
 from modules.finds import roll_find, apply_finds_to_inventory, location_id_from_game
 from modules.cooking import COOKING_RECIPES, cook_item, list_recipes
+from modules.items import get_item_effects, is_item_consumable
 
 # Готовка: единый источник — modules/cooking.py (еда.txt). CAMPFIRE_RECIPES удалён.
+
+
+def format_resource_log_text(deltas: dict) -> str:
+    """Собрать строку лога строго по ФАКТИЧЕСКИМ дельтам из consume_action/light_campfire.
+
+    Пример вывода: «Голод -2, Жажда -1» или «Голод -1, HP -3 (голодание)».
+    """
+    parts = []
+    if deltas.get("delta_hunger"):
+        parts.append(f"Голод {deltas['delta_hunger']:+d}")
+    if deltas.get("delta_thirst"):
+        parts.append(f"Жажда {deltas['delta_thirst']:+d}")
+    hp_delta = deltas.get("delta_hp", 0)
+    if hp_delta:
+        hp_reasons = []
+        if deltas.get("hunger_damage_to_hp"):
+            hp_reasons.append("голодание")
+        if deltas.get("thirst_damage_to_hp"):
+            hp_reasons.append("обезвоживание")
+        reason = f" ({', '.join(hp_reasons)})" if hp_reasons else ""
+        parts.append(f"HP {hp_delta:+d}{reason}")
+    return ", ".join(parts)
 
 
 def load_env_file(path: str = ".env"):
@@ -67,6 +90,7 @@ from keyboards import (
     get_bottom_menu,
     get_use_item_kb,
     get_drop_item_kb,
+    get_drop_quantity_kb,
     get_campfire_kb,
     get_campfire_fuel_kb,
     get_campfire_recipes_kb,
@@ -186,8 +210,11 @@ class Game(GameState):
 
     def add_log(self, text):
         self.log.append(text)
+        self.event_log.append(text)
         if len(self.log) > 20:
             self.log = self.log[-20:]
+        if len(self.event_log) > 50:
+            self.event_log = self.event_log[-50:]
 
     def push_screen(self, screen: str):
         self.nav_stack.append(screen)
@@ -283,7 +310,7 @@ def get_inspectable_items(game):
 def get_usable_items(game):
     return [
         item for item, count in game.inventory.items()
-        if count > 0 and (item in ("Еда", "Вода") or "зель" in item.lower())
+        if count > 0 and is_item_consumable(item)
     ]
 
 
@@ -302,9 +329,11 @@ def get_callback_answer(callback):
 
 
 def use_consumable(item, game):
-    """Использовать предмет с учётом динамических коэффициентов."""
+    """Использовать предмет с учётом динамических коэффициентов.
+
+    Источник правды по эффектам — modules/items.py (get_item_effects).
+    """
     if item == "Вода":
-        # Базовая стоимость воды: 1 + запас от голода
         hunger_mult = get_resource_multiplier(game, "hunger")
         water_cost = 1 + max(0, (30 - game.hunger) // 10)
         if game.inventory.get("Вода", 0) < water_cost:
@@ -312,25 +341,56 @@ def use_consumable(item, game):
         game.inventory["Вода"] -= water_cost
         if game.inventory["Вода"] <= 0:
             del game.inventory["Вода"]
-        # Восстанавливаем жажду с учётом коэффициента голода
         thirst_restore = 10 * get_resource_multiplier(game, "thirst")
         game.thirst = min(100, game.thirst + thirst_restore)
         result = f"Жажда восстановлена на {int(thirst_restore)}. Потрачено воды: {water_cost}."
-    elif item == "Еда":
-        # Еда восстанавливает голод с учётом коэффициента
-        hunger_mult = get_resource_multiplier(game, "hunger")
-        game.hunger = min(100, game.hunger + 30 * hunger_mult)
-        result = f"Голод утолен ({int(30 * hunger_mult)} ед.)."
-    elif "зель" in item.lower():
-        game.hp = min(100, game.hp + 25)
-        result = "Здоровье восстановлено."
     else:
-        return None
+        effects = get_item_effects(item)
 
-    if item != "Вода":
+        if not effects and "зель" in item.lower():
+            effects = {"hp": 25}
+        if not effects and item == "Еда":
+            effects = {"hunger": 30}
+
+        if not effects:
+            return None
+
+        restore_parts = []
+
+        if "hunger" in effects:
+            hunger_mult = get_resource_multiplier(game, "hunger")
+            hunger_val = int(effects["hunger"] * hunger_mult)
+            game.hunger = min(100, game.hunger + hunger_val)
+            restore_parts.append(f"Голод утолен ({hunger_val} ед.)")
+
+        if "thirst" in effects:
+            thirst_mult = get_resource_multiplier(game, "thirst")
+            thirst_val = int(effects["thirst"] * thirst_mult)
+            game.thirst = min(100, game.thirst + thirst_val)
+            restore_parts.append(f"Жажда восстановлена ({thirst_val} ед.)")
+
+        if "hp" in effects:
+            hp_val = effects["hp"]
+            game.hp = min(100, game.hp + hp_val)
+            if hp_val >= 0:
+                restore_parts.append(f"Здоровье восстановлено ({hp_val} ед.)")
+            else:
+                restore_parts.append(f"Получен урон ({abs(hp_val)} ед.)")
+
+        if "poison" in effects and effects["poison"]:
+            poison_val = effects["poison"]
+            game.hp = max(0, game.hp - poison_val)
+            restore_parts.append(f"Отравление ({poison_val} урона)")
+
+        if not restore_parts:
+            return None
+
+        result = " ".join(restore_parts)
+
         game.inventory[item] -= 1
         if game.inventory[item] <= 0:
             del game.inventory[item]
+
     game.add_log(f"Использовано: {item}. {result}")
     return f"Использовано: {item}. {result}\n\n{game.get_ui()}"
 
@@ -626,8 +686,13 @@ async def process_callback(callback: types.CallbackQuery):
             if not ok:
                 await callback.answer(message, show_alert=True)
                 return
-            game.consume_action(1)
-            game.campfire_durability = max(0, game.campfire_durability - 1)
+            deltas = game.consume_action(action_type="cook", base_hunger=2, base_thirst=1)
+            res_log = format_resource_log_text(deltas)
+            if res_log:
+                game.add_log(res_log)
+            # Ручное списание прочности только если костёр горит
+            if game.campfire_active:
+                game.campfire_durability = max(0, game.campfire_durability - 1)
             save_game(uid, game)
             text = f"{message}\n(Остаток огня: {game.campfire_durability}/{game.campfire_max_durability})"
             kb = get_campfire_kb(game)
@@ -733,9 +798,18 @@ async def process_callback(callback: types.CallbackQuery):
             )
             kb = inventory_inline_kb
 
+        elif data == "inv_use":
+            usable = get_usable_items(game)
+            if not usable:
+                return
+            game.push_screen("use")
+            text = "Выберите предмет для использования:"
+            kb = get_use_item_kb(game)
+
         elif data == "inv_drop":
             if not any(count > 0 for count in game.inventory.values()):
                 return
+            game.push_screen("drop")
             text = "Выберите предмет для удаления:"
             kb = get_drop_item_kb(game)
 
@@ -749,11 +823,72 @@ async def process_callback(callback: types.CallbackQuery):
         elif data.startswith("drop_item_"):
             item = data.removeprefix("drop_item_")
             if game.inventory.get(item, 0) > 0:
-                game.inventory[item] -= 1
-                if game.inventory[item] <= 0:
-                    del game.inventory[item]
-                text = f"Удалено: {item}.\n\n{game.get_inventory_text()}"
+                game.push_screen("drop_qty")
+                current_count = game.inventory[item]
+                text = f"Сколько выкинуть «{item}»?\nВ инвентаре: {current_count} шт."
+                kb = get_drop_quantity_kb(item)
+
+        elif data.startswith("drop_qty:"):
+            parts = data.split(":", 2)
+            if len(parts) < 3:
+                return
+            qty_type = parts[1]
+            item = parts[2]
+            current_count = game.inventory.get(item, 0)
+            if current_count <= 0:
+                while len(game.nav_stack) > 1 and game.nav_stack[-1] in ("drop", "drop_qty"):
+                    game.nav_stack.pop()
+                text = f"Предмета «{item}» нет в инвентаре.\n\n{game.get_inventory_text()}"
                 kb = inventory_inline_kb
+            else:
+                drop_count = 0
+                if qty_type == "1":
+                    drop_count = 1
+                elif qty_type == "all":
+                    drop_count = current_count
+                elif qty_type == "custom":
+                    game.story_state = "WAITING_FOR_DROP_QUANTITY"
+                    game.story_flags["drop_item_name"] = item
+                    text = f"Введите количество «{item}» для выброса:\n(Доступно: {current_count} шт.)"
+                    kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                        [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="drop_qty_cancel")]
+                    ])
+                    if text is not None:
+                        game.record_route(data)
+                        await update_or_send_message(chat_id, uid, text, kb)
+                        save_game(uid, game)
+                    return
+
+                if drop_count > 0:
+                    while len(game.nav_stack) > 1 and game.nav_stack[-1] in ("drop", "drop_qty"):
+                        game.nav_stack.pop()
+                    game.inventory[item] -= drop_count
+                    if game.inventory[item] <= 0:
+                        del game.inventory[item]
+                    game.add_log(f"Выкинуто: {item} ×{drop_count}")
+                    text = f"Удалено: {item} ×{drop_count}.\n\n{game.get_inventory_text()}"
+                    kb = inventory_inline_kb
+
+        elif data == "drop_qty_cancel":
+            game.story_state = None
+            if "drop_item_name" in game.story_flags:
+                del game.story_flags["drop_item_name"]
+            prev = game.pop_screen()
+            if prev == "drop_qty":
+                prev = game.pop_screen()
+            if prev == "drop":
+                if any(count > 0 for count in game.inventory.values()):
+                    text = "Выберите предмет для удаления:"
+                    kb = get_drop_item_kb(game)
+                else:
+                    text = game.get_inventory_text()
+                    kb = inventory_inline_kb
+            elif prev == "inventory":
+                text = game.get_inventory_text()
+                kb = inventory_inline_kb
+            else:
+                text = game.get_ui()
+                kb = get_main_kb(game)
 
         elif data == "back":
             prev = game.pop_screen()
@@ -766,6 +901,16 @@ async def process_callback(callback: types.CallbackQuery):
             elif prev == "character":
                 text = game.get_character_text()
                 kb = character_inline_kb
+            elif prev == "drop":
+                text = game.get_inventory_text()
+                kb = inventory_inline_kb
+            elif prev == "drop_qty":
+                if any(count > 0 for count in game.inventory.values()):
+                    text = "Выберите предмет для удаления:"
+                    kb = get_drop_item_kb(game)
+                else:
+                    text = game.get_inventory_text()
+                    kb = inventory_inline_kb
             elif prev == "craft":
                 kb_c = types.InlineKeyboardMarkup(inline_keyboard=[])
                 if game.inventory.get("Спички", 0) >= 1 and game.inventory.get("Ветка", 0) >= 1:
@@ -839,33 +984,42 @@ async def process_callback(callback: types.CallbackQuery):
 
         elif data == "action_1":
             if game.ap <= 0:
-                game.add_log("Действия на сегодня закончились.")
+                ap_warning = "Не хватает очков действий! Нужно поспать (Отдых)."
+                game.add_log(ap_warning)
+                await callback.answer(ap_warning, show_alert=True)
                 text = game.get_ui()
                 kb = get_main_kb(game)
+                if text is not None:
+                    await update_or_send_message(chat_id, uid, text, kb)
+                    save_game(uid, game)
+                return
+
+            # Центральное списание AP и ресурсов — сначала математика, потом лог по факту
+            deltas = game.consume_action(action_type="search", base_hunger=2, base_thirst=1)
+            res_log = format_resource_log_text(deltas)
+            if res_log:
+                game.add_log(res_log)
+
+            # Счётчик исследований с факелом (для Главной Сюжетной Истории)
+            torch_research_count = getattr(game, "torch_research_count", 0)
+
+            # Увеличиваем счётчик ТОЛЬКО если факел экипирован
+            if game.equipment.get("hand") == "Факел":
+                torch_research_count += 1
+                game.torch_research_count = torch_research_count
+
+            # На 4-м исследовании с факелом — гарантированно 1-я Сюжетная История
+            if torch_research_count >= 4:
+                game.add_log(f"{torch_research_count}-е исследование с факелом! Запускаем Главную Сюжетную Историю.")
+                text, kb = handle_story(data, game, uid)
             else:
-                # Центральное списание AP и ресурсов
-                game.consume_action(action_type="search", base_hunger=2, base_thirst=1)
-                
-                # Счётчик исследований с факелом (для Главной Сюжетной Истории)
-                torch_research_count = getattr(game, "torch_research_count", 0)
-                
-                # Увеличиваем счётчик ТОЛЬКО если факел экипирован
-                if game.equipment.get("hand") == "Факел":
-                    torch_research_count += 1
-                    game.torch_research_count = torch_research_count
-                
-                # На 4-м исследовании с факелом — гарантированно 1-я Сюжетная История
-                if torch_research_count >= 4:
-                    game.add_log(f"{torch_research_count}-е исследование с факелом! Запускаем Главную Сюжетную Историю.")
-                    text, kb = handle_story(data, game, uid)
-                else:
-                    # Лут по локации (еда.txt → modules/finds.py)
-                    loc_id = location_id_from_game(game)
-                    found_list = roll_find(loc_id)
-                    msg = apply_finds_to_inventory(game, found_list)
-                    game.add_log(msg)
-                    text = game.get_ui()
-                    kb = get_main_kb(game)
+                # Лут по локации (еда.txt → modules/finds.py)
+                loc_id = location_id_from_game(game)
+                found_list = roll_find(loc_id)
+                msg = apply_finds_to_inventory(game, found_list)
+                game.add_log(msg)
+                text = game.get_ui()
+                kb = get_main_kb(game)
 
         elif data in ("action_sleep", "action_4"):
             game.sleep_and_turn_day()
@@ -914,7 +1068,11 @@ async def process_callback(callback: types.CallbackQuery):
             kb = get_main_kb(game)
 
         elif data == "action_light_campfire":
-            if game.light_campfire():
+            campfire_result = game.light_campfire()
+            if campfire_result.get("lit"):
+                res_log = format_resource_log_text(campfire_result)
+                if res_log:
+                    game.add_log(res_log)
                 text = f"🔥 Вы развели костёр! (Прочность: {game.campfire_durability}/{game.campfire_max_durability})"
                 kb = get_campfire_kb(game)
             else:
@@ -1092,6 +1250,101 @@ async def process_text_message(message: Message):
                 await safe_edit_message(chat_id, msg_id, text, kb)
             else:
                 await update_or_send_message(chat_id, uid, text, kb)
+
+            save_game(uid, game)
+            return
+
+        if game.story_state == "WAITING_FOR_DROP_QUANTITY":
+            if not text:
+                return
+
+            await safe_delete_message(chat_id, message.message_id)
+
+            item_name = game.story_flags.get("drop_item_name")
+            if not item_name:
+                game.story_state = None
+                while len(game.nav_stack) > 1 and game.nav_stack[-1] in ("drop", "drop_qty"):
+                    game.nav_stack.pop()
+                text = game.get_inventory_text()
+                kb = inventory_inline_kb
+                msg_id = last_active_msg_id.get(uid)
+                if msg_id:
+                    await safe_edit_message(chat_id, msg_id, text, kb)
+                else:
+                    await update_or_send_message(chat_id, uid, text, kb)
+                save_game(uid, game)
+                return
+
+            try:
+                drop_amount = int(text)
+                if drop_amount <= 0:
+                    error_text = "❌ Введите число больше нуля!"
+                    kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                        [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="drop_qty_cancel")]
+                    ])
+                    msg_id = last_active_msg_id.get(uid)
+                    current_count = game.inventory.get(item_name, 0)
+                    prompt = f"Введите количество «{item_name}» для выброса:\n(Доступно: {current_count} шт.)\n\n{error_text}"
+                    if msg_id:
+                        await safe_edit_message(chat_id, msg_id, prompt, kb)
+                    else:
+                        await update_or_send_message(chat_id, uid, prompt, kb)
+                    save_game(uid, game)
+                    return
+            except ValueError:
+                error_text = "❌ Введите корректное положительное число!"
+                kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                    [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="drop_qty_cancel")]
+                ])
+                msg_id = last_active_msg_id.get(uid)
+                current_count = game.inventory.get(item_name, 0)
+                prompt = f"Введите количество «{item_name}» для выброса:\n(Доступно: {current_count} шт.)\n\n{error_text}"
+                if msg_id:
+                    await safe_edit_message(chat_id, msg_id, prompt, kb)
+                else:
+                    await update_or_send_message(chat_id, uid, prompt, kb)
+                save_game(uid, game)
+                return
+
+            current_count = game.inventory.get(item_name, 0)
+            if current_count <= 0:
+                game.story_state = None
+                if "drop_item_name" in game.story_flags:
+                    del game.story_flags["drop_item_name"]
+                while len(game.nav_stack) > 1 and game.nav_stack[-1] in ("drop", "drop_qty"):
+                    game.nav_stack.pop()
+                result_text = f"❌ У вас нет «{item_name}» в инвентаре!\n\n{game.get_inventory_text()}"
+                kb = inventory_inline_kb
+                msg_id = last_active_msg_id.get(uid)
+                if msg_id:
+                    await safe_edit_message(chat_id, msg_id, result_text, kb)
+                else:
+                    await update_or_send_message(chat_id, uid, result_text, kb)
+                save_game(uid, game)
+                return
+
+            if drop_amount > current_count:
+                drop_amount = current_count
+
+            while len(game.nav_stack) > 1 and game.nav_stack[-1] in ("drop", "drop_qty"):
+                game.nav_stack.pop()
+            game.inventory[item_name] -= drop_amount
+            if game.inventory[item_name] <= 0:
+                del game.inventory[item_name]
+            game.add_log(f"Выкинуто: {item_name} ×{drop_amount}")
+
+            game.story_state = None
+            if "drop_item_name" in game.story_flags:
+                del game.story_flags["drop_item_name"]
+
+            result_text = f"Удалено: {item_name} ×{drop_amount}.\n\n{game.get_inventory_text()}"
+            kb = inventory_inline_kb
+
+            msg_id = last_active_msg_id.get(uid)
+            if msg_id:
+                await safe_edit_message(chat_id, msg_id, result_text, kb)
+            else:
+                await update_or_send_message(chat_id, uid, result_text, kb)
 
             save_game(uid, game)
             return

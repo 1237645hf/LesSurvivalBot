@@ -118,10 +118,16 @@ def get_thirst_base_cost(game_state: object, base_cost: int = 1) -> int:
     multiplier = get_resource_multiplier(game_state, "thirst")
     weather = getattr(game_state, "weather", "clear")
     
-    # В пасмурную погоду жажда не тратится
-    weather_modifier = 1 if weather == "cloudy" else 1
+    if weather == "storm":
+        weather_modifier = 2.0
+    elif weather == "rain":
+        weather_modifier = 0.75
+    elif weather == "cloudy":
+        weather_modifier = 0.5
+    else:  # clear
+        weather_modifier = 1.0
     
-    cost = int(base_cost * multiplier * weather_modifier)
+    cost = max(1, int(round(base_cost * multiplier * weather_modifier)))
     return cost
 
 

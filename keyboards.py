@@ -5,6 +5,8 @@ from aiogram.types import (
     KeyboardButton,
 )
 
+from modules.items import is_item_consumable
+
 
 def get_bottom_menu():
     return ReplyKeyboardMarkup(
@@ -45,11 +47,7 @@ def get_settings_kb(game):
 def get_use_item_kb(game):
     usable_items = [
         item for item, count in game.inventory.items()
-        if count > 0 and (
-            item in ("Еда", "Вода") or
-            "зель" in item.lower() or
-            ITEMS.get(item, {}).get("can_use", True)
-        )
+        if count > 0 and is_item_consumable(item)
     ]
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=item, callback_data=f"use_consumable_{item}")]
@@ -58,11 +56,20 @@ def get_use_item_kb(game):
 
 
 def get_drop_item_kb(game):
-    items = [item for item, count in game.inventory.items() if count > 0]
+    items = [(item, count) for item, count in game.inventory.items() if count > 0]
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"Выкинуть: {item}", callback_data=f"drop_item_{item}")]
-        for item in items
+        [InlineKeyboardButton(text=f"{item} ×{count}", callback_data=f"drop_item_{item}")]
+        for item, count in items
     ] + [[InlineKeyboardButton(text="Назад", callback_data="back")]])
+
+
+def get_drop_quantity_kb(item_name: str):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Выбросить 1", callback_data=f"drop_qty:1:{item_name}")],
+        [InlineKeyboardButton(text="Выбросить всё", callback_data=f"drop_qty:all:{item_name}")],
+        [InlineKeyboardButton(text="Ввести число", callback_data=f"drop_qty:custom:{item_name}")],
+        [InlineKeyboardButton(text="Назад", callback_data="back")],
+    ])
 
 def get_main_kb(game):
     kb = InlineKeyboardMarkup(inline_keyboard=[

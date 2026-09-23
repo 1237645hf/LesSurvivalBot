@@ -189,56 +189,140 @@ class GameState:
 
         return base_ap + equipment_bonus
 
-    def consume_action(self, action_type: str = "default", base_hunger: int = 2, base_thirst: int = 1) -> bool:
-        """Списание AP и ресурсов с фиксацией нижнего порога в 1 единицу."""
+    def consume_action(self, action_type: str = "default", base_hunger: int = 2, base_thirst: int = 1):
+        """Списание AP и ресурсов с возвратом ФАКТИЧЕСКИХ дельт.
+
+        Если голод или жажда доходят до 0, остаток уходит в урон HP
+        (голодание / обезвоживание). HP гарантированно не ниже 1.
+
+        Возвращает:
+            dict с ключами:
+                success (bool) — было ли действие выполнено (AP > 0)
+                delta_ap (int) — фактическое изменение AP
+                delta_hunger (int) — фактическое изменение hunger (отриц. = списано)
+                delta_thirst (int) — фактическое изменение thirst (отриц. = списано)
+                delta_hp (int) — фактическое изменение HP (отриц. = урон)
+                hunger_damage_to_hp (int) — сколько HP снялось из-за голодания
+                thirst_damage_to_hp (int) — сколько HP снялось из-за обезвоживания
+        """
+        result = {
+            "success": False,
+            "delta_ap": 0,
+            "delta_hunger": 0,
+            "delta_thirst": 0,
+            "delta_hp": 0,
+            "hunger_damage_to_hp": 0,
+            "thirst_damage_to_hp": 0,
+        }
         if self.ap <= 0:
-            return False
-        
+            return result
+
+        old_ap = self.ap
+        old_hunger = self.hunger
+        old_thirst = self.thirst
+        old_hp = self.hp
+
         self.ap = max(0, self.ap - 1)
 
         hunger_cost = get_base_resource_cost(self, base_cost=base_hunger)
         thirst_cost = get_thirst_base_cost(self, base_cost=base_thirst)
-        
-        # Несгораемый минимум — 1
-        self.hunger = max(1, self.hunger - hunger_cost)
-        self.thirst = max(1, self.thirst - thirst_cost)
-        
-        # Если костёр горит, уменьшаем прочность
-        if self.campfire_active:
+
+        new_hunger = old_hunger - hunger_cost
+        if new_hunger < 0:
+            result["hunger_damage_to_hp"] = -new_hunger
+            new_hunger = 0
+        self.hunger = new_hunger
+
+        new_thirst = old_thirst - thirst_cost
+        if new_thirst < 0:
+            result["thirst_damage_to_hp"] = -new_thirst
+            new_thirst = 0
+        self.thirst = new_thirst
+
+        overflow_hp_damage = result["hunger_damage_to_hp"] + result["thirst_damage_to_hp"]
+        if overflow_hp_damage > 0:
+            self.hp = max(1, old_hp - overflow_hp_damage)
+
+        result["success"] = True
+        result["delta_ap"] = self.ap - old_ap
+        result["delta_hunger"] = self.hunger - old_hunger
+        result["delta_thirst"] = self.thirst - old_thirst
+        result["delta_hp"] = self.hp - old_hp
+
+        # Списываем прочность костра только если AP тратится (action_type == "default")
+        if self.campfire_active and action_type == "default":
             self.campfire_durability -= 1
             if self.campfire_durability <= 0:
                 self.campfire_durability = 0
                 self.campfire_active = False
-        
-        return True
 
-    def light_campfire(self) -> bool:
-        """Развести костёр: списывает 2 AP, -7 Голода, -20 Жажды."""
-        if self.ap <= 0:
-            return False
-        
-        self.ap = max(0, self.ap - 2)
-        
+        return result
+
+    def light_campfire(self):
+        """Развести костёр: 1 AP, 7 голода, 15 жажды.
+
+        Фиксированно устанавливает:
+            self.campfire_max_durability = 10
+            self.campfire_durability = 10
+            self.campfire_active = True
+
+        Возвращает:
+            dict с тем же набором ключей, что и consume_action, плюс:
+                lit (bool) — получилось ли развести (AP ≥ 1)
+        """
+        result = {
+            "success": False,
+            "lit": False,
+            "delta_ap": 0,
+            "delta_hunger": 0,
+            "delta_thirst": 0,
+            "delta_hp": 0,
+            "hunger_damage_to_hp": 0,
+            "thirst_damage_to_hp": 0,
+        }
+        if self.ap < 1:
+            return result
+
+        old_ap = self.ap
+        old_hunger = self.hunger
+        old_thirst = self.thirst
+        old_hp = self.hp
+
+        self.ap = max(0, self.ap - 1)
+
         hunger_cost = get_base_resource_cost(self, base_cost=7)
-        thirst_cost = get_thirst_base_cost(self, base_cost=20)
-        
-        self.hunger = max(1, self.hunger - hunger_cost)
-        self.thirst = max(1, self.thirst - thirst_cost)
-        
-        # Базовое макс AP
-        base_ap = self.max_ap
-        
-        # Если в руке Факел, +1 к базовому AP
-        if self.equipment.get("hand") == "Факел":
-            base_ap += 1
-        
-        # Вычисляем прочность: base_ap + 3
-        self.campfire_max_durability = base_ap + 3
+        thirst_cost = get_thirst_base_cost(self, base_cost=15)
+
+        new_hunger = old_hunger - hunger_cost
+        if new_hunger < 0:
+            result["hunger_damage_to_hp"] = -new_hunger
+            new_hunger = 0
+        self.hunger = new_hunger
+
+        new_thirst = old_thirst - thirst_cost
+        if new_thirst < 0:
+            result["thirst_damage_to_hp"] = -new_thirst
+            new_thirst = 0
+        self.thirst = new_thirst
+
+        overflow_hp_damage = result["hunger_damage_to_hp"] + result["thirst_damage_to_hp"]
+        if overflow_hp_damage > 0:
+            self.hp = max(1, old_hp - overflow_hp_damage)
+
+        # Затраты на розжиг: 1 AP, 7 голода и 15 жажды
+        self.campfire_max_durability = 10
         self.campfire_durability = self.campfire_max_durability
         self.campfire_active = True
-        
+
+        result["success"] = True
+        result["lit"] = True
+        result["delta_ap"] = self.ap - old_ap
+        result["delta_hunger"] = self.hunger - old_hunger
+        result["delta_thirst"] = self.thirst - old_thirst
+        result["delta_hp"] = self.hp - old_hp
+
         self.add_log(f"🔥 Костёр разведён! Прочность: {self.campfire_durability}/{self.campfire_max_durability}")
-        return True
+        return result
 
     def reset_daily_ap(self) -> int:
         """Сбросить AP в начале дня по текущему состоянию персонажа."""
@@ -389,8 +473,8 @@ class GameState:
         game.display_mode = game.display_mode if game.display_mode in ("phone", "pc") else "pc"
         game.max_line_length = max(10, min(100, int(game.max_line_length)))
         game.max_lines_per_msg = max(3, min(30, int(game.max_lines_per_msg)))
-        game.hunger = max(1, int(game.hunger))
-        game.thirst = max(1, int(game.thirst))
+        game.hunger = max(0, int(game.hunger))
+        game.thirst = max(0, int(game.thirst))
         game.inventory = dict(game.inventory or {})
         game.equipment = dict(game.equipment or {})
         if "traps" in data:
@@ -448,9 +532,14 @@ class GameState:
     def get_status_bar(self, max_width: Optional[int] = None) -> str:
         """Сформировать статус-бар с компактным отображением номера дня."""
         weather_icon = {"clear": "☀️", "cloudy": "☁️", "rain": "🌧️", "storm": "⛈️"}.get(self.weather, "☀️")
+        # Статус костра: если активен — прочность, иначе "Потух"
+        campfire_status = f"🔥 Костёр: {self.campfire_durability}/{self.campfire_max_durability}" if self.campfire_active else "🔥 Костёр: Потух"
         status_str = (
             f"❤️{self.hp}|🍖{self.hunger}|💧{self.thirst}|⚡{self.ap}|{weather_icon}{self.day}"
         )
+        # Добавляем статус костра, если он активен
+        if self.campfire_active:
+            status_str += f" | {campfire_status}"
         if max_width is not None and len(status_str) > max_width:
             status_str = status_str.replace(f"{weather_icon}День ", weather_icon, 1)
         return status_str
