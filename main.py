@@ -982,16 +982,27 @@ async def process_callback(callback: types.CallbackQuery):
                     text = game.get_inventory_text()
                     kb = inventory_inline_kb
             elif prev == "craft":
+                unlocked = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
                 kb_c = types.InlineKeyboardMarkup(inline_keyboard=[])
-                if game.inventory.get("Спички", 0) >= 1 and game.inventory.get("Ветка", 0) >= 1:
+                lines = ["🔨 Крафт:", ""]
+                for name in unlocked:
+                    if name not in CRAFT_RECIPES:
+                        continue
+                    mark = craft_mark(game, name)
+                    ings = ", ".join(f"{n}×{q}" for n, q in CRAFT_RECIPES[name])
+                    lines.append(f"{name} {mark} — {ings}")
                     kb_c.inline_keyboard.append([
-                        types.InlineKeyboardButton(text="Факел (1 ветка + 1 спичка)", callback_data="craft_Факел")
+                        types.InlineKeyboardButton(
+                            text=f"🔨 {name} {mark}",
+                            callback_data=f"craft_{name}",
+                        )
                     ])
-                    craft_text = "Доступный крафт:"
-                else:
-                    craft_text = "Пока ничего нельзя скрафтить.\n(нужна Ветка и Спички)"
-                kb_c.inline_keyboard.append([types.InlineKeyboardButton(text="Назад", callback_data="back")])
-                text = craft_text
+                if not kb_c.inline_keyboard:
+                    lines.append("Пока нечего крафтить.")
+                kb_c.inline_keyboard.append([
+                    types.InlineKeyboardButton(text="↩️ Назад", callback_data="action_2")
+                ])
+                text = chr(10).join(lines)
                 kb = kb_c
             elif prev == "use":
                 text = game.get_ui()

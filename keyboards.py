@@ -31,16 +31,16 @@ def get_settings_kb(game):
             InlineKeyboardButton(text="💻 Компьютер", callback_data="settings_mode_pc"),
         ],
         [
-            InlineKeyboardButton(text="Длина -", callback_data="settings_length_minus"),
+            InlineKeyboardButton(text="⬅️ Длина −", callback_data="settings_length_minus"),
             InlineKeyboardButton(text=f"{game.max_line_length} ({mode_text})", callback_data="settings_noop"),
-            InlineKeyboardButton(text="Длина +", callback_data="settings_length_plus"),
+            InlineKeyboardButton(text="➡️ Длина +", callback_data="settings_length_plus"),
         ],
         [
-            InlineKeyboardButton(text="Высота -", callback_data="settings_height_minus"),
+            InlineKeyboardButton(text="⬇️ Высота −", callback_data="settings_height_minus"),
             InlineKeyboardButton(text=f"{game.max_lines_per_msg} строк", callback_data="settings_noop"),
-            InlineKeyboardButton(text="Высота +", callback_data="settings_height_plus"),
+            InlineKeyboardButton(text="⬆️ Высота +", callback_data="settings_height_plus"),
         ],
-        [InlineKeyboardButton(text="Назад", callback_data="back")],
+        [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
     ])
 
 
@@ -52,7 +52,7 @@ def get_use_item_kb(game):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=item, callback_data=f"use_consumable_{item}")]
         for item in usable_items
-    ] + [[InlineKeyboardButton(text="Назад", callback_data="back")]])
+    ] + [[InlineKeyboardButton(text="↩️ Назад", callback_data="back")]])
 
 
 def get_drop_item_kb(game):
@@ -60,15 +60,15 @@ def get_drop_item_kb(game):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"{item} ×{count}", callback_data=f"drop_item_{item}")]
         for item, count in items
-    ] + [[InlineKeyboardButton(text="Назад", callback_data="back")]])
+    ] + [[InlineKeyboardButton(text="↩️ Назад", callback_data="back")]])
 
 
 def get_drop_quantity_kb(item_name: str):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Выбросить 1", callback_data=f"drop_qty:1:{item_name}")],
-        [InlineKeyboardButton(text="Выбросить всё", callback_data=f"drop_qty:all:{item_name}")],
-        [InlineKeyboardButton(text="Ввести число", callback_data=f"drop_qty:custom:{item_name}")],
-        [InlineKeyboardButton(text="Назад", callback_data="back")],
+        [InlineKeyboardButton(text="1️⃣ Выбросить 1", callback_data=f"drop_qty:1:{item_name}")],
+        [InlineKeyboardButton(text="📦 Выбросить всё", callback_data=f"drop_qty:all:{item_name}")],
+        [InlineKeyboardButton(text="🔢 Ввести число", callback_data=f"drop_qty:custom:{item_name}")],
+        [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
     ])
 
 def get_main_kb(game):
@@ -132,13 +132,13 @@ def get_campfire_recipe_kb(game, recipe_name: str):
 def get_locations_kb(game):
     """Временная панель входа; условия доступности подключаются позже."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Ручей", callback_data="location_enter_2")],
-        [InlineKeyboardButton(text="Лощина", callback_data="location_enter_3")],
-        [InlineKeyboardButton(text="Просека", callback_data="location_enter_4")],
-        [InlineKeyboardButton(text="Яр", callback_data="location_enter_5")],
-        [InlineKeyboardButton(text="Пещера", callback_data="location_enter_6")],
-        [InlineKeyboardButton(text="Святилище", callback_data="location_enter_7")],
-        [InlineKeyboardButton(text="Назад", callback_data="back")],
+        [InlineKeyboardButton(text="💧 Ручей", callback_data="location_enter_2")],
+        [InlineKeyboardButton(text="🏔 Лощина", callback_data="location_enter_3")],
+        [InlineKeyboardButton(text="🏹 Просека", callback_data="location_enter_4")],
+        [InlineKeyboardButton(text="🍄 Яр", callback_data="location_enter_5")],
+        [InlineKeyboardButton(text="🦇 Пещера", callback_data="location_enter_6")],
+        [InlineKeyboardButton(text="🔮 Святилище", callback_data="location_enter_7")],
+        [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
     ])
 
 def get_trap_buttons_kb(game):
@@ -184,25 +184,25 @@ inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
 ])
 
 character_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="Назад", callback_data="back")]
+    [InlineKeyboardButton(text="↩️ Назад", callback_data="back")]
 ])
 
 wolf_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="Уйти тихо", callback_data="wolf_leave")],
-    [InlineKeyboardButton(text="Использовать факел", callback_data="wolf_torch")]
+    [InlineKeyboardButton(text="🤫 Уйти тихо", callback_data="wolf_leave")],
+    [InlineKeyboardButton(text="🔦 Использовать факел", callback_data="wolf_torch")]
 ])
 
 peek_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="Заглянуть внутрь", callback_data="peek_den")]
+    [InlineKeyboardButton(text="👀 Заглянуть внутрь", callback_data="peek_den")]
 ])
 
 cat_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="Оставить его здесь", callback_data="pet_leave")],
-    [InlineKeyboardButton(text="Забрать с собой", callback_data="pet_take")]
+    [InlineKeyboardButton(text="🚫 Оставить его здесь", callback_data="pet_leave")],
+    [InlineKeyboardButton(text="🤝 Забрать с собой", callback_data="pet_take")]
 ])
 
 next_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="Дальше", callback_data="story_next")]
+    [InlineKeyboardButton(text="➡️ Дальше", callback_data="story_next")]
 ])
 
 def get_campfire_kb(game):
@@ -218,9 +218,9 @@ def get_campfire_kb(game):
 def get_campfire_fuel_kb(game):
     """Подменю выбора количества дров."""
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="[ До максимума ]", callback_data="campfire_fuel_max")],
-        [InlineKeyboardButton(text="[ Своё количество ]", callback_data="campfire_fuel_custom")],
-        [InlineKeyboardButton(text="[ ⬅️ Назад в костёр ]", callback_data="menu_campfire")],
+        [InlineKeyboardButton(text="⬆️ До максимума", callback_data="campfire_fuel_max")],
+        [InlineKeyboardButton(text="🔢 Своё количество", callback_data="campfire_fuel_custom")],
+        [InlineKeyboardButton(text="↩️ Назад в костёр", callback_data="menu_campfire")],
     ])
     return kb
 

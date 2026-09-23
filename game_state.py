@@ -526,50 +526,17 @@ class GameState:
             game.location = game.current_location
         if hasattr(game, "unlocked_locations") and not game.unlocked_locations:
             game.unlocked_locations = ["Лесной старт"]
-        return game
-
-    @classmethod
-    def from_document(cls, document: Dict[str, Any]):
-        """Восстановить состояние и мигрировать старые документы без мутации входа."""
-        data = dict(document or {})
-        # Миграция: если есть legacy "log", перенести в "event_log"
-        legacy_log = data.pop("log", None)
-        if "event_log" not in data and legacy_log is not None:
-            data["event_log"] = list(legacy_log)
-        if "current_location" not in data and "location" in data:
-            data["current_location"] = data["location"]
-        if "narrative_karma" not in data:
-            data["narrative_karma"] = {
-                "intervention": 0,
-                "compassion": 0,
-                "pragmatism": 0,
-                "observation": 0,
-            }
-        game = cls()
-        # Умная миграция: подставить значения по умолчанию для старых полей
-        for key, value in data.items():
-            if key in game.to_document():
-                setattr(game, key, value)
-        # Синхронизировать schema_version
-        game.schema_version = cls.schema_version
-        game.display_mode = game.display_mode if game.display_mode in ("phone", "pc") else "pc"
-        game.max_line_length = max(10, min(100, int(game.max_line_length)))
-        game.max_lines_per_msg = max(3, min(30, int(game.max_lines_per_msg)))
-        game.hunger = max(0, int(game.hunger))
-        game.thirst = max(0, int(game.thirst))
-        game.inventory = dict(game.inventory or {})
-        game.equipment = dict(game.equipment or {})
-        if "traps" in data:
-            game.traps = dict(game.traps or data["traps"])
-        game.story_flags = dict(game.story_flags or {})
-        game.compact_route = list(game.compact_route or [])
-        game.nav_stack = list(game.nav_stack or ["main"])
-        if hasattr(game, "event_log"):
-            game.event_log = list(game.event_log)
-        if hasattr(game, "location"):
-            game.location = game.current_location
-        if hasattr(game, "unlocked_locations") and not game.unlocked_locations:
-            game.unlocked_locations = ["Лесной старт"]
+        # Миграция костра и рецептов
+        if not getattr(game, "unlocked_crafts", None):
+            game.unlocked_crafts = ["Костёр", "Факел"]
+        else:
+            game.unlocked_crafts = list(game.unlocked_crafts)
+        game.campfire_active = bool(getattr(game, "campfire_active", False))
+        game.campfire_durability = int(getattr(game, "campfire_durability", 0) or 0)
+        game.campfire_max_durability = int(getattr(game, "campfire_max_durability", 10) or 10)
+        if game.campfire_durability <= 0:
+            game.campfire_active = False
+        game.flask_water = int(getattr(game, "flask_water", 10) or 10)
         return game
     
     def reset_navigate(self):

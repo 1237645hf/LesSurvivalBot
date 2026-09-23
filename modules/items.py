@@ -106,6 +106,13 @@ ITEMS: Dict[str, Dict] = {
         "can_use": True,
         "stackable": True,
     },
+    # TODO: заглушка — логика открытия рецептов по схеме позже
+    "Схема": {
+        "description": "Потёртая схема крафта. (Пока заглушка — эффект откроем позже.)",
+        "type": "quest",
+        "can_use": False,
+        "stackable": True,
+    },
     "Ветка": {
         "description": "Сухая ветка. Топливо и крафт.",
         "type": "resource",
