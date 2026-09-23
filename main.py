@@ -181,7 +181,7 @@ class Game(GameState):
         self.karma = {"heroic": 20, "brutal": 5, "gentle": 10, "clever": 15, "reckless": 8, "mysterious": 12}
         self.karma_goal = 100
         self.day = 1
-        self.log = ["Ты проснулся в лесу. Что будешь делать?"]
+        self.event_log = ["Ты проснулся в лесу. Что будешь делать?"]
         self.inventory = {
             "Спички": 1,
             "Вилка": 1,
@@ -208,11 +208,12 @@ class Game(GameState):
         self.found_branch_once = False
         self.nav_stack = ["main"]
 
-    def add_log(self, text):
-        self.log.append(text)
+    def add_log(self, text, source: str = "game"):
+        """Добавить запись в лог событий."""
         self.event_log.append(text)
-        if len(self.log) > 20:
-            self.log = self.log[-20:]
+        # Ограничение длины: 50 записей
+        if len(self.event_log) > 50:
+            self.event_log = self.event_log[-50:]
         if len(self.event_log) > 50:
             self.event_log = self.event_log[-50:]
 
@@ -690,9 +691,7 @@ async def process_callback(callback: types.CallbackQuery):
             res_log = format_resource_log_text(deltas)
             if res_log:
                 game.add_log(res_log)
-            # Ручное списание прочности только если костёр горит
-            if game.campfire_active:
-                game.campfire_durability = max(0, game.campfire_durability - 1)
+            game.campfire_durability = max(0, game.campfire_durability - 1)
             save_game(uid, game)
             text = f"{message}\n(Остаток огня: {game.campfire_durability}/{game.campfire_max_durability})"
             kb = get_campfire_kb(game)

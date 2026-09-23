@@ -45,16 +45,17 @@ class GameState:
     hunger: int = 50
     thirst: int = 75
     
-    # Экипировка (где?)
+    # Экипировка (единый словарь с унифицированными ключами)
     equipment: Dict[str, str] = field(default_factory=lambda: {
         "head": None,
-        "chest": None,
-        "legs": None,
-        "hands": None,
-        "feet": None,
+        "torso": None,
+        "pants": None,
+        "boots": None,
         "back": None,
+        "hand_right": None,
+        "hand_left": None,
         "pet": None,
-        "hand": None,
+        "trinket": None,
     })
     
     # Атмосфера
@@ -95,6 +96,9 @@ class GameState:
         "reckless": 8,
         "mysterious": 12,
     })
+
+    # Бонус AP от экипировки (суммируется с базовым AP по HP)
+    equipment_ap_bonus: int = 0
 
     # Каноническая карма сюжетных финалов из сценарной спецификации.
     narrative_karma: Dict[str, int] = field(default_factory=lambda: {
@@ -167,7 +171,10 @@ class GameState:
         self.ap = value
 
     def calculate_daily_ap(self) -> int:
-        """Рассчитать AP строго по уровню HP с учетом экипировки."""
+        """Рассчитать AP строго по уровню HP с учетом экипировки.
+
+        Бонусы от предметов в каждом слоте (включая обе руки) суммируются.
+        """
         # 1. Базовое AP по порогам HP
         if self.hp >= 50:
             base_ap = 5
@@ -180,16 +187,17 @@ class GameState:
         else:
             base_ap = 1
 
-        # 2. Бонусы от экипировки
+        # 2. Бонусы от экипировки (сумма всех предметов в слотах)
         equipment_bonus = 0
         for item in getattr(self, "equipment", {}).values():
             if isinstance(item, dict):
                 equipment_bonus += int(item.get("ap_bonus", item.get("ap_modifier", 0)))
+        # Добавляем отдельный бонус от поля equipment_ap_bonus (если есть)
         equipment_bonus += int(getattr(self, "equipment_ap_bonus", 0))
 
         return base_ap + equipment_bonus
 
-    def consume_action(self, action_type: str = "default", base_hunger: int = 2, base_thirst: int = 1):
+    def consume_action(self, action_type: str = "default", base_hunger: int = 2, base_thirst: int = 1, ap_cost: int = 0):
         """Списание AP и ресурсов с возвратом ФАКТИЧЕСКИХ дельт.
 
         Если голод или жажда доходят до 0, остаток уходит в урон HP
@@ -249,13 +257,13 @@ class GameState:
         result["delta_thirst"] = self.thirst - old_thirst
         result["delta_hp"] = self.hp - old_hp
 
-        # −1 прочность костра за действие с тратой AP (success), кроме сна
-        if self.campfire_active and action_type != "sleep":
+        # −1 прочность костра за действие С ТРАТОЙ AP (success), кроме сна
+        if self.campfire_active and action_type != "sleep" and ap_cost > 0:
             self.campfire_durability -= 1
             if self.campfire_durability <= 0:
                 self.campfire_durability = 0
                 self.campfire_active = False
-                self.add_log("Костёр погас.")
+                self.add_log("🔥 Костёр погас.")
 
         return result
 
@@ -334,11 +342,12 @@ class GameState:
         """Установить дефолтные значения для UI."""
         # Умные заглушки для UI
         self.equipment["hands"] = "Руки"  # По умолчанию
-        self.equipment["chest"] = "Куртка"
+        self.equipment["torso"] = "Куртка"
         self.equipment["head"] = "Шапка"
-        self.equipment["feet"] = "Ботинки"
+        self.equipment["boots"] = "Ботинки"
         self.equipment.setdefault("pet", None)
-        self.equipment.setdefault("hand", None)
+        self.equipment.setdefault("hand_right", None)
+        self.equipment.setdefault("hand_left", None)
     
     def add_log(self, message: str, source: str = "game"):
         """Добавить запись в лог событий."""
@@ -442,7 +451,7 @@ class GameState:
             "weather": self.weather,
             "companion_name": self.companion_name,
             "companion_status": self.companion_status,
-            "event_log": list(getattr(self, "log", self.event_log)),
+            "event_log": list(self.event_log),
             "nav_stack": list(self.nav_stack),
             "unlocked_locations": list(getattr(self, "unlocked_locations", [])),
             "current_location_state": getattr(self, "current_location_state", "forest_start"),
@@ -453,6 +462,7 @@ class GameState:
     def from_document(cls, document: Dict[str, Any]):
         """Восстановить состояние и мигрировать старые документы без мутации входа."""
         data = dict(document or {})
+        # Миграция: если есть legacy "log", перенести в "event_log"
         legacy_log = data.pop("log", None)
         if "event_log" not in data and legacy_log is not None:
             data["event_log"] = list(legacy_log)
@@ -466,10 +476,11 @@ class GameState:
                 "observation": 0,
             }
         game = cls()
-        allowed = set(game.to_document())
+        # Умная миграция: подставить значения по умолчанию для старых полей
         for key, value in data.items():
-            if key in allowed:
+            if key in game.to_document():
                 setattr(game, key, value)
+        # Синхронизировать schema_version
         game.schema_version = cls.schema_version
         game.display_mode = game.display_mode if game.display_mode in ("phone", "pc") else "pc"
         game.max_line_length = max(10, min(100, int(game.max_line_length)))
@@ -483,8 +494,52 @@ class GameState:
         game.story_flags = dict(game.story_flags or {})
         game.compact_route = list(game.compact_route or [])
         game.nav_stack = list(game.nav_stack or ["main"])
-        if hasattr(game, "log"):
-            game.log = list(game.event_log)
+        if hasattr(game, "event_log"):
+            game.event_log = list(game.event_log)
+        if hasattr(game, "location"):
+            game.location = game.current_location
+        if hasattr(game, "unlocked_locations") and not game.unlocked_locations:
+            game.unlocked_locations = ["Лесной старт"]
+        return game
+
+    @classmethod
+    def from_document(cls, document: Dict[str, Any]):
+        """Восстановить состояние и мигрировать старые документы без мутации входа."""
+        data = dict(document or {})
+        # Миграция: если есть legacy "log", перенести в "event_log"
+        legacy_log = data.pop("log", None)
+        if "event_log" not in data and legacy_log is not None:
+            data["event_log"] = list(legacy_log)
+        if "current_location" not in data and "location" in data:
+            data["current_location"] = data["location"]
+        if "narrative_karma" not in data:
+            data["narrative_karma"] = {
+                "intervention": 0,
+                "compassion": 0,
+                "pragmatism": 0,
+                "observation": 0,
+            }
+        game = cls()
+        # Умная миграция: подставить значения по умолчанию для старых полей
+        for key, value in data.items():
+            if key in game.to_document():
+                setattr(game, key, value)
+        # Синхронизировать schema_version
+        game.schema_version = cls.schema_version
+        game.display_mode = game.display_mode if game.display_mode in ("phone", "pc") else "pc"
+        game.max_line_length = max(10, min(100, int(game.max_line_length)))
+        game.max_lines_per_msg = max(3, min(30, int(game.max_lines_per_msg)))
+        game.hunger = max(0, int(game.hunger))
+        game.thirst = max(0, int(game.thirst))
+        game.inventory = dict(game.inventory or {})
+        game.equipment = dict(game.equipment or {})
+        if "traps" in data:
+            game.traps = dict(game.traps or data["traps"])
+        game.story_flags = dict(game.story_flags or {})
+        game.compact_route = list(game.compact_route or [])
+        game.nav_stack = list(game.nav_stack or ["main"])
+        if hasattr(game, "event_log"):
+            game.event_log = list(game.event_log)
         if hasattr(game, "location"):
             game.location = game.current_location
         if hasattr(game, "unlocked_locations") and not game.unlocked_locations:
@@ -571,12 +626,15 @@ class GameState:
     def get_character_text(self) -> str:
         """Получить текст персонажа для отображения в боте."""
         slots = {
-            "head": "Голова",
-            "chest": "Грудь",
-            "legs": "Ноги",
-            "hands": "Руки",
-            "feet": "Ноги",
-            "back": "Спина",
+            "head": "🧢 Голова:",
+            "torso": "👕 Тело:",
+            "pants": "👖 Ноги:",
+            "boots": "🥾 Обувь:",
+            "hand_right": "🗡️ Правая рука:",
+            "hand_left": "🔦 Левая рука:",
+            "back": "🎒 Спина:",
+            "pet": "🐾 Питомец:",
+            "trinket": "💍 Аксессуар:",
         }
         lines = [f"{name}: {self.equipment.get(slot) or 'Пусто'}" for slot, name in slots.items()]
         return "Персонаж:\n\n" + "\n".join(lines)
