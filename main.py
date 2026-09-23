@@ -7,8 +7,8 @@ from textwrap import wrap
 from pathlib import Path
 from aiohttp import web, ClientSession
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import Message
-from aiogram.filters import CommandStart
+from aiogram.types import Message, ReplyKeyboardRemove
+from aiogram.filters import CommandStart, Command
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from pymongo import MongoClient
 
@@ -540,22 +540,98 @@ async def cmd_start(message: Message):
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
             [types.InlineKeyboardButton(text="🚀 Начать выживание", callback_data="start_new_game")]
         ])
-    await message.answer("Нижнее меню включено.", reply_markup=get_bottom_menu())
+    # Нижняя Reply-клавиатура отключена — только Menu и inline
+    try:
+        await message.answer("\u200b", reply_markup=ReplyKeyboardRemove())
+    except Exception:
+        pass
     await update_or_send_message(chat_id, uid, text, kb)
+
+
+def _ensure_game(uid: int):
+    """Достать игру из памяти или Mongo."""
+    game = games.get(uid)
+    if game is None:
+        game = load_game(uid)
+        if game is not None:
+            games[uid] = game
+    return game
+
+
+@dp.message(Command("main", "menu", "home"))
+async def cmd_main(message: Message):
+    uid = message.from_user.id
+    chat_id = message.chat.id
+    game = _ensure_game(uid)
+    if not game:
+        await message.answer("Сначала /start")
+        return
+    await update_or_send_message(chat_id, uid, game.get_ui(), get_main_kb(game))
+
+
+@dp.message(Command("inventory", "inv"))
+async def cmd_inventory(message: Message):
+    uid = message.from_user.id
+    chat_id = message.chat.id
+    game = _ensure_game(uid)
+    if not game:
+        await message.answer("Сначала /start")
+        return
+    game.push_screen("inventory")
+    await update_or_send_message(chat_id, uid, game.get_inventory_text(), inventory_inline_kb)
+    save_game(uid, game)
+
+
+@dp.message(Command("character", "char", "hero"))
+async def cmd_character(message: Message):
+    uid = message.from_user.id
+    chat_id = message.chat.id
+    game = _ensure_game(uid)
+    if not game:
+        await message.answer("Сначала /start")
+        return
+    game.push_screen("character")
+    await update_or_send_message(chat_id, uid, game.get_character_text(), character_inline_kb)
+    save_game(uid, game)
+
+
+@dp.message(Command("settings"))
+async def cmd_settings(message: Message):
+    uid = message.from_user.id
+    chat_id = message.chat.id
+    game = _ensure_game(uid)
+    if not game:
+        await message.answer("Сначала /start")
+        return
+    game.push_screen("settings")
+    await update_or_send_message(chat_id, uid, get_settings_text(game), get_settings_kb(game))
+    save_game(uid, game)
 
 @dp.callback_query()
 async def process_callback(callback: types.CallbackQuery):
-    await callback.answer(*get_callback_answer(callback))
     uid = callback.from_user.id
     chat_id = callback.message.chat.id
+    data = callback.data or ""
     try:
         now = time.time()
-        if uid in last_request_time and now - last_request_time[uid] < 1.0:
+        last = last_request_time.get(uid, 0)
+        if now - last < 0.35:
+            await callback.answer()
             return
-        last_request_time[uid] = now + 0.2
-        data = callback.data
+        last_request_time[uid] = now
+
+        ans = get_callback_answer(callback)
+        if ans and ans[0]:
+            await callback.answer(str(ans[0]), show_alert=bool(ans[1]) if len(ans) > 1 else False)
+        else:
+            await callback.answer()
+
         logging.info(f"[CALLBACK] {data} от {uid}")
         game = games.get(uid)
+        if game is None:
+            game = load_game(uid)
+            if game is not None:
+                games[uid] = game
         if data in ("new_game", "start_new_game"):
             game = Game()
             games[uid] = game
@@ -597,6 +673,20 @@ async def process_callback(callback: types.CallbackQuery):
             ])
             await update_or_send_message(chat_id, uid, text, kb)
             return
+
+        if game is None:
+            await update_or_send_message(
+                chat_id,
+                uid,
+                "Сессия не найдена. Нажми /start",
+                types.InlineKeyboardMarkup(inline_keyboard=[
+                    [types.InlineKeyboardButton(text="🚀 Начать выживание", callback_data="start_new_game")]
+                ]),
+            )
+            return
+
+        text = None
+        kb = None
         if not game:
             return
 
@@ -1192,6 +1282,10 @@ async def process_callback(callback: types.CallbackQuery):
             save_game(uid, game)
     except Exception as exc:
         logging.exception(f"Ошибка callback {data if 'data' in locals() else 'unknown'} для {uid}: {exc}")
+        try:
+            await callback.answer("Ошибка обработки кнопки. Попробуй ещё раз или /start", show_alert=True)
+        except Exception:
+            pass
 
 @dp.message(F.text & ~F.text.startswith("/"))
 async def process_text_message(message: Message):
@@ -1200,26 +1294,25 @@ async def process_text_message(message: Message):
     try:
         raw_text = message.text.strip() if message.text else ""
         text = raw_text[:80] if raw_text else ""
-        if text == "🚀 Начать / Старт":
+        # Нижняя клавиатура отключена; если осталась — те же действия
+        if text in ("🚀 Начать / Старт", "🏠 Главное меню / Перезапуск", "🏠 Главное меню"):
             await cmd_start(message)
             return
-        game = games.get(uid) or load_game(uid)
-        if not game:
+        if text in ("📊 Статус", "🏠 Главный экран"):
+            await cmd_main(message)
+            return
+        if text in ("🎒 Инвентарь",):
+            await cmd_inventory(message)
+            return
+        if text in ("👤 Персонаж",):
+            await cmd_character(message)
+            return
+        if text in ("⚙️ Настройки",):
+            await cmd_settings(message)
             return
 
-        if text == "📊 Статус":
-            games[uid] = game
-            await update_or_send_message(chat_id, uid, game.get_ui(), get_main_kb(game))
-            return
-        if text == "🎒 Инвентарь":
-            games[uid] = game
-            await update_or_send_message(chat_id, uid, game.get_inventory_text(), inventory_inline_kb)
-            return
-        if text == "⚙️ Настройки":
-            games[uid] = game
-            game.push_screen("settings")
-            await update_or_send_message(chat_id, uid, get_settings_text(game), get_settings_kb(game))
-            save_game(uid, game)
+        game = _ensure_game(uid)
+        if not game:
             return
 
         if game.story_state == "WAITING_FOR_PET_NAME":
@@ -1486,8 +1579,9 @@ async def run_bot():
         try:
             await bot.set_my_commands([
                 types.BotCommand(command="start", description="Начать выживание"),
+                types.BotCommand(command="main", description="Главный экран"),
                 types.BotCommand(command="inventory", description="Инвентарь"),
-                types.BotCommand(command="status", description="Статус"),
+                types.BotCommand(command="character", description="Персонаж"),
                 types.BotCommand(command="settings", description="Настройки"),
             ])
             await bot.delete_webhook(drop_pending_updates=False)
