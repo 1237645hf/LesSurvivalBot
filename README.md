@@ -13,40 +13,13 @@ Python 3.10+, aiogram 3, polling (Render / локально).
 4. Не возвращай удалённый `CAMPFIRE_RECIPES` в `main.py`.
 5. Тесты только в `tests/`. Не клади `test_*.py` в корень.
 6. Windows: Python через `.venv` и оператор `&` в PowerShell (раздел «Запуск»).
+7. Блок **STRICT AI AGENT RULES** ниже — **не удалять и не упрощать**.
 
 Статический разбор кода — нормален. Не выдумывай «второй» баланс еды.
 
 ---
 
-
-
-
----
-
-## Архитектура: Fat Module, Thin Loader
-
-```
-main.py              — Telegram, callback’и, тонкие вызовы modules
-game_state.py        — HP, голод, жажда, AP, костёр, traps, flask_water, save/load
-game_math.py         — урон, множители голода/жажды, AP по HP
-location_stories.py  — сюжет L1–L7 + финалы
-location_crafts.py   — крафт по локациям
-location_sources.py  — длинные тексты
-crafts.py            — глобальный крафт
-keyboards.py         — Inline + нижнее Reply-меню
-modules/
-  items.py           — реестр предметов, effects, is_item_consumable
-  cooking.py         — COOKING_RECIPES, cook_item (кора, вода 0–3, теги)
-  traps.py           — ловушки, TRAP_LOOT_TABLE, process_trap_rollover
-  finds.py           — лут исследования L1–L7 + бонус кора/глина
-  hints.py           — подсказки
-```
-
-`main.py` не хранит таблицы еды/рецептов — только вызывает modules.
-
----
-
-## 🛑 STRICT AI AGENT RULES (ПРАВИЛА ДЛЯ ИИ-ПОМОЩНИКА) (ЭТОТ БЛОК ЗАПРЕЩЕННО УПРОЩАТЬ И УДАЛЯТЬ)
+## STRICT AI AGENT RULES (ПРАВИЛА ДЛЯ ИИ-ПОМОЩНИКА) (ЭТОТ БЛОК ЗАПРЕЩЕНО УПРОЩАТЬ И УДАЛЯТЬ)
 
 ### 1. ПОЛНЫЙ ЗАПРЕТ НА ТЕРМИНАЛ И ИСПОЛНЕНИЕ КОМАНД
 
@@ -61,13 +34,56 @@ modules/
 - Все проверочные автотесты разрешено создавать **ТОЛЬКО** в папке `tests/`.
 
 ### 3. РАЗРЕШЁННЫЕ И ЗАПРЕЩЁННЫЕ ИНСТРУМЕНТЫ
-**✅ РАЗРЕШЕНО (Используй это)**|**❌ ЗАПРЕЩЕНО (Вызовет сбой ИИ)**|
-|:---|:---|
-|Чтение файлов через инструменты редактора (`read_file`)|Запуск терминала PowerShell / Cmd / Bash|
-|Поиск по тексту и файлам (`search_files`, `grep`)|Выполнение `Get-ChildItem` или `dir`|
-|Анализ структуры кода в уме|Запуск `python -c "import ..."`|
-|Составление таблиц и отчётов в ответе пользователю||
-|Создание `.py` скриптов в корне проекта| |
+
+| РАЗРЕШЕНО (Используй это) | ЗАПРЕЩЕНО (Вызовет сбой ИИ) |
+| :--- | :--- |
+| Чтение файлов через инструменты редактора (`read_file`) | Запуск терминала PowerShell / Cmd / Bash |
+| Поиск по тексту и файлам (`search_files`, `grep`) | Выполнение `Get-ChildItem` или `dir` |
+| Анализ структуры кода в уме | Запуск `python -c "import ..."` |
+| Составление таблиц и отчётов в ответе пользователю | Создание `.py` скриптов в корне проекта |
+
+### 4. МАРШРУТИЗАЦИЯ ИЗМЕНЕНИЙ (Куда класть код)
+
+- Свойства предметов, типажи, эффекты, флаги `can_use` → **только** `modules/items.py`.
+- Рецепты готовки на костре → **только** `modules/cooking.py`.
+- Глобальный крафт (Факел, Костёр и т.п.) → **`crafts.py`** (`CRAFT_RECIPES`, `do_craft`).
+- Логика кнопок и меню Telegram → `keyboards.py` и обработчики в `main.py`.
+- Состояние костра, AP, сон, `unlocked_crafts` → `game_state.py` (+ `to_document` / `from_document`).
+- Тесты и отладочные скрипты → **только** `tests/`.
+
+### 5. NO TERMINAL EXECUTION
+
+- СТРОГО ЗАПРЕЩЕНО запускать `python main.py`, выполнять команды в терминале, поднимать локальные серверы, забивать порты или убивать процессы.
+- НЕ пытайся проверять работоспособность кода путём его запуска. Все проверки — только через статический анализ кода.
+
+### 6. ENVIRONMENT RESTRICTIONS
+
+- У тебя нет доступа к рабочей БД MongoDB и валидным токенам Telegram.
+- Любая попытка запуска приложения приводит к ошибкам сокетов и фоновым зависшим процессам.
+
+---
+
+## Архитектура: Fat Module, Thin Loader
+
+```
+main.py              — Telegram, callback’и, тонкие вызовы modules / crafts
+game_state.py        — HP, голод, жажда, AP, костёр, traps, flask_water,
+                       unlocked_crafts, save/load
+game_math.py         — урон, множители голода/жажды, AP по HP
+location_stories.py  — сюжет L1–L7 + финалы
+location_crafts.py   — крафт по локациям
+location_sources.py  — длинные тексты
+crafts.py            — CRAFT_RECIPES, do_craft, handle_craft (Факел, Костёр…)
+keyboards.py         — Inline + нижнее Reply-меню
+modules/
+  items.py           — реестр предметов, effects, is_item_consumable, Схема (заглушка)
+  cooking.py         — COOKING_RECIPES, cook_item (кора, вода 0–3, теги)
+  traps.py           — ловушки, TRAP_LOOT_TABLE, process_trap_rollover
+  finds.py           — лут исследования L1–L7 + бонус кора/глина
+  hints.py           — подсказки
+```
+
+`main.py` не хранит таблицы еды и глобального крафта — вызывает `modules/*` и `crafts.py`.
 
 ---
 
@@ -77,20 +93,23 @@ modules/
 |-----|------|
 | Сюжет локации | `location_stories.py` + `elif` в `main.py` |
 | Локальный крафт | `location_crafts.py` |
-| Глобальный крафт | `crafts.py` |
+| Глобальный крафт (предметы) | **`crafts.py`** → `CRAFT_RECIPES` + `do_craft` |
 | Лут исследования | **только** `modules/finds.py` |
-| Свойства предметов / еда | **только** `modules/items.py` |
-| Рецепты костра | **только** `modules/cooking.py` |
+| Свойства предметов / еда / Схема | **только** `modules/items.py` |
+| Рецепты готовки у костра | **только** `modules/cooking.py` |
 | Ловушки | **только** `modules/traps.py` |
-| Поля save | `game_state.py` → `to_document` / `from_document` |
+| Поля save (в т.ч. костёр, unlocked_crafts) | `game_state.py` → `to_document` / `from_document` |
 | Кнопки | `keyboards.py` + обработчик в `main.py` |
 | Тест | `tests/` |
 
-**Нельзя:** `modules/locations.py`, `modules/quests.py`, `modules/crafting.py`, второй набор рецептов в `main.py`.
+**Нельзя:** `modules/locations.py`, `modules/quests.py`, `modules/crafting.py`, второй набор рецептов/`CAMPFIRE_RECIPES` в `main.py`.
 
 ### Callback-префиксы
 
-`action_1` (исследовать), `action_3` (вода), `action_4` / `action_sleep`, `menu_campfire`, `campfire_*`, `cook_*`, `craft_`, `use_consumable_`, `inv_*`, префиксы локаций (`river_`, `slate_`, `hunters_`, …).
+`action_1` (исследовать), `action_2` (инвентарь), `action_3` (пить), `action_4` / сон,  
+`inv_craft`, `inv_recipes`, `inv_use`, `use_consumable_*`,  
+`craft_*`, `campfire_confirm_light`, `menu_campfire`, `campfire_*`,  
+`cook_*`, префиксы локаций (`river_`, `slate_`, `hunters_`, …).
 
 ---
 
@@ -102,8 +121,9 @@ modules/
 - Иначе `consume_action(action_type="search")`, затем `roll_find` + инвентарь.
 - Лут зависит от локации; бонус: кора; на L3 ещё глина.
 
-### Готовка (`modules/cooking.py`)
+### Готовка у костра (`modules/cooking.py`)
 
+- Нужен **активный костёр** (см. ниже).
 - 1× «Кусок коры» на рецепт.
 - Вода из **фляги** `flask_water`: 0 / 1 / 2 / 3 по рецепту.
 - Теги: любая ягода из `BERRY_ITEMS`, любой гриб из `MUSHROOM_ITEMS`.
@@ -113,20 +133,83 @@ modules/
 
 - Ягоды: Лесная, Красная, Фиолетовая, Болотная, Горная.
 - Грибы: Лесной, Дикий, Болотный, Пещерный, Горный.
-- Расходники в меню «Использовать»: `is_item_consumable` + `get_item_effects` (Сухпай, вода, ягоды…).
+- Расходники: `is_item_consumable` + `get_item_effects` (Сухпай, вода, ягоды…).
+- **«Костёр»** — предмет после крафта; `can_use=True`; розжиг только через «Использовать».
+- **«Схема»** — **заглушка** (предмет есть, логика открытия рецептов по схеме — TODO, не выдумывать).
 
 ### Ловушки (`modules/traps.py`)
 
-- Разблокировка с L4; потом установка на L1–L7, одна на локацию.
+- Разблокировка с L4; установка на L1–L7, одна на локацию.
 - После сна: 40% ломка / 60% успех + `TRAP_LOOT_TABLE`.
 - `apply_trap_loot_to_inventory(game, loot)` — **сначала game, потом loot**.
 
-### Костёр и AP (`game_state.py`)
+### Глобальный крафт (`crafts.py`)
 
-- `light_campfire()`: 1 AP, ресурсы, прочность 10, `campfire_active=True`.
-- `consume_action(..., ap_cost=1)` **по умолчанию**: при успехе и `action_type != "sleep"` прочность костра −1.
-- Не ставь `ap_cost=0` по умолчанию — иначе костёр не сгорает при обычных действиях.
-- Статус-бар всегда: `🔥n/10` или `🔥Потух`.
+| Рецепт | Материалы | AP при крафте |
+|--------|-----------|----------------|
+| **Факел** | Спички ×1, Ветка ×1 | нет |
+| **Костёр** | Ветка ×5, Камень ×4, Мох ×1 | нет |
+
+- `CRAFT_RECIPES`, `do_craft`, `can_craft`, `craft_mark` (галочка n/n / крестик k/n).
+- Открытые рецепты: `game.unlocked_crafts` (старт: **Костёр**, **Факел**).
+- После первого успешного крафта — `unlock_craft(name)`.
+- UI: инвентарь → **Крафт** / **Рецепты**.
+
+---
+
+## Костёр — полная логика (когда что)
+
+Два разных шага: **крафт предмета** и **розжиг**.
+
+### 1) Крафт предмета «Костёр»
+
+- Где: инвентарь → Крафт → `craft_Костёр`.
+- Материалы: **5× Ветка, 4× Камень, 1× Мох**.
+- **Не** тратит AP, голод, жажду.
+- В инвентарь кладётся **1× «Костёр»**.
+- Костёр на стоянке **ещё не горит** (`campfire_active` не ставится).
+
+### 2) Использовать → Разжечь
+
+- Где: инвентарь → Использовать → «Костёр» → экран с текстом → **Разжечь** / **Отмена**.
+- Callback подтверждения: `campfire_confirm_light`.
+- Проверки при розжиге: есть **«Костёр»** в инвентаре, **AP ≥ 1**. Материалы крафта **повторно не проверять**.
+- При успехе:
+  - списать 1× «Костёр»;
+  - `light_campfire()`: **1 AP**, голод/жажда (база 7 / 15 с модификаторами), `campfire_active=True`, прочность **10/10**;
+  - на главном появляется кнопка костра.
+- При нехватке AP — сообщение в лог, предмет остаётся.
+
+### 3) Главный экран
+
+- Кнопка **Костёр {n}/10** рядом с «Исследовать» **только если** `campfire_active` и прочность **> 0**.
+- При 0 — кнопки **нет**.
+- По нажатию — `menu_campfire` (подкинуть дрова, готовка — уже существующее меню).
+
+### 4) Статус-бар (`get_status_bar`)
+
+- **Костра в статус-баре нет.**
+- Формат: `HP | сытость | жажда | AP | погода день` с пробелами между смайликом и числом.
+
+### 5) Ночь / сон (`sleep_and_turn_day`)
+
+1. Если костёр активен → прочность **−3**.
+2. Если прочность ≤ 0 → погасить, лог о тушении.
+3. `reset_daily_ap()` по HP/экипировке.
+4. Если утром **нет** активного костра → `ap = max(1, ap - 1)` + сообщение о холоде.
+5. Если костёр ещё горит — штраф AP не применять.
+
+### 6) Прочность днём
+
+- `consume_action(..., ap_cost=1)` по умолчанию: при успехе и `action_type != "sleep"` — прочность костра **−1** (если активен).
+- Не ставить `ap_cost=0` по умолчанию — иначе дневной износ костра ломается.
+
+### 7) Save
+
+В `to_document` / `from_document` обязательно:  
+`campfire_active`, `campfire_durability`, `campfire_max_durability`, `flask_water`, `unlocked_crafts`.
+
+---
 
 ### `consume_action`
 
@@ -143,11 +226,13 @@ modules/
 
 ## Запуск (Windows / PowerShell)
 
+Для **человека / CI**. ИИ-агенту в VS Code терминал по правилам выше **запрещён**.
+
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 & ".\.venv\Scripts\Activate.ps1"
 
-& ".\.venv\Scripts\python.exe" -m py_compile main.py game_state.py
+& ".\.venv\Scripts\python.exe" -m py_compile main.py game_state.py crafts.py
 & ".\.venv\Scripts\python.exe" -c "from modules import items, cooking, traps, finds; print(len(cooking.COOKING_RECIPES), items.BERRY_ITEMS[0])"
 & ".\.venv\Scripts\python.exe" -m pytest tests/ -v
 & ".\.venv\Scripts\python.exe" main.py
@@ -165,12 +250,13 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 ## Советы при добавлении контента
 
 1. **Новый ресурс с локации** — имя и effects в `items.py`, шанс в `finds.py`. Не пиши лут в `main.py`.
-2. **Новый рецепт костра** — только `cooking.py`; кнопки из `list_recipes()`.
-3. **Новая ветка сюжета** — `location_stories.py` + один `elif` в `main.py` + кнопка в `keyboards.py` при необходимости.
-4. **Новое поле состояния** — `game_state.py` + `to_document` / `from_document`.
-5. **Новый расходник** — `items.py` с `effects` и `can_use=True`; меню «Использовать» через `is_item_consumable`.
-6. Перед большим диффом — `py_compile` и проход «исследовать / спать / костёр / инвентарь».
-7. Сначала точечный баг, потом рефактор. Не плодить вторые таблицы.
+2. **Новый рецепт готовки у костра** — только `cooking.py`.
+3. **Новый глобальный крафт** — `CRAFT_RECIPES` в `crafts.py` + при необходимости старт в `unlocked_crafts`.
+4. **Новая ветка сюжета** — `location_stories.py` + `elif` в `main.py` + кнопка в `keyboards.py`.
+5. **Новое поле состояния** — `game_state.py` + `to_document` / `from_document`.
+6. **Новый расходник** — `items.py` с `effects` и `can_use=True`.
+7. Кнопки — с **одним** эмодзи в начале текста.
+8. Сначала точечный баг, потом рефактор. Не плодить вторые таблицы.
 
 ---
 
@@ -178,10 +264,11 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 
 | Путь | Роль |
 |------|------|
-| `main.py` | Оркестратор |
-| `game_state.py` / `game_math.py` | Состояние и математика |
-| `modules/*` | Еда, лут, ловушки, готовка |
-| `location_*.py`, `crafts.py`, `keyboards.py` | Сюжет, крафт, UI |
+| `main.py` | Оркестратор, callback’и |
+| `game_state.py` / `game_math.py` | Состояние, сон, костёр, AP |
+| `crafts.py` | Глобальный крафт предметов |
+| `modules/*` | Еда, лут, ловушки, готовка, items |
+| `location_*.py`, `keyboards.py` | Сюжет, UI |
 | `tests/` | Автотесты |
 | `requirements.txt`, `Procfile`, `render.yaml` | Деплой |
 
@@ -191,5 +278,11 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 
 **Дата:** 2026-09-23
 
-Документ прочитан полностью, только если ты видишь эту дату и строку выше.  
-Статус: modules + main + game_state согласованы; `ap_cost` по умолчанию должен быть **1**; статус костра всегда в UI.
+Документ прочитан полностью, только если ты видишь эту дату и строку выше.
+
+**Статус:**  
+- Крафт Костра (5 ветки / 4 камня / 1 мох) без AP; розжиг через Использовать + AP/голод/жажда.  
+- Кнопка Костёр n/10 на главном только пока горит; в статус-баре костра нет.  
+- Ночь −3 прочность, утро без костра −1 AP (min 1).  
+- `unlocked_crafts`, Рецепты, галочки/крестики; «Схема» — заглушка.  
+- STRICT AI AGENT RULES сохранены полностью.
