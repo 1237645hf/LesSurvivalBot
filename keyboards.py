@@ -103,15 +103,6 @@ def get_campfire_kb(game):
     ])
     return kb
 
-def get_campfire_fuel_kb(game):
-    """Подменю выбора количества дров."""
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="[ До максимума ]", callback_data="campfire_fuel_max")],
-        [InlineKeyboardButton(text="[ Своё количество ]", callback_data="campfire_fuel_custom")],
-        [InlineKeyboardButton(text="[ ⬅️ Назад в костёр ]", callback_data="menu_campfire")],
-    ])
-    return kb
-
 def get_campfire_recipes_kb(game):
     """Меню рецептов костра — динамический список с маркерами доступности."""
     kb = InlineKeyboardMarkup(inline_keyboard=[

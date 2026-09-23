@@ -1,5 +1,4 @@
 aiogram>=3.0.0
-motor>=3.0.0
 pymongo
 pydantic
 python-dotenv
