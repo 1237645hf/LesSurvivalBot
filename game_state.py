@@ -107,7 +107,7 @@ class GameState:
     # Состояние Костра
     campfire_active: bool = False
     campfire_durability: int = 0
-    campfire_max_durability: int = 8
+    campfire_max_durability: int = 10
 
     # Вода во фляге (макс 10 делений)
     flask_water: int = 10
@@ -249,12 +249,13 @@ class GameState:
         result["delta_thirst"] = self.thirst - old_thirst
         result["delta_hp"] = self.hp - old_hp
 
-        # Списываем прочность костра только если AP тратится (action_type == "default")
-        if self.campfire_active and action_type == "default":
+        # −1 прочность костра за действие с тратой AP (success), кроме сна
+        if self.campfire_active and action_type != "sleep":
             self.campfire_durability -= 1
             if self.campfire_durability <= 0:
                 self.campfire_durability = 0
                 self.campfire_active = False
+                self.add_log("Костёр погас.")
 
         return result
 
@@ -532,18 +533,17 @@ class GameState:
     def get_status_bar(self, max_width: Optional[int] = None) -> str:
         """Сформировать статус-бар с компактным отображением номера дня."""
         weather_icon = {"clear": "☀️", "cloudy": "☁️", "rain": "🌧️", "storm": "⛈️"}.get(self.weather, "☀️")
-        # Статус костра: если активен — прочность, иначе "Потух"
-        campfire_status = f"🔥 Костёр: {self.campfire_durability}/{self.campfire_max_durability}" if self.campfire_active else "🔥 Костёр: Потух"
+        # Всегда показываем костёр: прочность или «Потух»
+        if self.campfire_active and self.campfire_durability > 0:
+            campfire_status = f"🔥{self.campfire_durability}/{self.campfire_max_durability}"
+        else:
+            campfire_status = "🔥Потух"
         status_str = (
-            f"❤️{self.hp}|🍖{self.hunger}|💧{self.thirst}|⚡{self.ap}|{weather_icon}{self.day}"
+            f"❤️{self.hp}|🍖{self.hunger}|💧{self.thirst}|⚡{self.ap}|{weather_icon}{self.day}|{campfire_status}"
         )
-        # Добавляем статус костра, если он активен
-        if self.campfire_active:
-            status_str += f" | {campfire_status}"
         if max_width is not None and len(status_str) > max_width:
             status_str = status_str.replace(f"{weather_icon}День ", weather_icon, 1)
         return status_str
-
     def get_ui(self) -> str:
         """Получить компактный статус-бар персонажа и дневную погоду."""
         max_width = self.max_line_length if self.display_mode == "phone" else None
