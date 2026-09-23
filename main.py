@@ -95,10 +95,11 @@ from keyboards import (
     get_campfire_fuel_kb,
     get_campfire_recipes_kb,
     get_campfire_recipe_kb,
+    get_campfire_light_confirm_kb,
     inventory_inline_kb,
     character_inline_kb,
 )
-from crafts import handle_craft
+from crafts import handle_craft, do_craft, can_craft, craft_mark, CRAFT_RECIPES
 from location_stories import (
     handle_story,
     handle_location_2_ruchey,
@@ -705,17 +706,65 @@ async def process_callback(callback: types.CallbackQuery):
             return
         elif data == "inv_craft":
             game.push_screen("craft")
+            unlocked = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
             kb_c = types.InlineKeyboardMarkup(inline_keyboard=[])
-            if game.inventory.get("Спички", 0) >= 1 and game.inventory.get("Ветка", 0) >= 1:
+            lines = ["🔨 Крафт (только открытые рецепты):", ""]
+            for name in unlocked:
+                if name not in CRAFT_RECIPES:
+                    continue
+                mark = craft_mark(game, name)
+                ings = ", ".join(f"{n}×{q}" for n, q in CRAFT_RECIPES[name])
+                lines.append(f"{name} {mark} — {ings}")
                 kb_c.inline_keyboard.append([
-                    types.InlineKeyboardButton(text="Факел (1 ветка + 1 спичка)", callback_data="craft_Факел")
+                    types.InlineKeyboardButton(
+                        text=f"🔨 {name} {mark}",
+                        callback_data=f"craft_{name}",
+                    )
                 ])
-                craft_text = "Доступный крафт:"
+            if not kb_c.inline_keyboard:
+                lines.append("Пока нечего крафтить.")
+            kb_c.inline_keyboard.append([types.InlineKeyboardButton(text="↩️ Назад", callback_data="action_2")])
+            text = "\n".join(lines)
+            kb = kb_c
+
+        elif data == "campfire_confirm_light":
+            if game.inventory.get("Костёр", 0) < 1:
+                game.add_log("Нет костра в инвентаре.")
+                text = game.get_ui()
+                kb = get_main_kb(game)
+            elif game.ap < 1:
+                game.add_log("Не хватает очков действий, чтобы развести костёр.")
+                text = game.get_ui()
+                kb = get_main_kb(game)
             else:
-                craft_text = "Пока ничего нельзя скрафтить.\n(нужна Ветка и Спички)"
-                kb_c.inline_keyboard.append([types.InlineKeyboardButton(text="Назад", callback_data="back")])
-                text = craft_text
-                kb = kb_c
+                campfire_result = game.light_campfire()
+                if not campfire_result.get("lit"):
+                    game.add_log("Не удалось развести костёр (не хватает сил).")
+                    text = game.get_ui()
+                    kb = get_main_kb(game)
+                else:
+                    game.inventory["Костёр"] -= 1
+                    if game.inventory["Костёр"] <= 0:
+                        del game.inventory["Костёр"]
+                    text = game.get_ui()
+                    kb = get_main_kb(game)
+
+        elif data == "inv_recipes":
+            unlocked = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
+            lines = ["📜 Рецепты:", ""]
+            for name in unlocked:
+                if name not in CRAFT_RECIPES:
+                    lines.append(f"• {name}")
+                    continue
+                mark = craft_mark(game, name)
+                ings = ", ".join(f"{n}×{q}" for n, q in CRAFT_RECIPES[name])
+                lines.append(f"• {name} {mark}")
+                lines.append(f"  ({ings})")
+            text = "\n".join(lines)
+            kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                [types.InlineKeyboardButton(text="↩️ Назад", callback_data="action_2")]
+            ])
+
         elif data == "campfire_screen":
             # Экран костра
             max_durability = game.campfire_max_durability
@@ -819,11 +868,28 @@ async def process_callback(callback: types.CallbackQuery):
 
         elif data.startswith("use_consumable_"):
             item = data.removeprefix("use_consumable_")
-            result = use_consumable(item, game)
-            if result is not None:
-                text = result
-                kb = get_main_kb(game)
-
+            if item == "Костёр":
+                if game.inventory.get("Костёр", 0) < 1:
+                    game.add_log("Нет костра в инвентаре.")
+                    text = game.get_ui()
+                    kb = get_main_kb(game)
+                else:
+                    text = (
+                        "Ты складываешь камни и ветки в аккуратную кладку. "
+                        "Искра цепляется за мох — и огонь готов родиться. "
+                        "В круге света теплее не только телу: даже лес будто "
+                        "отступает на шаг. Некоторые звери обойдут стоянку стороной."
+                        + "\n\n"
+                        + "Затраты: 1 ⚡, голод −7 (с модификаторами), жажда −15 (с модификаторами)."
+                        + "\n"
+                        + "После розжига откроются рецепты готовки у костра."
+                    )
+                    kb = get_campfire_light_confirm_kb()
+            else:
+                result = use_consumable(item, game)
+                if result is not None:
+                    text = result
+                    kb = get_main_kb(game)
         elif data.startswith("drop_item_"):
             item = data.removeprefix("drop_item_")
             if game.inventory.get(item, 0) > 0:

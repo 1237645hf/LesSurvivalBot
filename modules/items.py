@@ -100,6 +100,12 @@ ITEMS: Dict[str, Dict] = {
         "can_use": True,
         "stackable": True,
     },
+    "Костёр": {
+        "description": "Сложенная кладка для розжига. Используй, чтобы развести огонь на стоянке.",
+        "type": "tool",
+        "can_use": True,
+        "stackable": True,
+    },
     "Ветка": {
         "description": "Сухая ветка. Топливо и крафт.",
         "type": "resource",

@@ -116,6 +116,9 @@ class GameState:
     # Вода во фляге (макс 10 делений)
     flask_water: int = 10
 
+    # Открытые рецепты крафта (старт: Костёр, Факел)
+    unlocked_crafts: List[str] = field(default_factory=lambda: ["Костёр", "Факел"])
+
     # Одноразовые результаты выборов и компактная запись пройденного пути.
     story_flags: Dict[str, Any] = field(default_factory=dict)
     compact_route: List[str] = field(default_factory=list)
@@ -361,20 +364,33 @@ class GameState:
         # Не ограничивать длину, чтобы история росла
     
     def sleep_and_turn_day(self) -> int:
-        """Сменить день (сон): списать ресурсы, обновить AP и обработать сгоревший факел."""
-        # 1. Списание AP и ресурсов (если есть)
+        """Сменить день (сон): ресурсы, костёр за ночь, AP, факел."""
+        # 1. Списание оставшихся AP/ресурсов за день (если есть)
         if self.ap > 0:
             self.consume_action(action_type="sleep", base_hunger=1, base_thirst=1)
-        
-        # 2. Проверка на сгоревший факел
+
+        # 2. Костёр за ночь: −3 прочности
+        if self.campfire_active:
+            self.campfire_durability = max(0, int(self.campfire_durability) - 3)
+            if self.campfire_durability <= 0:
+                self.campfire_durability = 0
+                self.campfire_active = False
+                self.add_log("Костёр потух. Ты не уследил за огнём.", "sleep")
+
+        # 3. Факел в руке прогорает
         torch_in_hand = self.equipment.get("hand") == "Факел"
         if torch_in_hand:
-            # Снимаем факел с руки
             self.equipment["hand"] = None
             self.add_log("За ночь твой факел прогорел.", "sleep")
-        
-        # 3. Сброс AP для нового дня
+
+        # 4. AP на новый день
         self.reset_daily_ap()
+
+        # 5. Без костра утром — штраф −1 AP (не ниже 1)
+        if not self.campfire_active:
+            self.ap = max(1, int(self.ap) - 1)
+            self.add_log("За ночь ты промёрз. Сегодня сил меньше (−1 ⚡).", "sleep")
+
         return self.ap
     
     def get_ui_value(self, key: str, fallback: Any = None) -> Any:
@@ -461,6 +477,11 @@ class GameState:
             "unlocked_locations": list(getattr(self, "unlocked_locations", [])),
             "current_location_state": getattr(self, "current_location_state", "forest_start"),
             "found_branch_once": getattr(self, "found_branch_once", False),
+            "campfire_active": bool(getattr(self, "campfire_active", False)),
+            "campfire_durability": int(getattr(self, "campfire_durability", 0)),
+            "campfire_max_durability": int(getattr(self, "campfire_max_durability", 10)),
+            "flask_water": int(getattr(self, "flask_water", 10)),
+            "unlocked_crafts": list(getattr(self, "unlocked_crafts", ["Костёр", "Факел"])),
         }
 
     @classmethod
@@ -590,19 +611,25 @@ class GameState:
         """Получить последние записи из лога событий."""
         return self.event_log[-limit:] if len(self.event_log) > limit else self.event_log
     
+
+    def unlock_craft(self, name: str) -> bool:
+        """Открыть рецепт крафта. True если открыт впервые."""
+        if not hasattr(self, "unlocked_crafts") or self.unlocked_crafts is None:
+            self.unlocked_crafts = ["Костёр", "Факел"]
+        if name in self.unlocked_crafts:
+            return False
+        self.unlocked_crafts.append(name)
+        self.add_log(f"Открыт новый рецепт: {name}. Загляни в 📜 Рецепты.")
+        return True
+
     def get_status_bar(self, max_width: Optional[int] = None) -> str:
-        """Сформировать статус-бар с компактным отображением номера дня."""
+        """Сформировать статус-бар (без костра — костёр только кнопкой на главном)."""
         weather_icon = {"clear": "☀️", "cloudy": "☁️", "rain": "🌧️", "storm": "⛈️"}.get(self.weather, "☀️")
-        # Всегда показываем костёр: прочность или «Потух»
-        if self.campfire_active and self.campfire_durability > 0:
-            campfire_status = f"🔥{self.campfire_durability}/{self.campfire_max_durability}"
-        else:
-            campfire_status = "🔥Потух"
         status_str = (
-            f"❤️{self.hp}|🍖{self.hunger}|💧{self.thirst}|⚡{self.ap}|{weather_icon}{self.day}|{campfire_status}"
+            f"❤️ {self.hp} | 🍖 {self.hunger} | 💧 {self.thirst} | ⚡ {self.ap} | {weather_icon} {self.day}"
         )
         if max_width is not None and len(status_str) > max_width:
-            status_str = status_str.replace(f"{weather_icon}День ", weather_icon, 1)
+            status_str = status_str.replace(f"{weather_icon} ", weather_icon, 1)
         return status_str
     def get_ui(self) -> str:
         """Получить компактный статус-бар персонажа и дневную погоду."""

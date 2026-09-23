@@ -72,23 +72,31 @@ def get_drop_quantity_kb(item_name: str):
     ])
 
 def get_main_kb(game):
+    row1 = [
+        InlineKeyboardButton(text="🔍 Исследовать", callback_data="action_1"),
+        InlineKeyboardButton(text="🎒 Инвентарь", callback_data="action_2"),
+    ]
+    # Костёр на главном только пока горит (прочность > 0)
+    if getattr(game, "campfire_active", False) and getattr(game, "campfire_durability", 0) > 0:
+        d = int(game.campfire_durability)
+        m = int(getattr(game, "campfire_max_durability", 10) or 10)
+        row1.append(InlineKeyboardButton(text=f"🔥 Костёр {d}/{m}", callback_data="menu_campfire"))
+
+    water = game.inventory.get("Вода", 0)
+    drink_text = f"💧 Пить ({water}/{game.water_capacity})" if water > 0 else "💧 Пить (пусто)"
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Исследовать", callback_data="action_1"),
-         InlineKeyboardButton(text="Инвентарь", callback_data="action_2")],
-        [InlineKeyboardButton(text=f"Пить ({game.inventory.get('Вода', 0)}/{game.water_capacity})", callback_data="action_3") if game.inventory.get('Вода', 0) > 0 else InlineKeyboardButton(text="Пить (пусто)", callback_data="action_3"),
-         InlineKeyboardButton(text="Спать", callback_data="action_4")]
+        row1,
+        [
+            InlineKeyboardButton(text=drink_text, callback_data="action_3"),
+            InlineKeyboardButton(text="😴 Спать", callback_data="action_4"),
+        ],
     ])
     if game.weather in {"rain", "storm"}:
         kb.inline_keyboard.append([
-            InlineKeyboardButton(text="[ 🌧️ Собрать дождевую воду ]", callback_data="action_collect_water")
-        ])
-    # Кнопка костра, если он активен
-    if game.campfire_active:
-        kb.inline_keyboard.append([
-            InlineKeyboardButton(text="🔥 Костёр", callback_data="menu_campfire")
+            InlineKeyboardButton(text="🌧️ Собрать дождевую воду", callback_data="action_collect_water")
         ])
     kb.inline_keyboard.append([
-        InlineKeyboardButton(text="Локации", callback_data="locations_menu")
+        InlineKeyboardButton(text="🗺️ Локации", callback_data="locations_menu")
     ])
     return kb
 
@@ -166,12 +174,13 @@ def get_trap_buttons_kb(game):
     return kb
 
 inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="Осмотреть", callback_data="inv_inspect"),
-     InlineKeyboardButton(text="Использовать", callback_data="inv_use")],
-    [InlineKeyboardButton(text="Выкинуть", callback_data="inv_drop"),
-     InlineKeyboardButton(text="Крафт", callback_data="inv_craft")],
-    [InlineKeyboardButton(text="Персонаж", callback_data="inv_character"),
-     InlineKeyboardButton(text="Назад", callback_data="back")],
+    [InlineKeyboardButton(text="👁 Осмотреть", callback_data="inv_inspect"),
+     InlineKeyboardButton(text="✋ Использовать", callback_data="inv_use")],
+    [InlineKeyboardButton(text="🗑 Выкинуть", callback_data="inv_drop"),
+     InlineKeyboardButton(text="🔨 Крафт", callback_data="inv_craft")],
+    [InlineKeyboardButton(text="📜 Рецепты", callback_data="inv_recipes"),
+     InlineKeyboardButton(text="👤 Персонаж", callback_data="inv_character")],
+    [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
 ])
 
 character_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -219,3 +228,11 @@ def get_location_kb(game, location_id: int):
     """Получить клавиатуру для конкретной локации."""
     # Для теперь просто возвращаем основную клавиатуру
     return get_main_kb(game)
+
+
+def get_campfire_light_confirm_kb():
+    """Подтверждение розжига скрафченного костра."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔥 Разжечь", callback_data="campfire_confirm_light")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="inv_use")],
+    ])
