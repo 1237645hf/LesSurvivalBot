@@ -72,6 +72,9 @@ BONUS_FINDS: Dict[int, List[Dict[str, Any]]] = {
 }
 
 
+STICK_NAMES = {"Ветка", "Палка", "Палки"}
+
+
 def _roll_table(table: List[Dict[str, Any]]) -> List[str]:
     if not table:
         return []
@@ -80,16 +83,27 @@ def _roll_table(table: List[Dict[str, Any]]) -> List[str]:
     for entry in table:
         acc += int(entry.get("chance", 0))
         if roll <= acc:
-            return [entry["item"]]
-    return [table[-1]["item"]]
+            item = entry["item"]
+            if item in STICK_NAMES:
+                return [item] * random.randint(1, 3)
+            return [item]
+    last = table[-1]["item"]
+    if last in STICK_NAMES:
+        return [last] * random.randint(1, 3)
+    return [last]
 
 
 def _roll_bonus(table: List[Dict[str, Any]]) -> List[str]:
     found = []
     for entry in table:
         if random.randint(1, 100) <= int(entry.get("chance", 0)):
-            found.append(entry["item"])
+            item = entry["item"]
+            if item in STICK_NAMES:
+                found.extend([item] * random.randint(1, 3))
+            else:
+                found.append(item)
     return found
+
 
 
 def location_id_from_game(game) -> int:
@@ -118,6 +132,15 @@ def apply_finds_to_inventory(game, found: List[str]) -> str:
     if not found:
         return "Ничего не нашёл."
     inv = game.inventory
+    counts: Dict[str, int] = {}
     for item in found:
+        counts[item] = counts.get(item, 0) + 1
         inv[item] = inv.get(item, 0) + 1
-    return "Нашёл: " + ", ".join(found)
+    parts = []
+    for item, qty in counts.items():
+        if qty > 1:
+            parts.append(f"{item} ×{qty}")
+        else:
+            parts.append(item)
+    return "Нашёл: " + ", ".join(parts)
+

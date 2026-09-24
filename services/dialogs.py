@@ -97,10 +97,12 @@ async def handle_waiting_for_character_name(
         return True
 
     # Имя принято
+    game.player_name = name
     game.character_name = name
     game.is_name_set = True
     game.story_state = None
     game.add_log(f"Имя персонажа: {name}. Удачи в лесу!")
+
 
     from keyboards import get_main_kb
     text_out = (

@@ -525,18 +525,17 @@ def test_7_3_item_and_recipe_cards_formatting():
 # ==============================================================================
 
 def test_8_1_character_silhouette_rendering():
-    """Тест 8.1: Экран персонажа содержит случайный ASCII-силуэт в моноширинном блоке."""
+    """Тест 8.1: Экран персонажа содержит '👤 Герой: ...' и случайный ASCII-силуэт в блоке кода."""
     from game_state import CHARACTER_SILHOUETTES
 
     assert len(CHARACTER_SILHOUETTES) == 14
     game = GameState()
-    game.character_name = "Следопыт"
+    game.player_name = "Следопыт"
     text = game.get_character_text()
 
-    assert text.startswith("```\n")
-    assert "\n```\nПерсонаж: Следопыт" in text
+    assert text.startswith("👤 Герой: Следопыт\n\n```\n")
+    assert "\n```\n\n🧢 Голова:" in text
     assert any(s in text for s in CHARACTER_SILHOUETTES)
-    assert "🧢 Голова:" in text
     assert "🐾 Питомец:" in text
 
 
@@ -565,15 +564,50 @@ def test_8_2_nav_stack_step_by_step_back():
 
 
 def test_8_3_format_game_text_no_truncation_for_character_screen():
-    """Тест 8.3: format_game_text не обрезает экран персонажа с фигуркой при низком max_lines."""
+    """Тест 8.3: format_game_text возвращает полный текст без обрезки."""
     from main import format_game_text
 
     game = GameState()
-    game.max_lines_per_msg = 3
     char_text = game.get_character_text()
 
     formatted = format_game_text(char_text, game)
+    assert formatted == char_text
     assert "…" not in formatted
     assert "🧢 Голова:" in formatted
     assert "🐾 Питомец:" in formatted
+
+
+def test_8_4_sticks_drop_one_to_three():
+    """Тест 8.4: При дропе палок в инвентарь выпадает случайное число от 1 до 3."""
+    from modules.finds import _roll_table, _roll_bonus
+
+    table_with_sticks = [{"item": "Ветка", "chance": 100}]
+    results = [_roll_table(table_with_sticks) for _ in range(50)]
+    counts = [len(res) for res in results]
+    assert all(1 <= c <= 3 for c in counts)
+    assert any(c > 1 for c in counts)
+
+    bonus_table_with_sticks = [{"item": "Ветка", "chance": 100}]
+    bonus_results = [_roll_bonus(bonus_table_with_sticks) for _ in range(50)]
+    bonus_counts = [len(res) for res in bonus_results]
+    assert all(1 <= c <= 3 for c in bonus_counts)
+    assert any(c > 1 for c in bonus_counts)
+
+
+def test_8_5_campfire_feed_bark_and_branches():
+    """Тест 8.5: Поддержание костра поддерживает ветки/палки и кусок коры."""
+    from keyboards import get_campfire_fuel_kb
+
+    game = GameState()
+    game.campfire_active = True
+    game.campfire_durability = 5
+    game.campfire_max_durability = 10
+    game.inventory = {"Ветка": 3, "Кусок коры": 2}
+
+    kb = get_campfire_fuel_kb(game)
+    button_texts = [btn.text for row in kb.inline_keyboard for btn in row]
+
+    assert any("Ветка" in t for t in button_texts)
+    assert any("Кусок коры" in t for t in button_texts)
+
 

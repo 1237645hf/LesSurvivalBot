@@ -22,12 +22,8 @@ class GameState:
 
     schema_version: int = 2
 
-    # Настройки отображения игрока
-    display_mode: str = "pc"
-    max_line_length: int = 35
-    max_lines_per_msg: int = 10
-    
     # Базовые ресурсы (стартовый инвентарь нового игрока)
+
     inventory: Dict[str, int] = field(default_factory=lambda: {
         "Спички": 3,
         "Кусок коры": 1,
@@ -154,9 +150,11 @@ class GameState:
     torch_research_count: int = 0
 
     # Имя персонажа (устанавливается при старте игры)
-    character_name: str = ""
+    player_name: str = "Выживший"
+    character_name: str = "Выживший"
     # Флаг ожидания ввода имени при старте
     is_name_set: bool = False
+
 
     # Флаг инициализации
     is_initialized: bool = False
@@ -569,7 +567,8 @@ class GameState:
             "campfire_max_durability": int(getattr(self, "campfire_max_durability", 10)),
             "flask_water": int(getattr(self, "flask_water", 10)),
             "unlocked_crafts": list(getattr(self, "unlocked_crafts", ["Костёр", "Факел"])),
-            "character_name": str(getattr(self, "character_name", "")),
+            "player_name": str(getattr(self, "player_name", getattr(self, "character_name", "Выживший"))),
+            "character_name": str(getattr(self, "character_name", getattr(self, "player_name", "Выживший"))),
             "is_name_set": bool(getattr(self, "is_name_set", False)),
         }
 
@@ -598,10 +597,12 @@ class GameState:
                 setattr(game, key, value)
         # Синхронизировать schema_version
         game.schema_version = cls.schema_version
-        game.display_mode = game.display_mode if game.display_mode in ("phone", "pc") else "pc"
-        game.max_line_length = max(10, min(100, int(game.max_line_length)))
-        game.max_lines_per_msg = max(3, min(30, int(game.max_lines_per_msg)))
+        # Синхронизация имени
+        p_name = data.get("player_name") or data.get("character_name") or "Выживший"
+        game.player_name = str(p_name)
+        game.character_name = str(p_name)
         game.hunger = max(0, int(game.hunger))
+
         game.thirst = max(0, int(game.thirst))
         game.inventory = dict(game.inventory or {})
         game.inventory.pop("Вилка", None)
@@ -747,7 +748,8 @@ class GameState:
         return text
     
     def get_character_text(self) -> str:
-        """Текст экипировки персонажа со случайным текстовым ASCII-силуэтом."""
+        """Текст экрана персонажа со случайным текстовым ASCII-силуэтом."""
+        hero_name = getattr(self, "player_name", "") or getattr(self, "character_name", "") or "Выживший"
         silhouette = random.choice(CHARACTER_SILHOUETTES)
         pet_name = self.equipment.get("pet") or getattr(self, "companion_name", None) or "Пусто"
         slots = {
@@ -768,57 +770,105 @@ class GameState:
                 lines.append(f"{label}: {pet_name}")
             else:
                 lines.append(f"{label}: {self.equipment.get(slot) or 'Пусто'}")
-        name_display = getattr(self, "character_name", "") or "Неизвестный"
-        return f"```\n{silhouette}\n```\nПерсонаж: {name_display}\n\n" + "\n".join(lines)
+
+        return (
+            f"👤 Герой: {hero_name}\n\n"
+            f"```\n{silhouette}\n```\n\n"
+            + "\n".join(lines)
+        )
 
 
 
 CHARACTER_SILHOUETTES: List[str] = [
-    # 1. Компактный выживальщик
-    " (•_•)\n<)   )>\n /   \\",
-
+    # 1. Мини-выживальщик
+    r""" (•_•)
+<)   )>
+ /   \""",
     # 2. Скиталец в меховой ушанке
-    " /\\_/\\\n( -.- )\n[#####]\n/|:::|\\\n/ |:::| \\\n |===|\n | | |\n |_|_|",
-
+    r"""  /\_/\
+ ( -.- )
+ [#####]
+ /|:::|\
+/ |:::| \
+  |===|
+  | | |
+  |_|_|""",
     # 3. Путник в кепке
-    " ___d\n(•‿•)\n/| |\\\n | |\n/   \\",
-
+    r"""  ___d
+ (•‿•)
+ /| |\
+  | |
+ /   \""",
     # 4. Настороженный лесоруб
-    " [===]\n (ಠ_ಠ)\n/|###|\\\n |###|\n | | |\n d   b",
-
+    r"""  [===]
+  (ಠ_ಠ)
+ /|###|\
+  |###|
+  | | |
+  d   b""",
     # 5. Гном-следопыт
-    " .-\"-.\n( 'v' )\n<( === )>\n /   \\",
-
+    r""" .-"-.
+( 'v' )
+<(===)>
+ /   \""",
     # 6. Приземистый бродяга
-    "  ___\n (o.o)\n ( : )\n /| |\\\n d   b",
-
+    r"""  ___
+ (o.o)
+ ( : )
+ /| |\
+  d   b""",
     # 7. Капюшон с воротником
-    " /---\\\n| . . |\n\\  -  /\n(|:::|)\n |   |\n L   |",
-
+    r""" /---\
+| . . |
+\  -  /
+(|:::|)
+ |   |
+ L   |""",
     # 8. Скучающий скиталец
-    " (¬_¬)\n /|~|\\\n(|===|)\n |   |\n /   \\",
-
+    r""" (¬_¬)
+ /|~|\
+(|===|)
+ |   |
+ /   \""",
     # 9. Охотник в шапке-пирожке
-    " .-^-.\n (•.•)\n /) (\\\n /   \\",
-
+    r""" .-^-.
+ (•.•)
+ /) (\
+ /   \""",
     # 10. В дублёнке
-    "  ,-.\n (•_•)\n/|===|\\\n/ |===| \\\n [===]\n /   \\\n[     ]",
-
+    r"""   ,-.
+  (•_•)
+ /|===|\
+/ |===| \
+  [===]
+  /   \
+ [     ]""",
     # 11. Тонкий силуэт
-    "  (o)\n / | \\\n  / \\",
-
+    r""" (o)
+/ | \
+ / \""",
     # 12. Со шрамом
-    " ,-\"-.\n( `_• )\n<|   |>\n |   |\n /   \\",
-
+    r""" ,-"-.
+( `_• )
+<|   |>
+ |   |
+ /   \""",
     # 13. В вязаной шапке
-    " (###)\n (o_o)\n/(   )\\\n  | |\n (   )",
-
-    # 14. Часовой
-    " [o_o]\n /| |\\\n< | | >\n /   \\",
+    r""" (###)
+ (o_o)
+ /(   )\
+  | |
+ (   )""",
+    # 14. Компактный часовой
+    r""" [o_o]
+ /| |\
+< | | >
+ /   \""",
 ]
 
 
 # Алиас для обратной совместимости: Game = GameState
 # Все модули, делающие from game_state import Game, получат тот же класс.
 Game = GameState
+
 

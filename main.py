@@ -380,44 +380,18 @@ async def update_or_send_message(chat_id: int, uid: int, text: str, reply_markup
         return None
 
 
-def format_game_text(text: str, game) -> str:
-    """Отформатировать сообщение под выбранный режим экрана игрока."""
-    if not game:
-        return text
-
-    # Экран персонажа не переносится по ширине (содержит ASCII-арт) и не обрезается по высоте
-    if "Персонаж:" in text:
-        return text
-
-    line_length = game.max_line_length if game.display_mode == "phone" else None
-    lines = []
-    for line in text.splitlines() or [""]:
-        if line_length:
-            lines.extend(wrap(line, width=line_length, replace_whitespace=False) or [""])
-        else:
-            lines.append(line)
-
-    # Экран инвентаря не обрезается по max_lines_per_msg, чтобы не пропадали слоты и предметы
-    if text.startswith("Инвентарь:"):
-        return "\n".join(lines)
-
-    max_lines = game.max_lines_per_msg
-    if len(lines) > max_lines:
-        lines = lines[:max_lines]
-        if lines:
-            lines[-1] = f"{lines[-1]}\n…"
-    return "\n".join(lines)
+def format_game_text(text: str, game=None) -> str:
+    """Полный текст сообщения без обрезки и искажения строк."""
+    return text
 
 
-
-def get_settings_text(game):
-    mode = "📱 Телефон" if game.display_mode == "phone" else "💻 Компьютер"
+def get_settings_text(game=None):
     return (
-        "⚙️ Настройки отображения\n\n"
-        f"Режим: {mode}\n"
-        f"Длина строки: {game.max_line_length}\n"
-        f"Строк на сообщение: {game.max_lines_per_msg}"
+        "⚙️ **Настройки**\n\n"
+        "Интерфейс игры работает в стандартном полноразмерном режиме Telegram.\n"
+        "Обрезка сообщений отключена для сохранения всех слотов и описаний."
     )
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ХЕНДЛЕРЫ
@@ -494,8 +468,9 @@ async def cmd_inventory(message: Message):
         await message.answer("Сначала /start")
         return
     game.push_screen("inventory")
-    await update_or_send_message(chat_id, uid, game.get_inventory_text(), get_inventory_kb(game, 0))
+    await update_or_send_message(chat_id, uid, game.get_inventory_text(), inventory_inline_kb)
     save_game(uid, game)
+
 
 
 @dp.message(Command("character", "char", "hero"))
@@ -626,37 +601,11 @@ async def process_callback(callback: types.CallbackQuery):
         text = None
         kb = None
 
-        if data == "settings_mode_phone":
-            game.display_mode = "phone"
-            text = get_settings_text(game)
-            kb = get_settings_kb(game)
-        elif data == "settings_mode_pc":
-            game.display_mode = "pc"
-            text = get_settings_text(game)
-            kb = get_settings_kb(game)
-        elif data == "settings_length_minus":
-            game.max_line_length = max(10, game.max_line_length - 5)
-            text = get_settings_text(game)
-            kb = get_settings_kb(game)
-        elif data == "settings_length_plus":
-            game.max_line_length = min(100, game.max_line_length + 5)
-            text = get_settings_text(game)
-            kb = get_settings_kb(game)
-        elif data == "settings_height_minus":
-            game.max_lines_per_msg = max(3, game.max_lines_per_msg - 1)
-            text = get_settings_text(game)
-            kb = get_settings_kb(game)
-        elif data == "settings_height_plus":
-            game.max_lines_per_msg = min(30, game.max_lines_per_msg + 1)
-            text = get_settings_text(game)
-            kb = get_settings_kb(game)
-        elif data == "settings_noop":
-            text = get_settings_text(game)
-            kb = get_settings_kb(game)
-        elif data == "locations_menu":
+        if data == "locations_menu":
             game.push_screen("locations")
             text = "Куда направиться?"
             kb = get_locations_kb(game)
+
         elif data.startswith("trap_place_"):
             location_id = int(data.replace("trap_place_", ""))
             game.traps[location_id] = {
@@ -702,15 +651,8 @@ async def process_callback(callback: types.CallbackQuery):
         elif data == "action_2":
             game.push_screen("inventory")
             text = game.get_inventory_text()
-            kb = get_inventory_kb(game, 0)
-        elif data.startswith("inv_page_"):
-            # Пагинация инвентаря
-            try:
-                page = int(data.removeprefix("inv_page_"))
-            except ValueError:
-                page = 0
-            text = game.get_inventory_text()
-            kb = get_inventory_kb(game, page)
+            kb = inventory_inline_kb
+
         elif data == "inv_character":
             game.push_screen("character")
             text = game.get_character_text()
@@ -820,38 +762,53 @@ async def process_callback(callback: types.CallbackQuery):
             text = f"🔥 КОСТЁР\nПрочность пламени: {game.campfire_durability}/{game.campfire_max_durability} делений."
             kb = get_campfire_kb(game)
         elif data == "campfire_add_fuel_menu":
-            # Подменю выбора дров
-            text = "Выберите, сколько дров подкинуть:"
-            kb = get_campfire_fuel_kb(game)
-        elif data == "campfire_fuel_max":
-            # До максимума
-            if "Ветка" in game.inventory:
-                needed = game.campfire_max_durability - game.campfire_durability
-                branches = game.inventory["Ветка"]
-                if branches == 0 or needed == 0:
-                    text = "Костёр почти полон или веток нет!"
-                    kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                        [types.InlineKeyboardButton(text="[ ⬅️ Назад в костёр ]", callback_data="menu_campfire")]
-                    ])
-                else:
-                    to_use = min(branches, needed)
-                    game.inventory["Ветка"] -= to_use
-                    if game.inventory["Ветка"] <= 0:
-                        del game.inventory["Ветка"]
-                    game.campfire_durability += to_use
-                    text = f"🪵 Добавлено веток: {to_use}. Прочность костра: {game.campfire_durability}/{game.campfire_max_durability}."
-                    kb = get_campfire_kb(game)
-            else:
-                text = "Нет веток в инвентаре!"
+            # Подменю выбора топлива (Ветки, Палки, Кусок коры)
+            inv = getattr(game, "inventory", {}) or {}
+            has_branches = (inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)) > 0
+            has_bark = inv.get("Кусок коры", 0) > 0
+            if not has_branches and not has_bark:
+                text = "❌ В инвентаре нет подходящего топлива!\nНужны ветки/палки или кусок коры."
                 kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                    [types.InlineKeyboardButton(text="[ ⬅️ Назад в костёр ]", callback_data="menu_campfire")]
+                    [types.InlineKeyboardButton(text="⬅️ Назад в костёр", callback_data="menu_campfire")]
                 ])
-        elif data == "campfire_fuel_custom":
-            # Своё количество — ждём ввода от пользователя
-            text = "Сколько веток подкинуть?"
-            kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                [types.InlineKeyboardButton(text="[ ⬅️ Назад в костёр ]", callback_data="menu_campfire")]
-            ])
+            else:
+                cur_d = getattr(game, "campfire_durability", 0)
+                max_d = getattr(game, "campfire_max_durability", 10)
+                text = f"🔥 КОСТЁР ({cur_d}/{max_d})\nВыберите топливо для поддержания огня:"
+                kb = get_campfire_fuel_kb(game)
+
+        elif data.startswith("feed_fuel:"):
+            # feed_fuel:<item_name>:<1|max>
+            parts = data.split(":", 2)
+            if len(parts) >= 3:
+                fuel_item = parts[1]
+                feed_mode = parts[2]
+                inv = getattr(game, "inventory", {}) or {}
+                avail = inv.get(fuel_item, 0)
+                needed = game.campfire_max_durability - game.campfire_durability
+
+                if not game.campfire_active or game.campfire_durability <= 0:
+                    await callback.answer("🔥 Костёр уже погас! Разведите его заново.", show_alert=True)
+                    text = game.get_ui()
+                    kb = get_main_kb(game)
+                elif needed <= 0:
+                    await callback.answer(f"🔥 Костёр уже разгорелся до максимума ({game.campfire_max_durability}/{game.campfire_max_durability})!", show_alert=True)
+                    text = f"🔥 КОСТЁР\nПламя на максимуме: {game.campfire_durability}/{game.campfire_max_durability} делений."
+                    kb = get_campfire_kb(game)
+                elif avail <= 0:
+                    await callback.answer(f"❌ «{fuel_item}» закончился в инвентаре!", show_alert=True)
+                    text = f"🔥 КОСТЁР\nПрочность пламени: {game.campfire_durability}/{game.campfire_max_durability} делений."
+                    kb = get_campfire_kb(game)
+                else:
+                    to_use = 1 if feed_mode == "1" else min(avail, needed)
+                    inv[fuel_item] -= to_use
+                    if inv[fuel_item] <= 0:
+                        del inv[fuel_item]
+                    game.campfire_durability += to_use
+                    game.add_log(f"🪵 Подкинуто: {fuel_item} ×{to_use}. Огонь: {game.campfire_durability}/{game.campfire_max_durability}.")
+                    text = f"🔥 КОСТЁР\nСписано: {fuel_item} ×{to_use}.\nПрочность пламени стала {game.campfire_durability}/{game.campfire_max_durability} делений."
+                    kb = get_campfire_kb(game)
+
         elif data == "campfire_cook_single":
             # Пожарить один предмет — выбираем из инвентаря
             text = "🥩 Что пожарить?"
@@ -1080,7 +1037,8 @@ async def process_callback(callback: types.CallbackQuery):
                 kb = get_main_kb(game)
             elif prev == "inventory":
                 text = game.get_inventory_text()
-                kb = get_inventory_kb(game, 0)
+                kb = inventory_inline_kb
+
             elif prev == "character":
                 text = game.get_character_text()
                 kb = character_inline_kb
@@ -1127,17 +1085,18 @@ async def process_callback(callback: types.CallbackQuery):
                     kb = get_inspect_menu_kb(game)
                 else:
                     text = game.get_inventory_text()
-                    kb = get_inventory_kb(game, 0)
+                    kb = inventory_inline_kb
             elif prev == "drop":
                 if any(count > 0 for count in game.inventory.values()):
                     text = "Выберите предмет для удаления:"
                     kb = get_drop_item_kb(game)
                 else:
                     text = game.get_inventory_text()
-                    kb = get_inventory_kb(game, 0)
+                    kb = inventory_inline_kb
             elif prev in ("drop_qty", "use"):
                 text = game.get_inventory_text()
-                kb = get_inventory_kb(game, 0)
+                kb = inventory_inline_kb
+
             elif prev == "locations":
                 text = "Куда направиться?"
                 kb = get_locations_kb(game)
@@ -1233,8 +1192,6 @@ async def process_callback(callback: types.CallbackQuery):
                     # С факелом лут идёт так же, как без него — обычный roll_find
                     loc_id = location_id_from_game(game)
                     found_list = roll_find(loc_id)
-                    # Случайное количество палок: 1-3 вместо всегда 1
-                    found_list = _randomize_stick_count(found_list)
                     msg = apply_finds_to_inventory(game, found_list)
                     game.add_log(f"🔦 {msg}")
                     text = game.get_ui()
@@ -1243,12 +1200,11 @@ async def process_callback(callback: types.CallbackQuery):
                 # Без факела — обычный roll_find по локации
                 loc_id = location_id_from_game(game)
                 found_list = roll_find(loc_id)
-                # Случайное количество палок: 1-3 вместо всегда 1
-                found_list = _randomize_stick_count(found_list)
                 msg = apply_finds_to_inventory(game, found_list)
                 game.add_log(msg)
                 text = game.get_ui()
                 kb = get_main_kb(game)
+
 
 
         elif data in ("action_sleep", "action_4"):

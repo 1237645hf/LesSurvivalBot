@@ -6,25 +6,11 @@ from aiogram.types import (
 from modules.items import is_item_consumable
 
 
-def get_settings_kb(game):
-    mode_text = "📱 Телефон" if game.display_mode == "phone" else "💻 Компьютер"
+def get_settings_kb(game=None):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="📱 Телефон", callback_data="settings_mode_phone"),
-            InlineKeyboardButton(text="💻 Компьютер", callback_data="settings_mode_pc"),
-        ],
-        [
-            InlineKeyboardButton(text="⬅️ Длина −", callback_data="settings_length_minus"),
-            InlineKeyboardButton(text=f"{game.max_line_length} ({mode_text})", callback_data="settings_noop"),
-            InlineKeyboardButton(text="➡️ Длина +", callback_data="settings_length_plus"),
-        ],
-        [
-            InlineKeyboardButton(text="⬇️ Высота −", callback_data="settings_height_minus"),
-            InlineKeyboardButton(text=f"{game.max_lines_per_msg} строк", callback_data="settings_noop"),
-            InlineKeyboardButton(text="⬆️ Высота +", callback_data="settings_height_plus"),
-        ],
         [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
     ])
+
 
 
 from modules.items import is_item_consumable, get_item_rank, get_item_rank_marker
@@ -147,12 +133,44 @@ def get_main_kb(game):
 def get_campfire_kb(game):
     """Меню Костра."""
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🥩 Пожарить предмет", callback_data="campfire_cook_single")],
-        [InlineKeyboardButton(text="📜 Рецепты", callback_data="campfire_recipes")],
-        [InlineKeyboardButton(text="🪵 Подкинуть дров", callback_data="campfire_add_fuel_menu")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="menu_main")],
+        [InlineKeyboardButton(text="🪵 Подкинуть дров / топлива", callback_data="campfire_add_fuel_menu")],
+        [InlineKeyboardButton(text="🍲 Приготовить еду", callback_data="campfire_recipes")],
+        [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
     ])
     return kb
+
+
+def get_campfire_fuel_kb(game):
+    """Подменю выбора топлива: Ветка/Палки (+1 к огню) и Кусок коры (+1 к огню)."""
+    keyboard = []
+    inv = getattr(game, "inventory", {}) or {}
+
+    # 1. Ветка / Палки
+    branches = inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)
+    if branches > 0:
+        actual_branch = "Ветка" if inv.get("Ветка", 0) > 0 else ("Палки" if inv.get("Палки", 0) > 0 else "Палка")
+        keyboard.append([
+            InlineKeyboardButton(text=f"🪵 Ветка (+1) — {branches} шт.", callback_data=f"feed_fuel:{actual_branch}:1")
+        ])
+        if branches > 1:
+            keyboard.append([
+                InlineKeyboardButton(text="🪵 Ветки (до максимума)", callback_data=f"feed_fuel:{actual_branch}:max")
+            ])
+
+    # 2. Кусок коры
+    bark = inv.get("Кусок коры", 0)
+    if bark > 0:
+        keyboard.append([
+            InlineKeyboardButton(text=f"🪵 Кусок коры (+1) — {bark} шт.", callback_data="feed_fuel:Кусок коры:1")
+        ])
+        if bark > 1:
+            keyboard.append([
+                InlineKeyboardButton(text="🪵 Кусок коры (до максимума)", callback_data="feed_fuel:Кусок коры:max")
+            ])
+
+    keyboard.append([InlineKeyboardButton(text="⬅️ Назад в костёр", callback_data="menu_campfire")])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
 
 def get_campfire_recipes_kb(game):
     """Меню рецептов костра — динамический список с маркерами доступности."""
@@ -218,71 +236,23 @@ def get_trap_buttons_kb(game):
 
 
 inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="👁 Осмотреть", callback_data="inv_inspect"),
-     InlineKeyboardButton(text="🗑 Выкинуть", callback_data="inv_drop")],
-    [InlineKeyboardButton(text="🔨 Крафт", callback_data="inv_craft"),
-     InlineKeyboardButton(text="📜 Рецепты", callback_data="inv_recipes")],
-    [InlineKeyboardButton(text="👤 Персонаж", callback_data="inv_character")],
+    [InlineKeyboardButton(text="🔍 Осмотреть", callback_data="inv_inspect"),
+     InlineKeyboardButton(text="✋ Использовать", callback_data="inv_use")],
+    [InlineKeyboardButton(text="🗑 Выкинуть", callback_data="inv_drop"),
+     InlineKeyboardButton(text="🔨 Крафт", callback_data="inv_craft")],
+    [InlineKeyboardButton(text="📜 Рецепты", callback_data="inv_recipes"),
+     InlineKeyboardButton(text="👤 Персонаж", callback_data="inv_character")],
     [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
 ])
 
-INVENTORY_PAGE_SIZE = 8
 
-
-def get_inventory_kb(game, page: int = 0) -> InlineKeyboardMarkup:
-    """Инвентарь с пагинацией (◀ ▶). 8 предметов на страницу."""
-    from modules.items import is_item_consumable, get_item_rank, get_item_rank_marker
-
-    items_list = [(item, count) for item, count in game.inventory.items() if count > 0]
-
-    def sort_key(entry):
-        item, _ = entry
-        is_food = is_item_consumable(item)
-        rank = get_item_rank(item)
-        return (0 if is_food else 1, -rank, item)
-
-    sorted_items = sorted(items_list, key=sort_key)
-    total = len(sorted_items)
-    max_page = max(0, (total - 1) // INVENTORY_PAGE_SIZE)
-    page = max(0, min(page, max_page))
-
-    start = page * INVENTORY_PAGE_SIZE
-    page_items = sorted_items[start:start + INVENTORY_PAGE_SIZE]
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[])
-
-    # Кнопки предметов
-    for item, count in page_items:
-        marker = get_item_rank_marker(item)
-        label = f"{marker} {item}" + (f" ×{count}" if count > 1 else "")
-        kb.inline_keyboard.append([
-            InlineKeyboardButton(text=f"👁 {label}", callback_data=f"inspect_item_{item}")
-        ])
-
-    # Навигация страниц
-    if max_page > 0:
-        nav = []
-        if page > 0:
-            nav.append(InlineKeyboardButton(text="◀", callback_data=f"inv_page_{page - 1}"))
-        nav.append(InlineKeyboardButton(text=f"{page + 1}/{max_page + 1}", callback_data="settings_noop"))
-        if page < max_page:
-            nav.append(InlineKeyboardButton(text="▶", callback_data=f"inv_page_{page + 1}"))
-        kb.inline_keyboard.append(nav)
-
-    # Действия
-    kb.inline_keyboard.append([
-        InlineKeyboardButton(text="🗑 Выкинуть", callback_data="inv_drop"),
-        InlineKeyboardButton(text="🔨 Крафт", callback_data="inv_craft"),
-    ])
-    kb.inline_keyboard.append([
-        InlineKeyboardButton(text="📜 Рецепты", callback_data="inv_recipes"),
-        InlineKeyboardButton(text="👤 Персонаж", callback_data="inv_character"),
-    ])
-    kb.inline_keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
-    return kb
+def get_inventory_kb(game=None, page: int = 0) -> InlineKeyboardMarkup:
+    """Клавиатура инвентаря."""
+    return inventory_inline_kb
 
 
 character_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
+
     [InlineKeyboardButton(text="↩️ Назад", callback_data="back")]
 ])
 
