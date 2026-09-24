@@ -13,9 +13,9 @@ def test_torch_limit_and_equip_left_hand_only():
     game.equipment["hand_left"] = None
     game.equipment["hand_right"] = None
 
-    # Добавляем ингредиенты для факела
-    game.inventory["Спички"] = 2
-    game.inventory["Ветка"] = 2
+    # Добавляем ингредиенты для факела: Ветка x2 + Сушняк x1 (Мох)
+    game.inventory["Ветка"] = 4
+    game.inventory["Мох"] = 2
 
     # Крафтим 1-й факел
     assert can_craft(game, "Факел") is True
@@ -64,13 +64,17 @@ def test_campfire_lighting_cost():
     game.ap = 5
     game.hunger = 50
     game.thirst = 50
+    # Проверяем розжиг спичками
+    game.inventory["Спички"] = 1
 
     res = game.light_campfire()
     assert res["lit"] is True
-    assert res["delta_ap"] == -2
-    assert game.ap == 3
+    assert res["method"] == "match"
+    assert res["delta_ap"] == -1
+    assert game.ap == 4
     assert game.campfire_active is True
     assert game.campfire_durability == 10
+    assert "Спички" not in game.inventory
 
 
 def test_water_bottle_and_flask_mechanics():

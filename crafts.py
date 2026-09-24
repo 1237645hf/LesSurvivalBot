@@ -1,17 +1,43 @@
+from typing import Optional, List, Tuple
 from keyboards import inventory_inline_kb, get_main_kb
+from modules.items import TINDER_ITEMS
+
 
 # Рецепты крафта: имя -> список (предмет, кол-во)
 CRAFT_RECIPES = {
-    "Факел": [("Спички", 1), ("Ветка", 1)],
-    "Костёр": [("Ветка", 5), ("Камень", 4), ("Мох", 1)],
+    "Факел": [("Ветка", 2), ("Сушняк", 1)],
+    "Костёр": [("Ветка", 5), ("Камень", 4), ("Сушняк", 1)],
 }
 
 
-def _count_ready(game, ingredients):
-    """Сколько позиций ингредиентов полностью закрыто / всего."""
+def get_available_tinder(game) -> Optional[str]:
+    """Возвращает первый доступный предмет сушняка/растопки из инвентаря."""
+    for name in TINDER_ITEMS:
+        if game.inventory.get(name, 0) > 0:
+            return name
+    return None
+
+get_available_sushnyak = get_available_tinder
+
+
+def count_tinder(game) -> int:
+    """Суммарное количество любого сушняка в инвентаре."""
+    return sum(game.inventory.get(name, 0) for name in TINDER_ITEMS)
+
+count_sushnyak = count_tinder
+
+
+def _check_ingredient(game, name: str, need: int) -> bool:
+    if name in ("Сушняк", "Трут"):
+        return count_tinder(game) >= need
+    return game.inventory.get(name, 0) >= need
+
+
+def _count_ready(game, ingredients) -> Tuple[int, int]:
+    """Сколько позиций ингредиентов закрыто / всего."""
     ok = 0
     for name, need in ingredients:
-        if game.inventory.get(name, 0) >= need:
+        if _check_ingredient(game, name, need):
             ok += 1
     return ok, len(ingredients)
 
@@ -32,7 +58,7 @@ def can_craft(game, recipe_name: str) -> bool:
         return False
     if recipe_name == "Факел" and has_torch(game):
         return False
-    return all(game.inventory.get(n, 0) >= q for n, q in ingredients)
+    return all(_check_ingredient(game, n, q) for n, q in ingredients)
 
 
 def craft_mark(game, recipe_name: str) -> str:
@@ -48,7 +74,7 @@ def craft_mark(game, recipe_name: str) -> str:
 
 
 def do_craft(game, recipe_name: str):
-    """Скрафтить без AP. Возвращает (ok: bool, message: str)."""
+    """Скрафтить предмет. Учитывает зажигание факела (от костра, спичками или искрами)."""
     ingredients = CRAFT_RECIPES.get(recipe_name)
     if not ingredients:
         return False, "Неизвестный рецепт."
@@ -57,17 +83,49 @@ def do_craft(game, recipe_name: str):
     if not can_craft(game, recipe_name):
         missing = []
         for n, q in ingredients:
-            have = game.inventory.get(n, 0)
-            if have < q:
-                missing.append(f"{n} {have}/{q}")
+            if n in ("Сушняк", "Трут"):
+                have = count_tinder(game)
+                if have < q:
+                    missing.append(f"Сушняк (мох/трава) {have}/{q}")
+            else:
+                have = game.inventory.get(n, 0)
+                if have < q:
+                    missing.append(f"{n} {have}/{q}")
         return False, "Не хватает: " + ", ".join(missing)
+
+    # Списание ресурсов
     for n, q in ingredients:
-        game.inventory[n] -= q
-        if game.inventory[n] <= 0:
-            del game.inventory[n]
+        if n in ("Сушняк", "Трут"):
+            tinder_name = get_available_tinder(game)
+            if tinder_name:
+                game.inventory[tinder_name] -= q
+                if game.inventory[tinder_name] <= 0:
+                    del game.inventory[tinder_name]
+        else:
+            game.inventory[n] -= q
+            if game.inventory[n] <= 0:
+                del game.inventory[n]
+
+    # Добавление скрафченного предмета
     game.inventory[recipe_name] = game.inventory.get(recipe_name, 0) + 1
     if hasattr(game, "unlock_craft"):
         game.unlock_craft(recipe_name)
+
+    # Особая логика зажигания факела при создании
+    if recipe_name == "Факел":
+        if getattr(game, "campfire_active", False) and getattr(game, "campfire_durability", 0) > 0:
+            extra_msg = " Огонь взят от углей костра без траты спичек и сил."
+        elif game.inventory.get("Спички", 0) > 0:
+            game.inventory["Спички"] -= 1
+            if game.inventory["Спички"] <= 0:
+                del game.inventory["Спички"]
+            extra_msg = " Зажжён спичкой (−1 спичка, 0 ⚡ AP)."
+        else:
+            game.ap = max(0, game.ap - 1)
+            extra_msg = " С трудом зажжён искрами трения (−1 ⚡ AP)."
+        game.add_log(f"Скрафчен факел.{extra_msg}")
+        return True, f"Успешно создан Факел!{extra_msg}"
+
     game.add_log(f"Скрафчено: {recipe_name}.")
     return True, f"Успешно создано: {recipe_name}"
 

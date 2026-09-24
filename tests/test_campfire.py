@@ -13,6 +13,12 @@ from game_state import GameState
 def run_campfire_tests():
     """Запуск серии микро-тестов костра."""
     
+    if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
+        try:
+            sys.stdout.reconfigure(encoding='utf-8')
+        except Exception:
+            pass
+
     print("=" * 70)
     print("🔥 ТЕСТЫ МЕХАНИКИ КОСТРА 🔥")
     print("=" * 70)
@@ -24,20 +30,23 @@ def run_campfire_tests():
     
     player = GameState()
     player.ap = 5  # Даем 5 AP для розжига
+    # В стартовом инвентаре есть Спички: 3, розжиг спичками стоит 1 AP и 1 спичку
     
-    print(f"   До: AP={player.ap}, Костёр активен: {player.campfire_active}, "
+    print(f"   До: AP={player.ap}, Спички={player.inventory.get('Спички', 0)}, Костёр активен: {player.campfire_active}, "
           f"Прочность: {player.campfire_durability}/{player.campfire_max_durability}")
     
     result = player.light_campfire()
     
     print(f"   Результат: {result}")
-    print(f"   После: AP={player.ap}, Костёр активен: {player.campfire_active}, "
+    print(f"   После: AP={player.ap}, Спички={player.inventory.get('Спички', 0)}, Костёр активен: {player.campfire_active}, "
           f"Прочность: {player.campfire_durability}/{player.campfire_max_durability}")
     
-    # Проверки
+    # Проверки (со спичками: тратится 1 AP и 1 спичка)
     checks = [
-        ("AP потрачено ровно 2", player.ap == 3),
+        ("AP потрачено ровно 1 (спичками)", player.ap == 4),
+        ("Спичек осталось 2", player.inventory.get("Спички") == 2),
         ("Костёр активен", player.campfire_active == True),
+
         ("Прочность = 10", player.campfire_durability == 10),
         ("Макс. прочность = 10", player.campfire_max_durability == 10),
         ("Лог записан", len(player.event_log) > 1),
@@ -59,7 +68,7 @@ def run_campfire_tests():
     print(f"   После: AP={player.ap}, Прочность: {player.campfire_durability}")
     
     checks = [
-        ("AP списано", player.ap == 2),
+        ("AP списано до 3", player.ap == 3),
         ("Прочность 9/10", player.campfire_durability == 9),
         ("Костёр всё ещё горит", player.campfire_active == True),
     ]
@@ -98,13 +107,13 @@ def run_campfire_tests():
     print("4️⃣  ТЕСТ ПОТУХАНИЯ ПРИ 0 ПРОЧНОСТИ")
     print("-" * 50)
     
-    # Уменьшаем прочность до 0 (сбрасываем после теста №2)
-    player.campfire_durability = 0
+    # Устанавливаем прочность 1 и совершаем действие с ap_cost=1
+    player.campfire_durability = 1
+    player.ap = 2
     
     print(f"   До: Прочность={player.campfire_durability}, Активен: {player.campfire_active}")
     
-    # Вызываем действие, которое должно сработать (даже с ap_cost=0)
-    result = player.consume_action(action_type="no_ap_cost", ap_cost=0)
+    result = player.consume_action(action_type="default", ap_cost=1)
     
     print(f"   Результат: {result}")
     print(f"   После: Активен: {player.campfire_active}, Лог: {player.event_log[-1]}")
@@ -120,26 +129,28 @@ def run_campfire_tests():
     
     print()
     
-    # --- ТЕСТ 5: СТАТУС В UI (get_status_bar) ---
-    print("5️⃣  ТЕСТ СТАТУСА В UI (get_status_bar)")
+    # --- ТЕСТ 5: СТАТУС В UI (get_main_kb) ---
+    print("5️⃣  ТЕСТ СТАТУСА В UI (get_main_kb)")
     print("-" * 50)
+    from keyboards import get_main_kb
     
     # Восстанавливаем состояние
     player.campfire_durability = 9
     player.campfire_active = True
     
-    status_hot = player.get_status_bar()
-    print(f"   Горящий костёр: {status_hot}")
+    kb_hot = get_main_kb(player)
+    btn_texts_hot = [btn.text for row in kb_hot.inline_keyboard for btn in row]
+    print(f"   Горящий костёр кнопки: {btn_texts_hot}")
     
     # Потушим костёр
     player.campfire_active = False
-    
-    status_extinguished = player.get_status_bar()
-    print(f"   Потухший костёр: {status_extinguished}")
+    kb_cold = get_main_kb(player)
+    btn_texts_cold = [btn.text for row in kb_cold.inline_keyboard for btn in row]
+    print(f"   Потухший костёр кнопки: {btn_texts_cold}")
     
     checks = [
-        ("Горящий: содержит '🔥' и '9/10'", "🔥" in status_hot and "9/10" in status_hot),
-        ("Потухший: содержит '🔥' и 'Потух'", "🔥" in status_extinguished and "Потух" in status_extinguished),
+        ("Горящий: есть кнопка '🔥 Костёр 9/10'", any("🔥 Костёр 9/10" in t for t in btn_texts_hot)),
+        ("Потухший: нет кнопки костра на главном", not any("🔥 Костёр" in t for t in btn_texts_cold)),
     ]
     
     for name, passed in checks:

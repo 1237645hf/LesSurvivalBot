@@ -44,10 +44,10 @@ def test_1_1_torch_equip_gives_plus_one_ap_left_hand_only():
 
 
 def test_1_2_torch_limit_one_per_character():
-    """Тест 1.2: Лимит 1 факел на персонажа (нельзя скрафтить второй в инвентаре или в руке)."""
+    """Тест 1.2: Лимит 1 факел на персонажа (крафт: Ветка x2 + Сушняк x1)."""
     game = GameState()
-    game.inventory["Спички"] = 5
     game.inventory["Ветка"] = 5
+    game.inventory["Мох"] = 5
     game.inventory.pop("Факел", None)
     game.equipment["hand_left"] = None
 
@@ -100,22 +100,51 @@ def test_1_3_torch_burns_at_night_without_extra_bonus():
 # МЕХАНИКА 2: КОСТЁР (3 ТЕСТА)
 # ==============================================================================
 
-def test_2_1_campfire_light_costs_two_ap_hunger_thirst():
-    """Тест 2.1: Розжиг костра тратит ровно 2 AP, 7 голода, 18 жажды и даёт 10/10 прочности."""
-    game = GameState()
-    game.ap = 5
-    game.hunger = 50
-    game.thirst = 50
+def test_2_1_campfire_light_three_scenarios():
+    """Тест 2.1: Проверка 3 сценариев умного розжига костра (от факела, спичками, трением)."""
+    # Сценарий 1: От горящего факела в руке (1 AP, 0 спичек, 0 сытости, 0 жажды)
+    g1 = GameState()
+    g1.ap = 5
+    g1.hunger = 50
+    g1.thirst = 50
+    g1.equipment["hand_left"] = "Факел"
+    g1.inventory["Спички"] = 2
+    res1 = g1.light_campfire()
+    assert res1["lit"] is True
+    assert res1["method"] == "torch"
+    assert res1["delta_ap"] == -1
+    assert g1.hunger == 50  # не потрачено
+    assert g1.thirst == 50  # не потрачено
+    assert g1.inventory["Спички"] == 2  # спички сохранены!
 
-    res = game.light_campfire()
-    assert res["lit"] is True
-    assert res["delta_ap"] == -2
-    assert game.ap == 3
-    assert game.hunger == 50 - 7
-    assert game.thirst == 50 - 18
-    assert game.campfire_active is True
-    assert game.campfire_durability == 10
-    assert game.campfire_max_durability == 10
+    # Сценарий 2: Спичками (1 спичка, 1 AP, 0 сытости, 0 жажды)
+    g2 = GameState()
+    g2.ap = 5
+    g2.hunger = 50
+    g2.thirst = 50
+    g2.equipment["hand_left"] = None
+    g2.inventory["Спички"] = 2
+    res2 = g2.light_campfire()
+    assert res2["lit"] is True
+    assert res2["method"] == "match"
+    assert res2["delta_ap"] == -1
+    assert g2.hunger == 50
+    assert g2.thirst == 50
+    assert g2.inventory["Спички"] == 1  # списана 1 спичка
+
+    # Сценарий 3: Вручную трением (нет факела и нет спичек: 2 AP, −7 сытости, −18 жажды)
+    g3 = GameState()
+    g3.ap = 5
+    g3.hunger = 50
+    g3.thirst = 50
+    g3.equipment["hand_left"] = None
+    g3.inventory.pop("Спички", None)
+    res3 = g3.light_campfire()
+    assert res3["lit"] is True
+    assert res3["method"] == "friction"
+    assert res3["delta_ap"] == -2
+    assert g3.hunger == 50 - 7
+    assert g3.thirst == 50 - 18
 
 
 def test_2_2_campfire_durability_loss_on_action_and_night():

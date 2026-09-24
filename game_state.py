@@ -29,8 +29,7 @@ class GameState:
     
     # Базовые ресурсы (стартовый инвентарь нового игрока)
     inventory: Dict[str, int] = field(default_factory=lambda: {
-        "Спички": 1,
-        "Вилка": 1,
+        "Спички": 3,
         "Кусок коры": 1,
         "Сухпай": 3,
         "Бутылка воды": 2,
@@ -298,20 +297,15 @@ class GameState:
         return result
 
     def light_campfire(self):
-        """Развести костёр: 2 AP, 7 голода, 18 жажды.
-
-        Фиксированно устанавливает:
-            self.campfire_max_durability = 10
-            self.campfire_durability = 10
-            self.campfire_active = True
-
-        Возвращает:
-            dict с тем же набором ключей, что и consume_action, плюс:
-                lit (bool) — получилось ли развести (AP ≥ 2)
+        """Умный розжиг костра по 3 сценариям:
+        1. От горящего факела в руке: 1 AP, 0 спичек, 0 голода, 0 жажды.
+        2. Спичками из инвентаря: 1 AP, 1 спичка, 0 голода, 0 жажды.
+        3. Вручную трением (нет факела и нет спичек): 2 AP, 7 голода, 18 жажды.
         """
         result = {
             "success": False,
             "lit": False,
+            "method": "friction",
             "delta_ap": 0,
             "delta_hunger": 0,
             "delta_thirst": 0,
@@ -319,7 +313,16 @@ class GameState:
             "hunger_damage_to_hp": 0,
             "thirst_damage_to_hp": 0,
         }
-        if self.ap < 2:
+
+        has_torch = (
+            self.equipment.get("hand_left") == "Факел"
+            or self.equipment.get("hand") == "Факел"
+        )
+        has_matches = self.inventory.get("Спички", 0) > 0
+
+        # Минимальные требования по AP
+        min_ap = 1 if (has_torch or has_matches) else 2
+        if self.ap < min_ap:
             return result
 
         old_ap = self.ap
@@ -327,28 +330,44 @@ class GameState:
         old_thirst = self.thirst
         old_hp = self.hp
 
-        self.ap = max(0, self.ap - 2)
+        if has_torch:
+            # Сценарий 1: От горящего факела
+            self.ap = max(0, self.ap - 1)
+            result["method"] = "torch"
+            self.add_log("🔥 Костёр зажжён от горящего факела! Спички и силы сэкономлены (−1 ⚡ AP).")
+        elif has_matches:
+            # Сценарий 2: Спичками
+            self.ap = max(0, self.ap - 1)
+            self.inventory["Спички"] -= 1
+            if self.inventory["Спички"] <= 0:
+                del self.inventory["Спички"]
+            result["method"] = "match"
+            self.add_log("🔥 Костёр быстро разведён спичкой (−1 спичка, −1 ⚡ AP). Сытость и жажда сохранены.")
+        else:
+            # Сценарий 3: Трение сушняка вручную
+            self.ap = max(0, self.ap - 2)
+            result["method"] = "friction"
+            hunger_cost = get_base_resource_cost(self, base_cost=7)
+            thirst_cost = get_thirst_base_cost(self, base_cost=18)
 
-        hunger_cost = get_base_resource_cost(self, base_cost=7)
-        thirst_cost = get_thirst_base_cost(self, base_cost=18)
+            new_hunger = old_hunger - hunger_cost
+            if new_hunger < 0:
+                result["hunger_damage_to_hp"] = -new_hunger
+                new_hunger = 0
+            self.hunger = new_hunger
 
-        new_hunger = old_hunger - hunger_cost
-        if new_hunger < 0:
-            result["hunger_damage_to_hp"] = -new_hunger
-            new_hunger = 0
-        self.hunger = new_hunger
+            new_thirst = old_thirst - thirst_cost
+            if new_thirst < 0:
+                result["thirst_damage_to_hp"] = -new_thirst
+                new_thirst = 0
+            self.thirst = new_thirst
 
-        new_thirst = old_thirst - thirst_cost
-        if new_thirst < 0:
-            result["thirst_damage_to_hp"] = -new_thirst
-            new_thirst = 0
-        self.thirst = new_thirst
+            overflow_hp_damage = result["hunger_damage_to_hp"] + result["thirst_damage_to_hp"]
+            if overflow_hp_damage > 0:
+                self.hp = max(1, old_hp - overflow_hp_damage)
 
-        overflow_hp_damage = result["hunger_damage_to_hp"] + result["thirst_damage_to_hp"]
-        if overflow_hp_damage > 0:
-            self.hp = max(1, old_hp - overflow_hp_damage)
+            self.add_log("🔥 Костёр с трудом разведён трением (−2 ⚡ AP, −7 сытости, −18 жажды).")
 
-        # Затраты на розжиг: 2 AP, 7 голода и 18 жажды
         self.campfire_max_durability = 10
         self.campfire_durability = self.campfire_max_durability
         self.campfire_active = True
@@ -360,7 +379,6 @@ class GameState:
         result["delta_thirst"] = self.thirst - old_thirst
         result["delta_hp"] = self.hp - old_hp
 
-        self.add_log(f"🔥 Костёр разведён! Прочность: {self.campfire_durability}/{self.campfire_max_durability}")
         return result
 
     def reset_daily_ap(self) -> int:
