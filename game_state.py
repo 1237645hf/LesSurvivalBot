@@ -571,7 +571,16 @@ class GameState:
         game.hunger = max(0, int(game.hunger))
         game.thirst = max(0, int(game.thirst))
         game.inventory = dict(game.inventory or {})
+        game.inventory.pop("Вилка", None)
+        if "Вода" in game.inventory:
+            water_count = game.inventory.pop("Вода")
+            bottles = max(1, water_count // 5) if water_count >= 5 else 1
+            game.inventory["Бутылка воды"] = game.inventory.get("Бутылка воды", 0) + bottles
         game.equipment = dict(game.equipment or {})
+        if game.equipment.get("hand_right") == "Вилка":
+            game.equipment["hand_right"] = None
+        if game.equipment.get("hand_left") == "Вилка":
+            game.equipment["hand_left"] = None
         if "traps" in data:
             game.traps = dict(game.traps or data["traps"])
         game.story_flags = dict(game.story_flags or {})
@@ -715,7 +724,7 @@ class GameState:
             "boots": "🥾 Ботинки",
             "hand_right": "🗡️ Правая рука",
             "hand_left": "🔦 Левая рука",
-            "flask": "🧴 Фляга / Бутылка",
+            "flask": "🧴 Фляга",
             "trinket": "💍 Безделушка",
             "pet": "🐾 Питомец",
         }

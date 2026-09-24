@@ -36,6 +36,7 @@ from modules.traps import (
     apply_trap_loot_to_inventory,
     traps_unlocked,
 )
+from modules.finds import roll_find, apply_finds_to_inventory, location_id_from_game
 from modules.cooking import COOKING_RECIPES, cook_item, list_recipes, format_recipe_card
 from modules.items import (
     get_item_effects,
@@ -369,6 +370,10 @@ def format_game_text(text: str, game) -> str:
         else:
             lines.append(line)
 
+    # Экраны персонажа и инвентаря не обрезаются по max_lines_per_msg, чтобы не пропадали слоты экипировки и предметы
+    if text.startswith("Персонаж:") or text.startswith("Инвентарь:"):
+        return "\n".join(lines)
+
     max_lines = game.max_lines_per_msg
     if len(lines) > max_lines:
         lines = lines[:max_lines]
@@ -639,6 +644,7 @@ async def process_callback(callback: types.CallbackQuery):
         elif data == "inv_character":
             game.push_screen("character")
             text = game.get_character_text()
+            kb = character_inline_kb
         elif data.startswith("cook_exec_") or (data.startswith("cook_") and not data.startswith("cook_recipe_view_")):
             # Непосредственное приготовление блюда на костре
             recipe_id = data.removeprefix("cook_exec_")
