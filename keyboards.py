@@ -44,15 +44,67 @@ def get_settings_kb(game):
     ])
 
 
+from modules.items import is_item_consumable, get_item_rank, get_item_rank_marker
+
+
 def get_use_item_kb(game):
+    """Список расходуемых предметов, отсортированный по рангу качества (лучшие сверху)."""
     usable_items = [
         item for item, count in game.inventory.items()
         if count > 0 and is_item_consumable(item)
     ]
+    # Сортировка: от наивысшего ранга (5) к низшему (1), затем по алфавиту
+    usable_items.sort(key=lambda it: (-get_item_rank(it), it))
+
+    keyboard = []
+    for item in usable_items:
+        marker = get_item_rank_marker(item)
+        keyboard.append([
+            InlineKeyboardButton(text=f"{marker} {item}", callback_data=f"use_preview_{item}")
+        ])
+    keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_inspect_menu_kb(game):
+    """Клавиатура подробного осмотра любого предмета в инвентаре."""
+    items = [(item, count) for item, count in game.inventory.items() if count > 0]
+    # Сортируем: еда по рангу, затем остальные предметы
+    items.sort(key=lambda entry: (0 if is_item_consumable(entry[0]) else 1, -get_item_rank(entry[0]), entry[0]))
+
+    keyboard = []
+    for item, count in items:
+        marker = get_item_rank_marker(item)
+        keyboard.append([
+            InlineKeyboardButton(text=f"🔍 {marker} {item} ×{count}", callback_data=f"inspect_item_{item}")
+        ])
+    keyboard.append([InlineKeyboardButton(text="↩️ Назад в инвентарь", callback_data="back")])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_item_card_actions_kb(item_name: str, game=None):
+    """Кнопки действий для карточки предмета."""
+    keyboard = []
+    if item_name == "Костёр":
+        keyboard.append([InlineKeyboardButton(text="🔥 Разжечь костёр", callback_data="use_consumable_Костёр")])
+    elif item_name == "Бутылка воды":
+        keyboard.append([InlineKeyboardButton(text="🧴 Надеть на пояс (в слот фляги)", callback_data="equip_bottle_flask")])
+        keyboard.append([InlineKeyboardButton(text="💧 Сделать глоток (+15 жажды)", callback_data="drink_bottle_single")])
+    elif item_name == "Факел":
+        keyboard.append([InlineKeyboardButton(text="🔦 Взять в левую руку", callback_data="use_item_Факел")])
+    elif is_item_consumable(item_name):
+        keyboard.append([InlineKeyboardButton(text="🍽️ Применить / Съесть", callback_data=f"use_consumable_{item_name}")])
+
+    keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_campfire_recipe_view_kb(recipe_id: str):
+    """Кнопки окна рецепта костра."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=item, callback_data=f"use_consumable_{item}")]
-        for item in usable_items
-    ] + [[InlineKeyboardButton(text="↩️ Назад", callback_data="back")]])
+        [InlineKeyboardButton(text="🔥 Приготовить блюдо", callback_data=f"cook_exec_{recipe_id}")],
+        [InlineKeyboardButton(text="↩️ Назад к рецептам", callback_data="campfire_recipes")],
+    ])
 
 
 def get_drop_item_kb(game):

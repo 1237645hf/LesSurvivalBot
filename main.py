@@ -36,9 +36,15 @@ from modules.traps import (
     apply_trap_loot_to_inventory,
     traps_unlocked,
 )
-from modules.finds import roll_find, apply_finds_to_inventory, location_id_from_game
-from modules.cooking import COOKING_RECIPES, cook_item, list_recipes
-from modules.items import get_item_effects, is_item_consumable
+from modules.cooking import COOKING_RECIPES, cook_item, list_recipes, format_recipe_card
+from modules.items import (
+    get_item_effects,
+    get_item_negative_effects,
+    is_item_consumable,
+    format_item_card,
+    get_item_rank_marker,
+    get_item_display_name,
+)
 
 # Р“РѕС‚РѕРІРєР°: РµРґРёРЅС‹Р№ РёСЃС‚РѕС‡РЅРёРє вЂ” modules/cooking.py (РµРґР°.txt). CAMPFIRE_RECIPES СѓРґР°Р»С‘РЅ.
 
@@ -97,6 +103,9 @@ from keyboards import (
     get_campfire_recipe_kb,
     get_campfire_light_confirm_kb,
     get_bottle_actions_kb,
+    get_inspect_menu_kb,
+    get_item_card_actions_kb,
+    get_campfire_recipe_view_kb,
     inventory_inline_kb,
     character_inline_kb,
 )
@@ -237,7 +246,20 @@ def use_consumable(item, game):
         if "poison" in effects and effects["poison"]:
             poison_val = effects["poison"]
             game.hp = max(0, game.hp - poison_val)
-            restore_parts.append(f"РћС‚СЂР°РІР»РµРЅРёРµ ({poison_val} СѓСЂРѕРЅР°)")
+            restore_parts.append(f"Отравление ({poison_val} урона)")
+
+        # Проверка негативных эффектов (расстройство желудка, токсины, паразиты)
+        neg = get_item_negative_effects(item)
+        if neg:
+            chance = int(neg.get("chance", 0))
+            if random.randint(1, 100) <= chance:
+                neg_effects = neg.get("effects", {})
+                if "thirst" in neg_effects:
+                    game.thirst = max(0, game.thirst + neg_effects["thirst"])
+                if "hp" in neg_effects:
+                    game.hp = max(1, game.hp + neg_effects["hp"])
+                msg = neg.get("log_message") or neg.get("description")
+                restore_parts.append(f"⚠️ {msg}")
 
         if not restore_parts:
             return None
@@ -618,11 +640,11 @@ async def process_callback(callback: types.CallbackQuery):
         elif data == "inv_character":
             game.push_screen("character")
             text = game.get_character_text()
-        elif data.startswith("cook_"):
-            # Р“РѕС‚РѕРІРєР° С‡РµСЂРµР· modules/cooking.py (РµРґР°.txt)
-            recipe_id = data  # cook_roast_berries Рё С‚.Рї.
+        elif data.startswith("cook_exec_") or (data.startswith("cook_") and not data.startswith("cook_recipe_view_")):
+            # Непосредственное приготовление блюда на костре
+            recipe_id = data.removeprefix("cook_exec_")
             if not game.campfire_active or game.campfire_durability <= 0:
-                await callback.answer("рџ”Ґ РљРѕСЃС‚С‘СЂ РїРѕРіР°СЃ! Р Р°Р·РІРµРґРёС‚Рµ РµРіРѕ СЃРЅРѕРІР°.", show_alert=True)
+                await callback.answer("🔥 Костёр погас! Разведите его снова.", show_alert=True)
                 return
             ok, message = cook_item(game, recipe_id)
             if not ok:
@@ -634,8 +656,16 @@ async def process_callback(callback: types.CallbackQuery):
                 game.add_log(res_log)
             game.campfire_durability = max(0, game.campfire_durability - 1)
             save_game(uid, game)
-            text = f"{message}\n(РћСЃС‚Р°С‚РѕРє РѕРіРЅСЏ: {game.campfire_durability}/{game.campfire_max_durability})"
+            text = f"{message}\n(Остаток огня: {game.campfire_durability}/{game.campfire_max_durability})"
             kb = get_campfire_kb(game)
+            await safe_edit_message(chat_id, callback.message.message_id, text, kb)
+            await callback.answer()
+            return
+        elif data.startswith("cook_recipe_view_"):
+            # Карточка рецепта костра перед готовкой
+            recipe_id = data.removeprefix("cook_recipe_view_")
+            text = format_recipe_card(recipe_id)
+            kb = get_campfire_recipe_view_kb(recipe_id)
             await safe_edit_message(chat_id, callback.message.message_id, text, kb)
             await callback.answer()
             return
@@ -754,38 +784,46 @@ async def process_callback(callback: types.CallbackQuery):
                 [types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data="menu_campfire")],
             ])
         elif data == "campfire_recipes":
-            # РЎРїРёСЃРѕРє СЂРµС†РµРїС‚РѕРІ РёР· modules/cooking.py (РµРґР°.txt)
-            text = "рџ“њ Р Р•Р¦Р•РџРўР« РљРћРЎРўР Рђ (РєРѕСЂР° + С‚РµРіРё СЏРіРѕРґС‹/РіСЂРёР±С‹, РІРѕРґР° 0вЂ“3)"
+            # Список рецептов из modules/cooking.py (ранжированы по качеству)
+            text = "📜 **Рецепты костра**\nВыберите блюдо, чтобы узнать ингредиенты, эффекты и приготовить:"
             kb = types.InlineKeyboardMarkup(inline_keyboard=[])
             for recipe_id, label in list_recipes():
                 kb.inline_keyboard.append([
-                    types.InlineKeyboardButton(text=label, callback_data=recipe_id)
+                    types.InlineKeyboardButton(text=label, callback_data=f"cook_recipe_view_{recipe_id}")
                 ])
             kb.inline_keyboard.append([
-                types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ РІ РєРѕСЃС‚С‘СЂ", callback_data="menu_campfire")
+                types.InlineKeyboardButton(text="⬅️ Назад в костёр", callback_data="menu_campfire")
             ])
-            text += f"\n{len(COOKING_RECIPES)} СЂРµС†РµРїС‚РѕРІ."
+            text += f"\nВсего доступно {len(COOKING_RECIPES)} рецептов."
         elif data.startswith("campfire_recipe_"):
-            # РЎС‚Р°СЂС‹Р№ callback вЂ” РїРµСЂРµРЅР°РїСЂР°РІР»СЏРµРј РЅР° СЃРїРёСЃРѕРє
-            text = "Р’С‹Р±РµСЂРёС‚Рµ СЂРµС†РµРїС‚ РёР· СЃРїРёСЃРєР°."
+            text = "Выберите рецепт из списка."
             kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                [types.InlineKeyboardButton(text="рџ“њ Р РµС†РµРїС‚С‹", callback_data="campfire_recipes")],
-                [types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data="menu_campfire")],
+                [types.InlineKeyboardButton(text="📜 Рецепты", callback_data="campfire_recipes")],
+                [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="menu_campfire")],
             ])
         elif data.startswith("campfire_ingredient_"):
-            # Р’С‹Р±РѕСЂ РёРЅРіСЂРµРґРёРµРЅС‚Р° РґР»СЏ СЂРµС†РµРїС‚Р°
             recipe = data.removeprefix("campfire_ingredient_")
             ingredient = data.removeprefix("campfire_ingredient_").split("_")[-1]
-            text = f"Р’С‹Р±РёСЂР°РµРј {ingredient}..."
+            text = f"Выбираем {ingredient}..."
             kb = get_campfire_recipe_kb(game, recipe)
         elif data == "inv_inspect":
-            items = get_inspectable_items(game)
-            if not items:
+            items_in_inv = [item for item, c in game.inventory.items() if c > 0]
+            if not items_in_inv:
+                await callback.answer("Инвентарь пуст!", show_alert=True)
                 return
-            text = "РџРѕРґСЂРѕР±РЅС‹Р№ РѕСЃРјРѕС‚СЂ:\n" + "\n".join(
-                f"вЂў {item}: {ITEM_DESCRIPTIONS[item]}" for item in items
-            )
-            kb = inventory_inline_kb
+            game.push_screen("inspect")
+            text = "🔍 **Подробный осмотр предметов**\n\nВыберите предмет из инвентаря, чтобы изучить его описание, эффекты, риски и свойства:"
+            kb = get_inspect_menu_kb(game)
+
+        elif data.startswith("inspect_item_"):
+            item = data.removeprefix("inspect_item_")
+            text = format_item_card(item)
+            kb = get_item_card_actions_kb(item, game)
+
+        elif data.startswith("use_preview_"):
+            item = data.removeprefix("use_preview_")
+            text = format_item_card(item)
+            kb = get_item_card_actions_kb(item, game)
 
         elif data == "inv_use":
             usable = get_usable_items(game)

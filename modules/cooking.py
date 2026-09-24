@@ -1,12 +1,20 @@
 """
-modules/cooking.py — Единая система готовки на костре (источник правды: еда.txt).
+modules/cooking.py — Единая система готовки на костре по рангам качества.
 
 Рецепты:
-  сухая обжарка — вода 0
-  простая варка — вода 1–2
-  сытная варка — вода 3
-Кора (1 шт.) обязательна для всех рецептов.
-Теги [Ягоды] / [Грибы] — любой региональный тип из items.
+⚪ Обычный ранг:
+  - Печёные ягоды (ягоды×5 + кора, вода 0)
+  - Жареные грибы (грибы×5 + кора, вода 0)
+🟢 Необычный ранг:
+  - Ягодный отвар (ягоды×5 + кора + вода 1)
+  - Грибная похлёбка (грибы×5 + кора + вода 2)
+🔵 Редкий ранг:
+  - Мясо на коре (сырое мясо×1 + кора, вода 0)
+🟣 Эпический ранг:
+  - Охотничья похлёбка (сырое мясо×1 + ягоды×5 + кора + вода 3)
+  - Лесная тушёнка (сырое мясо×1 + грибы×3 + кора + вода 3)
+🟡 Легендарный ранг:
+  - Таёжный пир (сырое мясо×1 + грибы×3 + ягоды×3 + кора + вода 3)
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -17,59 +25,91 @@ from modules import items
 COOKING_RECIPES: Dict[str, Dict[str, Any]] = {
     "cook_roast_berries": {
         "result": "Печёные ягоды",
+        "rank": 1,
         "water_from_flask": 0,
         "needs_bark": True,
         "needs_meat": False,
-        "tag": "berry",
-        "label": "Печёные ягоды (ягода + кора)",
+        "berries_needed": 5,
+        "mushrooms_needed": 0,
+        "label": "⚪ Печёные ягоды (ягоды×5 + кора)",
+        "description": "Быстро прогретые на углях сладкие лесные ягоды. Теряют вредную сырую кислоту, становясь мягким и безопасным источником сил.",
     },
     "cook_roast_mushrooms": {
         "result": "Жареные грибы",
+        "rank": 1,
         "water_from_flask": 0,
         "needs_bark": True,
         "needs_meat": False,
-        "tag": "mushroom",
-        "label": "Жареные грибы (гриб + кора)",
-    },
-    "cook_roast_meat": {
-        "result": "Мясо на коре",
-        "water_from_flask": 0,
-        "needs_bark": True,
-        "needs_meat": True,
-        "tag": None,
-        "label": "Мясо на коре (сырое мясо + кора)",
+        "berries_needed": 0,
+        "mushrooms_needed": 5,
+        "label": "⚪ Жареные грибы (грибы×5 + кора)",
+        "description": "Подрумяненные шляпки на древесной коре. Высокая температура полностью нейтрализует лесные яды, хотя блюдо получается довольно сухим.",
     },
     "cook_berry_stew": {
         "result": "Ягодный отвар",
+        "rank": 2,
         "water_from_flask": 1,
         "needs_bark": True,
         "needs_meat": False,
-        "tag": "berry",
-        "label": "Ягодный отвар (ягода + кора + 1 вода)",
+        "berries_needed": 5,
+        "mushrooms_needed": 0,
+        "label": "🟢 Ягодный отвар (ягоды×5 + кора + 1 вода)",
+        "description": "Насыщенный горячий настой из лесных плодов. Мягко согревает изнутри, приятно утоляет жажду и постепенно возвращает жизненные силы.",
     },
     "cook_mushroom_soup": {
         "result": "Грибная похлёбка",
+        "rank": 2,
         "water_from_flask": 2,
         "needs_bark": True,
         "needs_meat": False,
-        "tag": "mushroom",
-        "label": "Грибная похлёбка (гриб + кора + 2 вода)",
+        "berries_needed": 0,
+        "mushrooms_needed": 5,
+        "label": "🟢 Грибная похлёбка (грибы×5 + кора + 2 вода)",
+        "description": "Ароматный отвар на грибных шляпках. Наваристая юшка хорошо насыщает, увлажняет пересохшее горло и ускоряет затягивание мелких ран.",
+    },
+    "cook_roast_meat": {
+        "result": "Мясо на коре",
+        "rank": 3,
+        "water_from_flask": 0,
+        "needs_bark": True,
+        "needs_meat": True,
+        "berries_needed": 0,
+        "mushrooms_needed": 0,
+        "label": "🔵 Мясо на коре (сырое мясо + кора)",
+        "description": "Прожаренный на углях кусок сочной дичи. Калорийный белковый обед гарантированно очищен от опасных паразитов и придаёт телу крепость.",
     },
     "cook_hunter_soup": {
         "result": "Охотничья похлёбка",
+        "rank": 4,
         "water_from_flask": 3,
         "needs_bark": True,
         "needs_meat": True,
-        "tag": "berry",
-        "label": "Охотничья похлёбка (мясо + ягода + кора + 3 вода)",
+        "berries_needed": 5,
+        "mushrooms_needed": 0,
+        "label": "🟣 Охотничья похлёбка (мясо + ягоды×5 + кора + 3 вода)",
+        "description": "Густой наваристый суп с волокнами дичи и ягодной кислинкой. Комплексный обед: полностью утоляет жажду, надолго набивает желудок и лечит тело.",
     },
     "cook_forest_stew": {
         "result": "Лесная тушёнка",
+        "rank": 4,
         "water_from_flask": 3,
         "needs_bark": True,
         "needs_meat": True,
-        "tag": "mushroom",
-        "label": "Лесная тушёнка (мясо + гриб + кора + 3 вода)",
+        "berries_needed": 0,
+        "mushrooms_needed": 3,
+        "label": "🟣 Лесная тушёнка (мясо + грибы×3 + кора + 3 вода)",
+        "description": "Томлёное мясо с грибами в густом собственном соку. Невероятно питательное блюдо, целебные свойства которого способны вытянуть даже из тяжёлого состояния.",
+    },
+    "cook_taiga_feast": {
+        "result": "Таёжный пир",
+        "rank": 5,
+        "water_from_flask": 3,
+        "needs_bark": True,
+        "needs_meat": True,
+        "berries_needed": 3,
+        "mushrooms_needed": 3,
+        "label": "🟡 Таёжный пир (мясо + грибы×3 + ягоды×3 + кора + 3 вода)",
+        "description": "Вершина костровой кулинарии из всех богатств тайги. Мощный горячий навар моментально возвращает к жизни, закрывая все базовые потребности выживания.",
     },
 }
 
@@ -79,31 +119,113 @@ def get_recipe_for_id(recipe_id: str) -> Optional[Dict[str, Any]]:
 
 
 def list_recipes() -> List[Tuple[str, str]]:
-    return [(rid, r.get("label", rid)) for rid, r in COOKING_RECIPES.items()]
+    """Возвращает рецепты, отсортированные от самого высокого ранга к низшему."""
+    sorted_recipes = sorted(
+        COOKING_RECIPES.items(),
+        key=lambda item: item[1].get("rank", 1),
+        reverse=True,
+    )
+    return [(rid, r.get("label", rid)) for rid, r in sorted_recipes]
 
 
-def _find_tagged_item(inventory: Dict[str, int], tag: str) -> Optional[str]:
-    if tag == "berry":
-        candidates = items.BERRY_ITEMS
-        check = items.is_berry
-    elif tag == "mushroom":
-        candidates = items.MUSHROOM_ITEMS
-        check = items.is_mushroom
-    else:
-        return None
+def _count_tagged_items(inventory: Dict[str, int], tag: str) -> int:
+    """Подсчитывает суммарное количество ягод или грибов всех видов в инвентаре."""
+    candidates = items.BERRY_ITEMS if tag == "berry" else items.MUSHROOM_ITEMS
+    check = items.is_berry if tag == "berry" else items.is_mushroom
+    total = 0
     for name in candidates:
-        if inventory.get(name, 0) > 0:
-            return name
+        total += inventory.get(name, 0)
     for name, qty in inventory.items():
-        if qty > 0 and check(name):
-            return name
-    return None
+        if name not in candidates and qty > 0 and check(name):
+            total += qty
+    return total
+
+
+def _consume_tagged_items(inventory: Dict[str, int], tag: str, amount: int) -> List[str]:
+    """Списывает amount ягод или грибов из инвентаря и возвращает список списанного."""
+    candidates = list(items.BERRY_ITEMS if tag == "berry" else items.MUSHROOM_ITEMS)
+    check = items.is_berry if tag == "berry" else items.is_mushroom
+    for name in inventory.keys():
+        if name not in candidates and check(name):
+            candidates.append(name)
+
+    consumed = []
+    remaining = amount
+    for name in candidates:
+        if remaining <= 0:
+            break
+        have = inventory.get(name, 0)
+        if have > 0:
+            take = min(have, remaining)
+            inventory[name] -= take
+            if inventory[name] <= 0:
+                del inventory[name]
+            remaining -= take
+            consumed.append(f"{name}×{take}")
+    return consumed
 
 
 def _consume(inventory: Dict[str, int], name: str, amount: int = 1) -> None:
     inventory[name] = inventory.get(name, 0) - amount
     if inventory[name] <= 0:
         del inventory[name]
+
+
+def format_recipe_card(recipe_id: str) -> str:
+    """Форматирует информационную карточку рецепта для костра."""
+    recipe = get_recipe_for_id(recipe_id)
+    if not recipe:
+        return "Рецепт не найден."
+
+    res_name = recipe["result"]
+    res_data = items.ITEMS.get(res_name, {})
+    rank_marker = items.get_item_rank_marker(res_name)
+    rank_name = items.get_item_rank_name(res_name)
+
+    lines = [f"🍳 **{rank_marker} {res_name}** ({rank_name} ранг)", ""]
+    lines.append(f"_{recipe.get('description', '')}_")
+    lines.append("")
+
+    # Ингредиенты
+    ing_parts = []
+    if recipe.get("needs_bark"):
+        ing_parts.append("Кусок коры ×1")
+    if recipe.get("needs_meat"):
+        ing_parts.append("Сырое мясо ×1")
+    if recipe.get("berries_needed"):
+        ing_parts.append(f"Любые ягоды [Ягоды] ×{recipe['berries_needed']}")
+    if recipe.get("mushrooms_needed"):
+        ing_parts.append(f"Любые грибы [Грибы] ×{recipe['mushrooms_needed']}")
+    water = recipe.get("water_from_flask", 0)
+    ing_parts.append(f"Вода из фляги: {water} делений" if water > 0 else "Вода: не требуется")
+
+    lines.append("📋 **Ингредиенты:**")
+    for ing in ing_parts:
+        lines.append(f"• {ing}")
+    lines.append("")
+
+    # Эффекты готового блюда
+    effects = res_data.get("effects", {})
+    eff_parts = []
+    if effects.get("hunger"):
+        eff_parts.append(f"🍖 Сытость +{effects['hunger']}")
+    if effects.get("thirst"):
+        eff_parts.append(f"💧 Жажда +{effects['thirst']}")
+    if effects.get("hp"):
+        eff_parts.append(f"❤️ Здоровье +{effects['hp']} HP")
+    lines.append("✨ **Эффект блюда:** " + (", ".join(eff_parts) if eff_parts else "Сытный обед"))
+
+    neg = res_data.get("negative_effects")
+    if neg:
+        lines.append(f"⚠️ **Негативный эффект:** {neg.get('description')}")
+    else:
+        lines.append("⚠️ **Негативный эффект:** Отсутствуют (безопасная горячая пища)")
+
+    note = res_data.get("note")
+    if note:
+        lines.append(f"📌 **Примечание:** {note}")
+
+    return "\n".join(lines)
 
 
 def cook_item(game: Any, recipe_id: str) -> Tuple[bool, str]:
@@ -116,8 +238,28 @@ def cook_item(game: Any, recipe_id: str) -> Tuple[bool, str]:
 
     if recipe.get("needs_bark", True):
         if inv.get(bark, 0) < 1:
-            return False, f"Нужен {bark}."
+            return False, f"Нужен {bark} (посуда для костра)."
 
+    # Проверка мяса
+    if recipe.get("needs_meat"):
+        if inv.get("Сырое мясо", 0) < 1:
+            return False, "Нужно Сырое мясо ×1."
+
+    # Проверка ягод
+    berries_needed = int(recipe.get("berries_needed", 0))
+    if berries_needed > 0:
+        berries_have = _count_tagged_items(inv, "berry")
+        if berries_have < berries_needed:
+            return False, f"Нужно {berries_needed} ягод (тег [Ягоды]), у вас: {berries_have}."
+
+    # Проверка грибов
+    mushrooms_needed = int(recipe.get("mushrooms_needed", 0))
+    if mushrooms_needed > 0:
+        mushrooms_have = _count_tagged_items(inv, "mushroom")
+        if mushrooms_have < mushrooms_needed:
+            return False, f"Нужно {mushrooms_needed} грибов (тег [Грибы]), у вас: {mushrooms_have}."
+
+    # Проверка воды (с учётом фляги и запасных бутылок в инвентаре)
     water_needed = int(recipe.get("water_from_flask", 0))
     flask = int(getattr(game, "flask_water", 0) or 0)
     has_flask_item = bool(getattr(game, "equipment", {}).get("flask"))
@@ -130,27 +272,34 @@ def cook_item(game: Any, recipe_id: str) -> Tuple[bool, str]:
     if water_needed > 0 and total_water < water_needed:
         return False, f"Недостаточно воды (нужно {water_needed}, доступно {total_water})."
 
-    meat_name = None
-    if recipe.get("needs_meat"):
-        if inv.get("Сырое мясо", 0) < 1:
-            return False, "Нужно Сырое мясо."
-        meat_name = "Сырое мясо"
-
-    tagged_name = None
-    tag = recipe.get("tag")
-    if tag:
-        tagged_name = _find_tagged_item(inv, tag)
-        if not tagged_name:
-            need = "ягоду" if tag == "berry" else "гриб"
-            return False, f"Нужна любая {need} (тег [{'Ягоды' if tag == 'berry' else 'Грибы'}])."
-
+    # --- Списание ингредиентов ---
     if recipe.get("needs_bark", True):
         _consume(inv, bark, 1)
 
+    meat_used = False
+    if recipe.get("needs_meat"):
+        _consume(inv, "Сырое мясо", 1)
+        meat_used = True
+
+    used_ingredients = []
+    if meat_used:
+        used_ingredients.append("Сырое мясо×1")
+
+    if berries_needed > 0:
+        c_berries = _consume_tagged_items(inv, "berry", berries_needed)
+        used_ingredients.extend(c_berries)
+
+    if mushrooms_needed > 0:
+        c_mushrooms = _consume_tagged_items(inv, "mushroom", mushrooms_needed)
+        used_ingredients.extend(c_mushrooms)
+
+    used_ingredients.append("Кусок коры×1")
+
+    # Списание воды
     if water_needed > 0:
         remaining_needed = water_needed
 
-        # 1. Сначала берём из экипированной фляги/бутылки
+        # 1. Забираем из надетой фляги
         if flask_water_available > 0:
             take = min(flask_water_available, remaining_needed)
             game.flask_water = flask_water_available - take
@@ -163,7 +312,7 @@ def cook_item(game: Any, recipe_id: str) -> Tuple[bool, str]:
                 if hasattr(game, "add_log"):
                     game.add_log(f"Ёмкость «{container_name}» опустошена! В инвентаре осталась пустая бутылка.")
 
-        # 2. Если нужно ещё — берём из следующей бутылки в инвентаре
+        # 2. Если нужно ещё — добираем из бутылки в инвентаре
         while remaining_needed > 0 and inv.get("Бутылка воды", 0) > 0:
             inv["Бутылка воды"] -= 1
             if inv["Бутылка воды"] <= 0:
@@ -189,22 +338,10 @@ def cook_item(game: Any, recipe_id: str) -> Tuple[bool, str]:
             _consume(inv, "Вода", take)
             remaining_needed -= take
 
-    if meat_name:
-        _consume(inv, meat_name, 1)
-
-    if tagged_name:
-        _consume(inv, tagged_name, 1)
+        used_ingredients.append(f"вода×{water_needed}")
 
     result = recipe["result"]
     inv[result] = inv.get(result, 0) + 1
+    rank_marker = items.get_item_rank_marker(result)
 
-    used = []
-    if meat_name:
-        used.append(meat_name)
-    if tagged_name:
-        used.append(tagged_name)
-    used.append(bark)
-    if water_needed:
-        used.append(f"вода×{water_needed}")
-
-    return True, f"🍳 {result} готово! ({', '.join(used)} → {result})"
+    return True, f"🍳 {rank_marker} {result} готово! ({', '.join(used_ingredients)} → {result})"

@@ -206,11 +206,11 @@ def test_3_3_bottle_empty_leaves_empty_bottle_and_logs_name():
 # ==============================================================================
 
 def test_4_1_cooking_without_water_requires_bark():
-    """Тест 4.1: Сухая обжарка на коре (Печёные ягоды): расход коры и ягоды, без воды."""
+    """Тест 4.1: Сухая обжарка на коре (Печёные ягоды): расход коры и 5 ягод, без воды."""
     game = GameState()
     game.inventory = {
         "Кусок коры": 1,
-        "Лесная ягода": 1,
+        "Лесная ягода": 5,
     }
     game.flask_water = 0
 
@@ -223,13 +223,13 @@ def test_4_1_cooking_without_water_requires_bark():
 
 
 def test_4_2_cooking_with_single_flask_water():
-    """Тест 4.2: Готовка с водой (Грибная похлёбка — 2 воды): списание из надетой фляги."""
+    """Тест 4.2: Готовка с водой (Грибная похлёбка — 2 воды, 5 грибов): списание из надетой фляги."""
     game = GameState()
     game.equipment["flask"] = "Бутылка воды"
     game.flask_water = 10
     game.inventory = {
         "Кусок коры": 1,
-        "Лесной гриб": 1,
+        "Лесной гриб": 5,
     }
 
     ok, msg = cook_item(game, "cook_mushroom_soup")
@@ -247,7 +247,7 @@ def test_4_3_cooking_multi_container_water_consumption():
     game.inventory = {
         "Кусок коры": 1,
         "Сырое мясо": 1,
-        "Лесная ягода": 1,
+        "Лесная ягода": 5,
         "Бутылка воды": 1,  # Вторая полная бутылка в инвентаре (20 делений)
     }
 
@@ -263,6 +263,25 @@ def test_4_3_cooking_multi_container_water_consumption():
     assert game.equipment.get("flask") == "Бутылка воды"
     assert game.flask_water == 18
     assert game.inventory.get("Охотничья похлёбка") == 1
+
+
+def test_4_4_cooking_taiga_feast_legendary():
+    """Тест 4.4: Приготовление легендарного блюда 🟡 Таёжный пир."""
+    game = GameState()
+    game.equipment["flask"] = "Бутылка воды"
+    game.flask_water = 10
+    game.inventory = {
+        "Кусок коры": 1,
+        "Сырое мясо": 1,
+        "Лесная ягода": 3,
+        "Лесной гриб": 3,
+    }
+
+    ok, msg = cook_item(game, "cook_taiga_feast")
+    assert ok is True
+    assert "Таёжный пир готово" in msg
+    assert game.inventory.get("Таёжный пир") == 1
+    assert game.flask_water == 7
 
 
 # ==============================================================================
@@ -377,3 +396,77 @@ def test_6_3_traps_rollover_loot_added_to_inventory():
 
     traps.apply_trap_loot_to_inventory(game, loot["loot"])
     assert game.inventory.get("Сырое мясо") == 1
+
+
+# ==============================================================================
+# МЕХАНИКА 7: РАНГИ КАЧЕСТВА, СОРТИРОВКА, ДЕБАФФЫ И КАРТОЧКИ (3 ТЕСТА)
+# ==============================================================================
+
+def test_7_1_food_ranks_markers_and_sorting():
+    """Тест 7.1: Маркеры рангов еды и сортировка в инвентаре (лучшие ранги сверху)."""
+    from modules.items import get_item_rank_marker, get_item_rank
+    assert get_item_rank_marker("Печёные ягоды") == "⚪"
+    assert get_item_rank_marker("Ягодный отвар") == "🟢"
+    assert get_item_rank_marker("Мясо на коре") == "🔵"
+    assert get_item_rank_marker("Охотничья похлёбка") == "🟣"
+    assert get_item_rank_marker("Таёжный пир") == "🟡"
+
+    game = GameState()
+    game.inventory = {
+        "Печёные ягоды": 1,
+        "Таёжный пир": 1,
+        "Мясо на коре": 1,
+        "Камень": 3,
+    }
+    inv_text = game.get_inventory_text()
+    # Таёжный пир (🟡 ранг 5) должен идти раньше Мяса на коре (🔵 ранг 3) и Печёных ягод (⚪ ранг 1)
+    pos_feast = inv_text.find("Таёжный пир")
+    pos_meat = inv_text.find("Мясо на коре")
+    pos_berries = inv_text.find("Печёные ягоды")
+    pos_stone = inv_text.find("Камень")
+
+    assert pos_feast < pos_meat < pos_berries < pos_stone
+
+
+def test_7_2_raw_food_debuffs_chance():
+    """Тест 7.2: Сырая еда имеет шанс негативных эффектов (расстройство, токсины, паразиты)."""
+    import random
+    game = GameState()
+    game.hp = 100
+    game.thirst = 50
+    game.hunger = 10
+
+    # 1. Сырое мясо: при сработке 50% шанс (-12 HP, -25 жажды)
+    game.inventory = {"Сырое мясо": 1}
+    orig_randint = random.randint
+    random.randint = lambda a, b: 10  # гарантированно срабатывает (10 <= 50)
+    use_consumable("Сырое мясо", game)
+    assert game.hp == 100 - 12
+    assert game.thirst == 50 - 25
+
+    # 2. Лесной гриб: при сработке 35% шанс (-6 HP, -3 жажды)
+    game.inventory = {"Лесной гриб": 1}
+    random.randint = lambda a, b: 20  # гарантированно срабатывает (20 <= 35)
+    use_consumable("Лесной гриб", game)
+    assert game.hp == 88 - 6
+    assert game.thirst == 25 - 3
+
+    random.randint = orig_randint
+
+
+def test_7_3_item_and_recipe_cards_formatting():
+    """Тест 7.3: Карточки предметов и рецептов костра содержат описание, эффекты и риски."""
+    from modules.items import format_item_card
+    from modules.cooking import format_recipe_card
+
+    card = format_item_card("Лесная ягода")
+    assert "Лесная ягода" in card
+    assert "Сытость" in card
+    assert "Риск расстройства желудка" in card
+    assert "Примечание" in card
+
+    rcard = format_recipe_card("cook_taiga_feast")
+    assert "Таёжный пир" in rcard
+    assert "🟡" in rcard
+    assert "Ингредиенты" in rcard
+    assert "Кусок коры" in rcard

@@ -653,19 +653,35 @@ class GameState:
         return status
     
     def get_inventory_text(self) -> str:
-        """Текст инвентаря с пометкой экипированных предметов."""
+        """Текст инвентаря с рангами качества и сортировкой еды сверху вниз."""
+        from modules.items import get_item_rank, get_item_rank_marker, is_item_consumable
+
         equipped_hands = {
             self.equipment.get("hand_left"),
             self.equipment.get("hand_right"),
             self.equipment.get("hand"),
         }
+
+        # Разделяем на расходники/еду (сортируются по рангу от 5 к 1) и остальные предметы
+        items_list = [(item, count) for item, count in self.inventory.items() if count > 0]
+
+        def sort_key(entry):
+            item, _ = entry
+            is_food = is_item_consumable(item)
+            rank = get_item_rank(item)
+            # 0 для еды/расходников (сверху), 1 для остальных предметов
+            # Внутри группы — по рангу от большего к меньшему (-rank), затем по имени
+            return (0 if is_food else 1, -rank, item)
+
+        sorted_items = sorted(items_list, key=sort_key)
+
         lines = []
-        for item, count in self.inventory.items():
-            if count > 0:
-                item_clean = item.replace(" 🔥", "").replace("🔥", "")
-                equipped_mark = " (в руке)" if item in equipped_hands or item_clean in equipped_hands else ""
-                line = f"• {item} x{count}{equipped_mark}" if count > 1 else f"• {item}{equipped_mark}"
-                lines.append(line)
+        for item, count in sorted_items:
+            item_clean = item.replace(" 🔥", "").replace("🔥", "")
+            equipped_mark = " (в руке)" if item in equipped_hands or item_clean in equipped_hands else ""
+            marker = get_item_rank_marker(item)
+            line = f"• {marker} {item} x{count}{equipped_mark}" if count > 1 else f"• {marker} {item}{equipped_mark}"
+            lines.append(line)
         text = "Инвентарь:\n" + "\n".join(lines) if lines else "Инвентарь пуст"
         text += "\n━━━━━━━━━━━━━━━━━━━"
         return text
