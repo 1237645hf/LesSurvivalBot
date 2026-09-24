@@ -518,3 +518,62 @@ def test_7_3_item_and_recipe_cards_formatting():
     assert "🟡" in rcard
     assert "Ингредиенты" in rcard
     assert "Кусок коры" in rcard
+
+
+# ==============================================================================
+# МЕХАНИКА 8: СИЛУЭТЫ ПЕРСОНАЖА И ПОШАГОВАЯ НАВИГАЦИЯ (3 ТЕСТА)
+# ==============================================================================
+
+def test_8_1_character_silhouette_rendering():
+    """Тест 8.1: Экран персонажа содержит случайный ASCII-силуэт в моноширинном блоке."""
+    from game_state import CHARACTER_SILHOUETTES
+
+    assert len(CHARACTER_SILHOUETTES) == 14
+    game = GameState()
+    game.character_name = "Следопыт"
+    text = game.get_character_text()
+
+    assert text.startswith("```\n")
+    assert "\n```\nПерсонаж: Следопыт" in text
+    assert any(s in text for s in CHARACTER_SILHOUETTES)
+    assert "🧢 Голова:" in text
+    assert "🐾 Питомец:" in text
+
+
+def test_8_2_nav_stack_step_by_step_back():
+    """Тест 8.2: Нажатие кнопки 'Назад' возвращает строго на один экран назад по стеку."""
+    game = GameState()
+    assert game.nav_stack == ["main"]
+
+    # main -> inventory
+    game.push_screen("inventory")
+    assert game.nav_stack == ["main", "inventory"]
+
+    # inventory -> craft
+    game.push_screen("craft")
+    assert game.nav_stack == ["main", "inventory", "craft"]
+
+    # Назад из craft -> возвращает inventory
+    prev = game.pop_screen()
+    assert prev == "inventory"
+    assert game.nav_stack == ["main", "inventory"]
+
+    # Назад из inventory -> возвращает main
+    prev = game.pop_screen()
+    assert prev == "main"
+    assert game.nav_stack == ["main"]
+
+
+def test_8_3_format_game_text_no_truncation_for_character_screen():
+    """Тест 8.3: format_game_text не обрезает экран персонажа с фигуркой при низком max_lines."""
+    from main import format_game_text
+
+    game = GameState()
+    game.max_lines_per_msg = 3
+    char_text = game.get_character_text()
+
+    formatted = format_game_text(char_text, game)
+    assert "…" not in formatted
+    assert "🧢 Голова:" in formatted
+    assert "🐾 Питомец:" in formatted
+

@@ -72,6 +72,28 @@ def format_resource_log_text(deltas: dict) -> str:
     return ", ".join(parts)
 
 
+# Предметы, для которых при находке назначается случайное количество (1-3)
+_STICK_ITEMS = {"Ветка", "Палка", "Палки"}
+
+
+def _randomize_stick_count(found_list: list) -> list:
+    """Увеличить количество веток/палок в результате roll_find до случайного 1-3.
+
+    Остальные предметы остаются с количеством 1 (как всегда).
+    Возвращает новый список с дублированными записями (каждая запись = 1 предмет).
+    """
+    result = []
+    for item in found_list:
+        if item in _STICK_ITEMS:
+            count = random.randint(1, 3)
+            result.extend([item] * count)
+        else:
+            result.append(item)
+    return result
+
+
+
+
 def load_env_file(path: str = ".env"):
     """Загрузить переменные из .env, если они ещё не заданы в окружении."""
     env_path = Path(path)
@@ -106,6 +128,7 @@ from keyboards import (
     get_inspect_menu_kb,
     get_item_card_actions_kb,
     get_campfire_recipe_view_kb,
+    get_inventory_kb,
     inventory_inline_kb,
     character_inline_kb,
 )
@@ -362,6 +385,10 @@ def format_game_text(text: str, game) -> str:
     if not game:
         return text
 
+    # Экран персонажа не переносится по ширине (содержит ASCII-арт) и не обрезается по высоте
+    if "Персонаж:" in text:
+        return text
+
     line_length = game.max_line_length if game.display_mode == "phone" else None
     lines = []
     for line in text.splitlines() or [""]:
@@ -370,8 +397,8 @@ def format_game_text(text: str, game) -> str:
         else:
             lines.append(line)
 
-    # Экраны персонажа и инвентаря не обрезаются по max_lines_per_msg, чтобы не пропадали слоты экипировки и предметы
-    if text.startswith("Персонаж:") or text.startswith("Инвентарь:"):
+    # Экран инвентаря не обрезается по max_lines_per_msg, чтобы не пропадали слоты и предметы
+    if text.startswith("Инвентарь:"):
         return "\n".join(lines)
 
     max_lines = game.max_lines_per_msg
@@ -380,6 +407,7 @@ def format_game_text(text: str, game) -> str:
         if lines:
             lines[-1] = f"{lines[-1]}\n…"
     return "\n".join(lines)
+
 
 
 def get_settings_text(game):
@@ -438,23 +466,35 @@ def _ensure_game(uid: int):
 async def cmd_main(message: Message):
     uid = message.from_user.id
     chat_id = message.chat.id
+    try:
+        await message.delete()
+    except Exception:
+        pass
     game = _ensure_game(uid)
     if not game:
         await message.answer("Сначала /start")
         return
+    game.nav_stack = ["main"]
     await update_or_send_message(chat_id, uid, game.get_ui(), get_main_kb(game))
+    save_game(uid, game)
+
 
 
 @dp.message(Command("inventory", "inv"))
 async def cmd_inventory(message: Message):
     uid = message.from_user.id
     chat_id = message.chat.id
+    # P8: удаляем сообщение игрока с командой
+    try:
+        await message.delete()
+    except Exception:
+        pass
     game = _ensure_game(uid)
     if not game:
         await message.answer("Сначала /start")
         return
     game.push_screen("inventory")
-    await update_or_send_message(chat_id, uid, game.get_inventory_text(), inventory_inline_kb)
+    await update_or_send_message(chat_id, uid, game.get_inventory_text(), get_inventory_kb(game, 0))
     save_game(uid, game)
 
 
@@ -462,6 +502,10 @@ async def cmd_inventory(message: Message):
 async def cmd_character(message: Message):
     uid = message.from_user.id
     chat_id = message.chat.id
+    try:
+        await message.delete()
+    except Exception:
+        pass
     game = _ensure_game(uid)
     if not game:
         await message.answer("Сначала /start")
@@ -475,11 +519,16 @@ async def cmd_character(message: Message):
 async def cmd_settings(message: Message):
     uid = message.from_user.id
     chat_id = message.chat.id
+    try:
+        await message.delete()
+    except Exception:
+        pass
     game = _ensure_game(uid)
     if not game:
         await message.answer("Сначала /start")
         return
     game.push_screen("settings")
+
     await update_or_send_message(chat_id, uid, get_settings_text(game), get_settings_kb(game))
     save_game(uid, game)
 
@@ -511,10 +560,16 @@ async def process_callback(callback: types.CallbackQuery):
         if data in ("new_game", "start_new_game"):
             game = Game()
             games[uid] = game
+            game.story_state = "WAITING_FOR_CHARACTER_NAME"
             save_game(uid, game)
-            text = game.get_ui()
-            kb = get_main_kb(game)
-            await update_or_send_message(chat_id, uid, text, kb)
+            text = (
+                "📛 Введи имя своего персонажа:\n"
+                "• Только буквы, цифры, _\n"
+                "• Пробелы запрещены (используй _ вместо пробела)\n"
+                "• Эмодзи запрещены\n"
+                "• Макс. 20 символов"
+            )
+            await update_or_send_message(chat_id, uid, text, None)
             return
         if data == "load_game":
             game = load_game(uid) or Game()
@@ -535,11 +590,18 @@ async def process_callback(callback: types.CallbackQuery):
         if data == "start_new_game_confirmed":
             game = Game()
             games[uid] = game
+            game.story_state = "WAITING_FOR_CHARACTER_NAME"
             save_game(uid, game)
-            text = game.get_ui()
-            kb = get_main_kb(game)
-            await update_or_send_message(chat_id, uid, text, kb)
+            text = (
+                "📛 Введи имя своего персонажа:\n"
+                "• Только буквы, цифры, _\n"
+                "• Пробелы запрещены (используй _ вместо пробела)\n"
+                "• Эмодзи запрещены\n"
+                "• Макс. 20 символов"
+            )
+            await update_or_send_message(chat_id, uid, text, None)
             return
+
         if data == "cancel_new_game":
             # Возвращаем игрока в главное меню старта
             text = "Вы отменили перезапуск. Что делаем?"
@@ -640,11 +702,20 @@ async def process_callback(callback: types.CallbackQuery):
         elif data == "action_2":
             game.push_screen("inventory")
             text = game.get_inventory_text()
-            kb = inventory_inline_kb
+            kb = get_inventory_kb(game, 0)
+        elif data.startswith("inv_page_"):
+            # Пагинация инвентаря
+            try:
+                page = int(data.removeprefix("inv_page_"))
+            except ValueError:
+                page = 0
+            text = game.get_inventory_text()
+            kb = get_inventory_kb(game, page)
         elif data == "inv_character":
             game.push_screen("character")
             text = game.get_character_text()
             kb = character_inline_kb
+
         elif data.startswith("cook_exec_") or (data.startswith("cook_") and not data.startswith("cook_recipe_view_")):
             # Непосредственное приготовление блюда на костре
             recipe_id = data.removeprefix("cook_exec_")
@@ -693,7 +764,7 @@ async def process_callback(callback: types.CallbackQuery):
                 ])
             if not kb_c.inline_keyboard:
                 lines.append("Пока нечего крафтить.")
-            kb_c.inline_keyboard.append([types.InlineKeyboardButton(text="↩️ Назад", callback_data="action_2")])
+            kb_c.inline_keyboard.append([types.InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
             text = "\n".join(lines)
             kb = kb_c
 
@@ -721,6 +792,7 @@ async def process_callback(callback: types.CallbackQuery):
                     kb = get_main_kb(game)
 
         elif data == "inv_recipes":
+            game.push_screen("recipes")
             unlocked = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
             lines = ["📜 Рецепты:", ""]
             for name in unlocked:
@@ -733,8 +805,9 @@ async def process_callback(callback: types.CallbackQuery):
                 lines.append(f"  ({ings})")
             text = "\n".join(lines)
             kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                [types.InlineKeyboardButton(text="↩️ Назад", callback_data="action_2")]
+                [types.InlineKeyboardButton(text="↩️ Назад", callback_data="back")]
             ])
+
 
         elif data == "campfire_screen":
             # Экран костра
@@ -822,13 +895,16 @@ async def process_callback(callback: types.CallbackQuery):
 
         elif data.startswith("inspect_item_"):
             item = data.removeprefix("inspect_item_")
+            game.push_screen("item_card")
             text = format_item_card(item)
             kb = get_item_card_actions_kb(item, game)
 
         elif data.startswith("use_preview_"):
             item = data.removeprefix("use_preview_")
+            game.push_screen("item_card")
             text = format_item_card(item)
             kb = get_item_card_actions_kb(item, game)
+
 
         elif data == "inv_use":
             usable = get_usable_items(game)
@@ -973,7 +1049,7 @@ async def process_callback(callback: types.CallbackQuery):
                         del game.inventory[item]
                     game.add_log(f"Выкинуто: {item} ×{drop_count}")
                     text = f"Удалено: {item} ×{drop_count}.\n\n{game.get_inventory_text()}"
-                    kb = inventory_inline_kb
+                    kb = get_inventory_kb(game, 0)
 
         elif data == "drop_qty_cancel":
             game.story_state = None
@@ -988,13 +1064,14 @@ async def process_callback(callback: types.CallbackQuery):
                     kb = get_drop_item_kb(game)
                 else:
                     text = game.get_inventory_text()
-                    kb = inventory_inline_kb
+                    kb = get_inventory_kb(game, 0)
             elif prev == "inventory":
                 text = game.get_inventory_text()
-                kb = inventory_inline_kb
+                kb = get_inventory_kb(game, 0)
             else:
                 text = game.get_ui()
                 kb = get_main_kb(game)
+
 
         elif data == "back":
             prev = game.pop_screen()
@@ -1003,24 +1080,14 @@ async def process_callback(callback: types.CallbackQuery):
                 kb = get_main_kb(game)
             elif prev == "inventory":
                 text = game.get_inventory_text()
-                kb = inventory_inline_kb
+                kb = get_inventory_kb(game, 0)
             elif prev == "character":
                 text = game.get_character_text()
                 kb = character_inline_kb
-            elif prev == "drop":
-                text = game.get_inventory_text()
-                kb = inventory_inline_kb
-            elif prev == "drop_qty":
-                if any(count > 0 for count in game.inventory.values()):
-                    text = "Выберите предмет для удаления:"
-                    kb = get_drop_item_kb(game)
-                else:
-                    text = game.get_inventory_text()
-                    kb = inventory_inline_kb
             elif prev == "craft":
                 unlocked = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
                 kb_c = types.InlineKeyboardMarkup(inline_keyboard=[])
-                lines = ["🔨 Крафт:", ""]
+                lines = ["🔨 Крафт (только открытые рецепты):", ""]
                 for name in unlocked:
                     if name not in CRAFT_RECIPES:
                         continue
@@ -1035,20 +1102,53 @@ async def process_callback(callback: types.CallbackQuery):
                     ])
                 if not kb_c.inline_keyboard:
                     lines.append("Пока нечего крафтить.")
-                kb_c.inline_keyboard.append([
-                    types.InlineKeyboardButton(text="↩️ Назад", callback_data="action_2")
-                ])
-                text = chr(10).join(lines)
+                kb_c.inline_keyboard.append([types.InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
+                text = "\n".join(lines)
                 kb = kb_c
-            elif prev == "use":
-                text = game.get_ui()
-                kb = get_main_kb(game)
+            elif prev == "recipes":
+                unlocked = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
+                lines = ["📜 Рецепты:", ""]
+                for name in unlocked:
+                    if name not in CRAFT_RECIPES:
+                        lines.append(f"• {name}")
+                        continue
+                    mark = craft_mark(game, name)
+                    ings = ", ".join(f"{n}×{q}" for n, q in CRAFT_RECIPES[name])
+                    lines.append(f"• {name} {mark}")
+                    lines.append(f"  ({ings})")
+                text = "\n".join(lines)
+                kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                    [types.InlineKeyboardButton(text="↩️ Назад", callback_data="back")]
+                ])
+            elif prev == "inspect":
+                items_in_inv = [item for item, c in game.inventory.items() if c > 0]
+                if items_in_inv:
+                    text = "🔍 **Подробный осмотр предметов**\n\nВыберите предмет из инвентаря, чтобы изучить его описание, эффекты, риски и свойства:"
+                    kb = get_inspect_menu_kb(game)
+                else:
+                    text = game.get_inventory_text()
+                    kb = get_inventory_kb(game, 0)
+            elif prev == "drop":
+                if any(count > 0 for count in game.inventory.values()):
+                    text = "Выберите предмет для удаления:"
+                    kb = get_drop_item_kb(game)
+                else:
+                    text = game.get_inventory_text()
+                    kb = get_inventory_kb(game, 0)
+            elif prev in ("drop_qty", "use"):
+                text = game.get_inventory_text()
+                kb = get_inventory_kb(game, 0)
+            elif prev == "locations":
+                text = "Куда направиться?"
+                kb = get_locations_kb(game)
             elif prev == "settings":
                 text = get_settings_text(game)
                 kb = get_settings_kb(game)
             else:
                 text = game.get_ui()
                 kb = get_main_kb(game)
+
+
 
         elif data.startswith("craft_") or data.startswith("use_item_"):
             text, kb = handle_craft(data, game, uid)
@@ -1125,39 +1225,31 @@ async def process_callback(callback: types.CallbackQuery):
                 torch_research_count = getattr(game, "torch_research_count", 0) + 1
                 game.torch_research_count = torch_research_count
 
-                # На 4-м исследовании с факелом — гарантированно 1-я Сюжетная История
+                # На 4-м исследовании с факелом — запускаем сюжет L1
                 if torch_research_count >= 4:
-                    game.add_log(f"{torch_research_count}-е исследование с факелом! Запускаем Главную Сюжетную Историю.")
+                    game.add_log(f"🔦 {torch_research_count}-е исследование с факелом! Что-то происходит...")
                     text, kb = handle_story(data, game, uid)
                 else:
-                    # Логика исследования с факелом: 40% пусто / 20% сломается / 40% добыча
-                    roll = random.randint(1, 100)
-                    if roll <= 40:
-                        # 40% — ничего не найдено, факел цел
-                        game.add_log("🔍 Ты внимательно осмотрелся, освещая путь факелом, но ничего ценного не нашёл.")
-                    elif roll <= 60:
-                        # 20% (41-60) — факел ломается!
-                        game.equipment["hand_left"] = None
-                        if "hand" in game.equipment:
-                            game.equipment["hand"] = None
-                        game.ap = max(0, game.ap - 1)
-                        game.add_log("💥 Твой факел с треском сломался и потух (−1 ⚡ AP)! Теперь его нужно скрафтить заново.")
-                    else:
-                        # 40% (61-100) — успешная добыча
-                        loc_id = location_id_from_game(game)
-                        found_list = roll_find(loc_id)
-                        msg = apply_finds_to_inventory(game, found_list)
-                        game.add_log(msg)
+                    # С факелом лут идёт так же, как без него — обычный roll_find
+                    loc_id = location_id_from_game(game)
+                    found_list = roll_find(loc_id)
+                    # Случайное количество палок: 1-3 вместо всегда 1
+                    found_list = _randomize_stick_count(found_list)
+                    msg = apply_finds_to_inventory(game, found_list)
+                    game.add_log(f"🔦 {msg}")
                     text = game.get_ui()
                     kb = get_main_kb(game)
             else:
-                # Лут по локации (еда.txt → modules/finds.py)
+                # Без факела — обычный roll_find по локации
                 loc_id = location_id_from_game(game)
                 found_list = roll_find(loc_id)
+                # Случайное количество палок: 1-3 вместо всегда 1
+                found_list = _randomize_stick_count(found_list)
                 msg = apply_finds_to_inventory(game, found_list)
                 game.add_log(msg)
                 text = game.get_ui()
                 kb = get_main_kb(game)
+
 
         elif data in ("action_sleep", "action_4"):
             game.sleep_and_turn_day()

@@ -23,6 +23,100 @@ from game_state import Game
 from services.database import save_game
 
 
+import re
+
+_ALLOWED_NAME_RE = re.compile(r"^[A-Za-zА-Яа-яЁё0-9_]{1,20}$")
+
+
+def _has_emoji(text: str) -> bool:
+    """Проверить наличие эмодзи (символов вне ASCII + CJK + кириллица и основные диакритики)."""
+    # Эмодзи занимают кодовые точки выше U+2600 и в специальных диапазонах
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F680-\U0001F6FF"  # transport
+        "\U0001F1E0-\U0001F1FF"  # flags
+        "\U00002702-\U000027B0"
+        "\U000024C2-\U0001F251"
+        "]+",
+        flags=re.UNICODE,
+    )
+    return bool(emoji_pattern.search(text))
+
+
+async def handle_waiting_for_character_name(
+    uid: int,
+    chat_id: int,
+    text: str,
+    message: types.Message,
+    game: Game,
+    bot_ctx: dict,
+) -> bool:
+    """Обработать ввод имени персонажа при старте новой игры. Возвращает True если обработано."""
+    if game.story_state != "WAITING_FOR_CHARACTER_NAME":
+        return False
+
+    await bot_ctx["safe_delete_message"](chat_id, message.message_id)
+
+    async def _reply_error(err_text: str):
+        prompt = (
+            "📛 Введи имя своего персонажа:\n"
+            "• Только буквы, цифры, _\n"
+            "• Пробелы запрещены (используй _ вместо пробела)\n"
+            "• Эмодзи запрещены\n"
+            "• Макс. 20 символов\n\n"
+            f"❌ {err_text}"
+        )
+        msg_id = bot_ctx["last_active_msg_id"].get(uid)
+        if msg_id:
+            await bot_ctx["safe_edit_message"](chat_id, msg_id, prompt, None)
+        else:
+            await bot_ctx["update_or_send_message"](chat_id, uid, prompt, None)
+
+    if not text or not text.strip():
+        await _reply_error("Имя не может быть пустым.")
+        return True
+
+    name = text.strip()
+
+    if " " in name:
+        await _reply_error("Пробелы запрещены. Используй _ вместо пробела.")
+        return True
+
+    if _has_emoji(name):
+        await _reply_error("Эмодзи в имени запрещены.")
+        return True
+
+    if len(name) > 20:
+        await _reply_error(f"Слишком длинное имя ({len(name)} символов, макс. 20).")
+        return True
+
+    if not _ALLOWED_NAME_RE.match(name):
+        await _reply_error("Разрешены только буквы (русские/латинские), цифры и _.")
+        return True
+
+    # Имя принято
+    game.character_name = name
+    game.is_name_set = True
+    game.story_state = None
+    game.add_log(f"Имя персонажа: {name}. Удачи в лесу!")
+
+    from keyboards import get_main_kb
+    text_out = (
+        f"Имя принято: {name}!\n\n"
+        + game.get_ui()
+    )
+    msg_id = bot_ctx["last_active_msg_id"].get(uid)
+    if msg_id:
+        await bot_ctx["safe_edit_message"](chat_id, msg_id, text_out, get_main_kb(game))
+    else:
+        await bot_ctx["update_or_send_message"](chat_id, uid, text_out, get_main_kb(game))
+
+    save_game(uid, game)
+    return True
+
+
 async def handle_waiting_for_pet_name(
     uid: int,
     chat_id: int,
@@ -243,6 +337,7 @@ async def process_text_input(
     Возвращает True если одно из состояний было обработано.
     """
     handlers = [
+        handle_waiting_for_character_name,
         handle_waiting_for_pet_name,
         handle_waiting_for_fuel_count,
         handle_waiting_for_drop_quantity,
@@ -254,3 +349,4 @@ async def process_text_input(
         except Exception as exc:
             logging.exception(f"Ошибка в диалог-обработчике {handler.__name__} для {uid}: {exc}")
     return False
+

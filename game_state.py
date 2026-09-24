@@ -152,9 +152,15 @@ class GameState:
     
     # Счётчик исследований с факелом (триггер для истории волка)
     torch_research_count: int = 0
-    
+
+    # Имя персонажа (устанавливается при старте игры)
+    character_name: str = ""
+    # Флаг ожидания ввода имени при старте
+    is_name_set: bool = False
+
     # Флаг инициализации
     is_initialized: bool = False
+
     
     # Метод сброса навигации (для завершения локации)
     def reset_nav(self):
@@ -407,8 +413,17 @@ class GameState:
             self.event_log = self.event_log[-50:]
     
     def sleep_and_turn_day(self) -> int:
-        """Сменить день (сон): ресурсы, костёр за ночь, AP, факел."""
-        # 1. Списание оставшихся AP/ресурсов за день (если есть)
+        """Сменить день (сон): ресурсы, костёр за ночь, AP, факел.
+
+        Порядок строго по спецификации:
+        1. Тратим остаток AP/ресурсов за ночь.
+        2. Костёр −3 прочности (возможно тухнет).
+        3. Факел в руке сгорает → исчезает из руки и инвентаря.
+        4. reset_daily_ap() (факел уже сгорел → бонуса нет).
+        5. Если костёр НЕ горит утром → −1 AP (ровно один раз).
+        6. day += 1 — день наступил.
+        """
+        # 1. Ночные расходы ресурсов
         if self.ap > 0:
             self.consume_action(action_type="sleep", base_hunger=1, base_thirst=1)
 
@@ -420,7 +435,7 @@ class GameState:
                 self.campfire_active = False
                 self.add_log("Костёр потух. Ты не уследил за огнём.", "sleep")
 
-        # 3. Факел в руке ночью сгорает (утром бонусов не даёт, а его +1 AP исчезает)
+        # 3. Факел в руке ночью сгорает
         torch_in_hand = (
             self.equipment.get("hand") == "Факел"
             or self.equipment.get("hand_left") == "Факел"
@@ -437,15 +452,30 @@ class GameState:
                 del self.inventory["Факел"]
             self.add_log("За ночь твой факел прогорел и погас.", "sleep")
 
-        # 4. AP на новый день (факел сгорел, поэтому рассчитывается без его бонуса)
+        # 4. AP на новый день (факел уже сгорел — бонуса +1 AP нет)
         self.reset_daily_ap()
 
-        # 5. Без костра утром — штраф −1 AP (не ниже 1)
+        # 5. Без костра утром — штраф −1 AP ровно один раз (не ниже 1)
+        cold_penalty_applied = False
         if not self.campfire_active:
             self.ap = max(1, int(self.ap) - 1)
+            cold_penalty_applied = True
             self.add_log("За ночь ты промёрз. Сегодня сил меньше (−1 ⚡).", "sleep")
 
+        # 6. Новый день — счётчик растёт
+        self.day += 1
+
+        # 7. Смена погоды (ясно/пасмурно/дождь/гроза)
+        old_weather = self.weather
+        self.weather = self.roll_weather_for_new_day()
+        weather_icons = {"clear": "☀️", "cloudy": "☁️", "rain": "🌧️", "storm": "⛈️"}
+        weather_names = {"clear": "Ясно", "cloudy": "Пасмурно", "rain": "Дождь", "storm": "Гроза"}
+        w_icon = weather_icons.get(self.weather, "☀️")
+        w_name = weather_names.get(self.weather, self.weather)
+        self.add_log(f"{w_icon} Утро дня {self.day}. Погода: {w_name}.", "sleep")
+
         return self.ap
+
     
     def get_ui_value(self, key: str, fallback: Any = None) -> Any:
         """Умное получение значения для UI с умными заглушками."""
@@ -539,7 +569,10 @@ class GameState:
             "campfire_max_durability": int(getattr(self, "campfire_max_durability", 10)),
             "flask_water": int(getattr(self, "flask_water", 10)),
             "unlocked_crafts": list(getattr(self, "unlocked_crafts", ["Костёр", "Факел"])),
+            "character_name": str(getattr(self, "character_name", "")),
+            "is_name_set": bool(getattr(self, "is_name_set", False)),
         }
+
 
     @classmethod
     def from_document(cls, document: Dict[str, Any]):
@@ -714,7 +747,8 @@ class GameState:
         return text
     
     def get_character_text(self) -> str:
-        """Текст экипировки персонажа."""
+        """Текст экипировки персонажа со случайным текстовым ASCII-силуэтом."""
+        silhouette = random.choice(CHARACTER_SILHOUETTES)
         pet_name = self.equipment.get("pet") or getattr(self, "companion_name", None) or "Пусто"
         slots = {
             "head": "🧢 Голова",
@@ -734,9 +768,57 @@ class GameState:
                 lines.append(f"{label}: {pet_name}")
             else:
                 lines.append(f"{label}: {self.equipment.get(slot) or 'Пусто'}")
-        return "Персонаж:\n\n" + "\n".join(lines)
+        name_display = getattr(self, "character_name", "") or "Неизвестный"
+        return f"```\n{silhouette}\n```\nПерсонаж: {name_display}\n\n" + "\n".join(lines)
+
+
+
+CHARACTER_SILHOUETTES: List[str] = [
+    # 1. Компактный выживальщик
+    " (•_•)\n<)   )>\n /   \\",
+
+    # 2. Скиталец в меховой ушанке
+    " /\\_/\\\n( -.- )\n[#####]\n/|:::|\\\n/ |:::| \\\n |===|\n | | |\n |_|_|",
+
+    # 3. Путник в кепке
+    " ___d\n(•‿•)\n/| |\\\n | |\n/   \\",
+
+    # 4. Настороженный лесоруб
+    " [===]\n (ಠ_ಠ)\n/|###|\\\n |###|\n | | |\n d   b",
+
+    # 5. Гном-следопыт
+    " .-\"-.\n( 'v' )\n<( === )>\n /   \\",
+
+    # 6. Приземистый бродяга
+    "  ___\n (o.o)\n ( : )\n /| |\\\n d   b",
+
+    # 7. Капюшон с воротником
+    " /---\\\n| . . |\n\\  -  /\n(|:::|)\n |   |\n L   |",
+
+    # 8. Скучающий скиталец
+    " (¬_¬)\n /|~|\\\n(|===|)\n |   |\n /   \\",
+
+    # 9. Охотник в шапке-пирожке
+    " .-^-.\n (•.•)\n /) (\\\n /   \\",
+
+    # 10. В дублёнке
+    "  ,-.\n (•_•)\n/|===|\\\n/ |===| \\\n [===]\n /   \\\n[     ]",
+
+    # 11. Тонкий силуэт
+    "  (o)\n / | \\\n  / \\",
+
+    # 12. Со шрамом
+    " ,-\"-.\n( `_• )\n<|   |>\n |   |\n /   \\",
+
+    # 13. В вязаной шапке
+    " (###)\n (o_o)\n/(   )\\\n  | |\n (   )",
+
+    # 14. Часовой
+    " [o_o]\n /| |\\\n< | | >\n /   \\",
+]
 
 
 # Алиас для обратной совместимости: Game = GameState
 # Все модули, делающие from game_state import Game, получат тот же класс.
 Game = GameState
+

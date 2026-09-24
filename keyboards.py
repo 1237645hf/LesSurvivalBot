@@ -110,33 +110,29 @@ def get_bottle_actions_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🧴 Надеть на пояс (в слот фляги)", callback_data="equip_bottle_flask")],
         [InlineKeyboardButton(text="💧 Сделать глоток (+15 жажды)", callback_data="drink_bottle_single")],
-        [InlineKeyboardButton(text="↩️ Назад в инвентарь", callback_data="action_2")],
+        [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
     ])
 
 
+
 def get_main_kb(game):
+    # Ряд 1: Исследовать + Костёр (справа, только если горит)
     row1 = [
         InlineKeyboardButton(text="🔍 Исследовать", callback_data="action_1"),
-        InlineKeyboardButton(text="🎒 Инвентарь", callback_data="action_2"),
     ]
-    # Костёр на главном только пока горит (прочность > 0)
     if getattr(game, "campfire_active", False) and getattr(game, "campfire_durability", 0) > 0:
         d = int(game.campfire_durability)
         m = int(getattr(game, "campfire_max_durability", 10) or 10)
         row1.append(InlineKeyboardButton(text=f"🔥 Костёр {d}/{m}", callback_data="menu_campfire"))
 
-    row2 = []
-    # Кнопка «Пить» отображается на главном экране ТОЛЬКО когда бутылка/фляга надета в слот flask
+    # Ряд 2: Инвентарь + Пить (если фляга надета) + Спать
+    row2 = [InlineKeyboardButton(text="🎒 Инвентарь", callback_data="action_2")]
     if game.equipment.get("flask"):
         water_left = int(getattr(game, "flask_water", 0) or 0)
         row2.append(InlineKeyboardButton(text=f"💧 Пить ({water_left}/20)", callback_data="action_3"))
-
     row2.append(InlineKeyboardButton(text="😴 Спать", callback_data="action_4"))
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        row1,
-        row2,
-    ])
+    kb = InlineKeyboardMarkup(inline_keyboard=[row1, row2])
     if game.weather in {"rain", "storm"}:
         kb.inline_keyboard.append([
             InlineKeyboardButton(text="🌧️ Собрать дождевую воду", callback_data="action_collect_water")
@@ -145,6 +141,7 @@ def get_main_kb(game):
         InlineKeyboardButton(text="🗺️ Локации", callback_data="locations_menu")
     ])
     return kb
+
 
 
 def get_campfire_kb(game):
@@ -216,22 +213,79 @@ def get_trap_buttons_kb(game):
                 )
             ])
     if kb.inline_keyboard:
-        kb.inline_keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="menu_main")])
+        kb.inline_keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back")])
     return kb
+
 
 inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="👁 Осмотреть", callback_data="inv_inspect"),
-     InlineKeyboardButton(text="✋ Использовать", callback_data="inv_use")],
-    [InlineKeyboardButton(text="🗑 Выкинуть", callback_data="inv_drop"),
-     InlineKeyboardButton(text="🔨 Крафт", callback_data="inv_craft")],
-    [InlineKeyboardButton(text="📜 Рецепты", callback_data="inv_recipes"),
-     InlineKeyboardButton(text="👤 Персонаж", callback_data="inv_character")],
+     InlineKeyboardButton(text="🗑 Выкинуть", callback_data="inv_drop")],
+    [InlineKeyboardButton(text="🔨 Крафт", callback_data="inv_craft"),
+     InlineKeyboardButton(text="📜 Рецепты", callback_data="inv_recipes")],
+    [InlineKeyboardButton(text="👤 Персонаж", callback_data="inv_character")],
     [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
 ])
+
+INVENTORY_PAGE_SIZE = 8
+
+
+def get_inventory_kb(game, page: int = 0) -> InlineKeyboardMarkup:
+    """Инвентарь с пагинацией (◀ ▶). 8 предметов на страницу."""
+    from modules.items import is_item_consumable, get_item_rank, get_item_rank_marker
+
+    items_list = [(item, count) for item, count in game.inventory.items() if count > 0]
+
+    def sort_key(entry):
+        item, _ = entry
+        is_food = is_item_consumable(item)
+        rank = get_item_rank(item)
+        return (0 if is_food else 1, -rank, item)
+
+    sorted_items = sorted(items_list, key=sort_key)
+    total = len(sorted_items)
+    max_page = max(0, (total - 1) // INVENTORY_PAGE_SIZE)
+    page = max(0, min(page, max_page))
+
+    start = page * INVENTORY_PAGE_SIZE
+    page_items = sorted_items[start:start + INVENTORY_PAGE_SIZE]
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[])
+
+    # Кнопки предметов
+    for item, count in page_items:
+        marker = get_item_rank_marker(item)
+        label = f"{marker} {item}" + (f" ×{count}" if count > 1 else "")
+        kb.inline_keyboard.append([
+            InlineKeyboardButton(text=f"👁 {label}", callback_data=f"inspect_item_{item}")
+        ])
+
+    # Навигация страниц
+    if max_page > 0:
+        nav = []
+        if page > 0:
+            nav.append(InlineKeyboardButton(text="◀", callback_data=f"inv_page_{page - 1}"))
+        nav.append(InlineKeyboardButton(text=f"{page + 1}/{max_page + 1}", callback_data="settings_noop"))
+        if page < max_page:
+            nav.append(InlineKeyboardButton(text="▶", callback_data=f"inv_page_{page + 1}"))
+        kb.inline_keyboard.append(nav)
+
+    # Действия
+    kb.inline_keyboard.append([
+        InlineKeyboardButton(text="🗑 Выкинуть", callback_data="inv_drop"),
+        InlineKeyboardButton(text="🔨 Крафт", callback_data="inv_craft"),
+    ])
+    kb.inline_keyboard.append([
+        InlineKeyboardButton(text="📜 Рецепты", callback_data="inv_recipes"),
+        InlineKeyboardButton(text="👤 Персонаж", callback_data="inv_character"),
+    ])
+    kb.inline_keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
+    return kb
+
 
 character_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="↩️ Назад", callback_data="back")]
 ])
+
 
 wolf_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="🤫 Уйти тихо", callback_data="wolf_leave")],
