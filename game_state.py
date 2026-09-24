@@ -700,10 +700,9 @@ class GameState:
         return status_str
     def get_ui(self) -> str:
         """Статус-бар + последние 3 записи лога событий."""
-        max_width = self.max_line_length if self.display_mode == "phone" else None
         recent_logs = self.event_log[-3:] if self.event_log else []
         log_part = "\n".join(f"> {line}" for line in recent_logs)
-        status = self.get_status_bar(max_width)
+        status = self.get_status_bar()
         if log_part:
             return (
                 f"{status}\n"
@@ -712,6 +711,7 @@ class GameState:
                 "━━━━━━━━━━━━━━━━━━━"
             )
         return status
+
     
     def get_inventory_text(self) -> str:
         """Текст инвентаря с рангами качества и сортировкой еды сверху вниз."""
@@ -748,9 +748,12 @@ class GameState:
         return text
     
     def get_character_text(self) -> str:
-        """Текст экрана персонажа со случайным текстовым ASCII-силуэтом."""
-        hero_name = getattr(self, "player_name", "") or getattr(self, "character_name", "") or "Выживший"
-        silhouette = random.choice(CHARACTER_SILHOUETTES)
+        """Экран персонажа: имя + экипировка, без ASCII-силуэта."""
+        hero_name = (
+            getattr(self, "player_name", None)
+            or getattr(self, "character_name", None)
+            or "Выживший"
+        )
         pet_name = self.equipment.get("pet") or getattr(self, "companion_name", None) or "Пусто"
         slots = {
             "head": "🧢 Голова",
@@ -764,111 +767,18 @@ class GameState:
             "trinket": "💍 Безделушка",
             "pet": "🐾 Питомец",
         }
-        lines = []
+        lines = [f"👤 Герой: {hero_name}", ""]
         for slot, label in slots.items():
             if slot == "pet":
                 lines.append(f"{label}: {pet_name}")
             else:
                 lines.append(f"{label}: {self.equipment.get(slot) or 'Пусто'}")
-
-        return (
-            f"👤 Герой: {hero_name}\n\n"
-            f"```\n{silhouette}\n```\n\n"
-            + "\n".join(lines)
-        )
-
-
-
-CHARACTER_SILHOUETTES: List[str] = [
-    # 1. Мини-выживальщик
-    r""" (•_•)
-<)   )>
- /   \""",
-    # 2. Скиталец в меховой ушанке
-    r"""  /\_/\
- ( -.- )
- [#####]
- /|:::|\
-/ |:::| \
-  |===|
-  | | |
-  |_|_|""",
-    # 3. Путник в кепке
-    r"""  ___d
- (•‿•)
- /| |\
-  | |
- /   \""",
-    # 4. Настороженный лесоруб
-    r"""  [===]
-  (ಠ_ಠ)
- /|###|\
-  |###|
-  | | |
-  d   b""",
-    # 5. Гном-следопыт
-    r""" .-"-.
-( 'v' )
-<(===)>
- /   \""",
-    # 6. Приземистый бродяга
-    r"""  ___
- (o.o)
- ( : )
- /| |\
-  d   b""",
-    # 7. Капюшон с воротником
-    r""" /---\
-| . . |
-\  -  /
-(|:::|)
- |   |
- L   |""",
-    # 8. Скучающий скиталец
-    r""" (¬_¬)
- /|~|\
-(|===|)
- |   |
- /   \""",
-    # 9. Охотник в шапке-пирожке
-    r""" .-^-.
- (•.•)
- /) (\
- /   \""",
-    # 10. В дублёнке
-    r"""   ,-.
-  (•_•)
- /|===|\
-/ |===| \
-  [===]
-  /   \
- [     ]""",
-    # 11. Тонкий силуэт
-    r""" (o)
-/ | \
- / \""",
-    # 12. Со шрамом
-    r""" ,-"-.
-( `_• )
-<|   |>
- |   |
- /   \""",
-    # 13. В вязаной шапке
-    r""" (###)
- (o_o)
- /(   )\
-  | |
- (   )""",
-    # 14. Компактный часовой
-    r""" [o_o]
- /| |\
-< | | >
- /   \""",
-]
+        return "\n".join(lines)
 
 
 # Алиас для обратной совместимости: Game = GameState
 # Все модули, делающие from game_state import Game, получат тот же класс.
 Game = GameState
+
 
 

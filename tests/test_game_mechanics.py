@@ -521,22 +521,20 @@ def test_7_3_item_and_recipe_cards_formatting():
 
 
 # ==============================================================================
-# МЕХАНИКА 8: СИЛУЭТЫ ПЕРСОНАЖА И ПОШАГОВАЯ НАВИГАЦИЯ (3 ТЕСТА)
+# МЕХАНИКА 8: ЭКРАН ПЕРСОНАЖА И ПОШАГОВАЯ НАВИГАЦИЯ
 # ==============================================================================
 
-def test_8_1_character_silhouette_rendering():
-    """Тест 8.1: Экран персонажа содержит '👤 Герой: ...' и случайный ASCII-силуэт в блоке кода."""
-    from game_state import CHARACTER_SILHOUETTES
-
-    assert len(CHARACTER_SILHOUETTES) == 14
+def test_8_1_character_screen_format():
+    """Тест 8.1: Экран персонажа содержит '👤 Герой: ...' и экипировку, без ASCII-силуэта."""
     game = GameState()
     game.player_name = "Следопыт"
     text = game.get_character_text()
 
-    assert text.startswith("👤 Герой: Следопыт\n\n```\n")
-    assert "\n```\n\n🧢 Голова:" in text
-    assert any(s in text for s in CHARACTER_SILHOUETTES)
+    assert text.startswith("👤 Герой: Следопыт\n\n")
+    assert "```" not in text
+    assert "🧢 Голова:" in text
     assert "🐾 Питомец:" in text
+
 
 
 def test_8_2_nav_stack_step_by_step_back():
