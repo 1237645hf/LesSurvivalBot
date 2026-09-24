@@ -35,8 +35,12 @@ def get_active_hints(game_state) -> List[str]:
     # Факел в инвентаре
     torch_in_inventory = game_state.inventory.get("Факел", 0) > 0
 
-    # Факел экипирован в руку (активный слот)
-    torch_equipped = game_state.equipment.get("hand", None) == "Факел"
+    # Факел экипирован в руку (поддержка левой, правой или общего слота)
+    torch_equipped = (
+        game_state.equipment.get("hand_left") == "Факел"
+        or game_state.equipment.get("hand_right") == "Факел"
+        or game_state.equipment.get("hand") == "Факел"
+    )
 
     # Подсказка на крафт: ингредиенты собраны, факел ещё не скрафчен и не показывали подсказку
     if has_all_ingredients and not torch_in_inventory and not hint_torch_craft_shown:

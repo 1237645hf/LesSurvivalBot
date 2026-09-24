@@ -4,7 +4,7 @@ L1-L6 встроены из авторских файлов без редакт�
 L7 и семь вариантов финала хранятся в location_stories.py.
 """
 
-from location_stories import ENDING_STORY_TEXT
+from story.location_stories import ENDING_STORY_TEXT
 
 
 LOCATION_SOURCE_TEXTS = {

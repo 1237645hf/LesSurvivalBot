@@ -120,8 +120,15 @@ def cook_item(game: Any, recipe_id: str) -> Tuple[bool, str]:
 
     water_needed = int(recipe.get("water_from_flask", 0))
     flask = int(getattr(game, "flask_water", 0) or 0)
-    if water_needed > 0 and flask < water_needed:
-        return False, f"Нужно {water_needed} делений воды во фляге (есть {flask})."
+    has_flask_item = bool(getattr(game, "equipment", {}).get("flask"))
+    flask_water_available = flask if has_flask_item else 0
+
+    bottles_in_inv = inv.get("Бутылка воды", 0)
+    plain_water = inv.get("Вода", 0)
+    total_water = flask_water_available + bottles_in_inv * 20 + plain_water
+
+    if water_needed > 0 and total_water < water_needed:
+        return False, f"Недостаточно воды (нужно {water_needed}, доступно {total_water})."
 
     meat_name = None
     if recipe.get("needs_meat"):
@@ -141,7 +148,46 @@ def cook_item(game: Any, recipe_id: str) -> Tuple[bool, str]:
         _consume(inv, bark, 1)
 
     if water_needed > 0:
-        game.flask_water = flask - water_needed
+        remaining_needed = water_needed
+
+        # 1. Сначала берём из экипированной фляги/бутылки
+        if flask_water_available > 0:
+            take = min(flask_water_available, remaining_needed)
+            game.flask_water = flask_water_available - take
+            remaining_needed -= take
+            if game.flask_water <= 0:
+                container_name = getattr(game, "equipment", {}).get("flask") or "Бутылка воды"
+                if hasattr(game, "equipment"):
+                    game.equipment["flask"] = None
+                inv["Пустая бутылка"] = inv.get("Пустая бутылка", 0) + 1
+                if hasattr(game, "add_log"):
+                    game.add_log(f"Ёмкость «{container_name}» опустошена! В инвентаре осталась пустая бутылка.")
+
+        # 2. Если нужно ещё — берём из следующей бутылки в инвентаре
+        while remaining_needed > 0 and inv.get("Бутылка воды", 0) > 0:
+            inv["Бутылка воды"] -= 1
+            if inv["Бутылка воды"] <= 0:
+                del inv["Бутылка воды"]
+            if hasattr(game, "equipment"):
+                game.equipment["flask"] = "Бутылка воды"
+            take = min(20, remaining_needed)
+            game.flask_water = 20 - take
+            remaining_needed -= take
+            if game.flask_water <= 0:
+                if hasattr(game, "equipment"):
+                    game.equipment["flask"] = None
+                inv["Пустая бутылка"] = inv.get("Пустая бутылка", 0) + 1
+                if hasattr(game, "add_log"):
+                    game.add_log("Ёмкость «Бутылка воды» опустошена! В инвентаре осталась пустая бутылка.")
+            else:
+                if hasattr(game, "add_log"):
+                    game.add_log(f"Взята новая ёмкость «Бутылка воды» из инвентаря (осталось {game.flask_water}/20).")
+
+        # 3. Резервный забор обычной воды
+        if remaining_needed > 0 and inv.get("Вода", 0) > 0:
+            take = min(inv["Вода"], remaining_needed)
+            _consume(inv, "Вода", take)
+            remaining_needed -= take
 
     if meat_name:
         _consume(inv, meat_name, 1)

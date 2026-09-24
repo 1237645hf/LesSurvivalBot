@@ -27,23 +27,23 @@ class GameState:
     max_line_length: int = 35
     max_lines_per_msg: int = 10
     
-    # Базовые ресурсы
+    # Базовые ресурсы (стартовый инвентарь нового игрока)
     inventory: Dict[str, int] = field(default_factory=lambda: {
-        "Вода": 2,
-        "Еда": 3,
         "Спички": 1,
-        "Ветка": 1,
-        "Факел": 1,
+        "Вилка": 1,
+        "Кусок коры": 1,
+        "Сухпай": 3,
+        "Бутылка воды": 2,
     })
     
     # Емкость ресурсов
-    water_capacity: int = 5
+    water_capacity: int = 20
     food_capacity: int = 10
     
-    # Жизненные показатели
+    # Жизненные показатели (стартовые значения нового игрока)
     hp: int = 100
-    hunger: int = 50
-    thirst: int = 75
+    hunger: int = 20
+    thirst: int = 60
     
     # Экипировка (единый словарь с унифицированными ключами)
     equipment: Dict[str, str] = field(default_factory=lambda: {
@@ -54,6 +54,7 @@ class GameState:
         "back": None,
         "hand_right": None,
         "hand_left": None,
+        "flask": None,
         "pet": None,
         "trinket": None,
     })
@@ -131,14 +132,27 @@ class GameState:
     ap: int = 5  # Действия в день
     day: int = 1  # Текущий день
     
-    # История событий
+    # История событий (стартовое сообщение без временной метки)
     event_log: List[str] = field(default_factory=lambda: [
-        "[00:00] Ты проснулся в лесу. Что будешь делать?",
+        "Ты проснулся в лесу. Что будешь делать?",
     ])
     
     # Статус кот-компаньона
     companion_name: str = "Кот"
     companion_status: str = "alive"
+    
+    # Поля совместимости из Game (ранее отсутствовали в GameState)
+    location: str = "Лесной старт"
+    unlocked_locations: List[str] = field(default_factory=lambda: [
+        "Лесной старт", "Ручей с Змеями", "Скромоная Лощина",
+        "Просека Охотников", "Яр Слизней", "Мохнатая Пещера", "Вершина Святилища",
+    ])
+    current_location_state: str = "forest_start"
+    found_branch_once: bool = False
+    karma_goal: int = 100
+    
+    # Счётчик исследований с факелом (триггер для истории волка)
+    torch_research_count: int = 0
     
     # Флаг инициализации
     is_initialized: bool = False
@@ -173,6 +187,11 @@ class GameState:
     def energy(self, value):
         self.ap = value
 
+    @property
+    def log(self):
+        """Безопасный алиас для последних записей лога событий."""
+        return self.event_log[-3:] if hasattr(self, "event_log") and self.event_log else []
+
     def calculate_daily_ap(self) -> int:
         """Рассчитать AP строго по уровню HP с учетом экипировки.
 
@@ -195,6 +214,9 @@ class GameState:
         for item in getattr(self, "equipment", {}).values():
             if isinstance(item, dict):
                 equipment_bonus += int(item.get("ap_bonus", item.get("ap_modifier", 0)))
+        # Пока факел экипирован в руке — он даёт +1 AP
+        if self.equipment.get("hand_left") == "Факел" or self.equipment.get("hand") == "Факел":
+            equipment_bonus += 1
         # Добавляем отдельный бонус от поля equipment_ap_bonus (если есть)
         equipment_bonus += int(getattr(self, "equipment_ap_bonus", 0))
 
@@ -276,7 +298,7 @@ class GameState:
         return result
 
     def light_campfire(self):
-        """Развести костёр: 1 AP, 7 голода, 15 жажды.
+        """Развести костёр: 2 AP, 7 голода, 18 жажды.
 
         Фиксированно устанавливает:
             self.campfire_max_durability = 10
@@ -285,7 +307,7 @@ class GameState:
 
         Возвращает:
             dict с тем же набором ключей, что и consume_action, плюс:
-                lit (bool) — получилось ли развести (AP ≥ 1)
+                lit (bool) — получилось ли развести (AP ≥ 2)
         """
         result = {
             "success": False,
@@ -297,7 +319,7 @@ class GameState:
             "hunger_damage_to_hp": 0,
             "thirst_damage_to_hp": 0,
         }
-        if self.ap < 1:
+        if self.ap < 2:
             return result
 
         old_ap = self.ap
@@ -305,10 +327,10 @@ class GameState:
         old_thirst = self.thirst
         old_hp = self.hp
 
-        self.ap = max(0, self.ap - 1)
+        self.ap = max(0, self.ap - 2)
 
         hunger_cost = get_base_resource_cost(self, base_cost=7)
-        thirst_cost = get_thirst_base_cost(self, base_cost=15)
+        thirst_cost = get_thirst_base_cost(self, base_cost=18)
 
         new_hunger = old_hunger - hunger_cost
         if new_hunger < 0:
@@ -326,7 +348,7 @@ class GameState:
         if overflow_hp_damage > 0:
             self.hp = max(1, old_hp - overflow_hp_damage)
 
-        # Затраты на розжиг: 1 AP, 7 голода и 15 жажды
+        # Затраты на розжиг: 2 AP, 7 голода и 18 жажды
         self.campfire_max_durability = 10
         self.campfire_durability = self.campfire_max_durability
         self.campfire_active = True
@@ -356,12 +378,15 @@ class GameState:
         self.equipment.setdefault("pet", None)
         self.equipment.setdefault("hand_right", None)
         self.equipment.setdefault("hand_left", None)
+        self.equipment.setdefault("flask", None)
     
     def add_log(self, message: str, source: str = "game"):
-        """Добавить запись в лог событий."""
+        """Добавить запись в лог событий (макс. 50 записей)."""
         timestamp = datetime.now().strftime("%H:%M")
         self.event_log.append(f"[{timestamp}] {message}")
-        # Не ограничивать длину, чтобы история росла
+        # Ограничение: хранить не более 50 последних записей
+        if len(self.event_log) > 50:
+            self.event_log = self.event_log[-50:]
     
     def sleep_and_turn_day(self) -> int:
         """Сменить день (сон): ресурсы, костёр за ночь, AP, факел."""
@@ -377,13 +402,24 @@ class GameState:
                 self.campfire_active = False
                 self.add_log("Костёр потух. Ты не уследил за огнём.", "sleep")
 
-        # 3. Факел в руке прогорает
-        torch_in_hand = self.equipment.get("hand") == "Факел"
+        # 3. Факел в руке ночью сгорает (утром бонусов не даёт, а его +1 AP исчезает)
+        torch_in_hand = (
+            self.equipment.get("hand") == "Факел"
+            or self.equipment.get("hand_left") == "Факел"
+            or self.equipment.get("hand_right") == "Факел"
+        )
         if torch_in_hand:
-            self.equipment["hand"] = None
-            self.add_log("За ночь твой факел прогорел.", "sleep")
+            if self.equipment.get("hand") == "Факел":
+                self.equipment["hand"] = None
+            if self.equipment.get("hand_left") == "Факел":
+                self.equipment["hand_left"] = None
+            if self.equipment.get("hand_right") == "Факел":
+                self.equipment["hand_right"] = None
+            if "Факел" in self.inventory:
+                del self.inventory["Факел"]
+            self.add_log("За ночь твой факел прогорел и погас.", "sleep")
 
-        # 4. AP на новый день
+        # 4. AP на новый день (факел сгорел, поэтому рассчитывается без его бонуса)
         self.reset_daily_ap()
 
         # 5. Без костра утром — штраф −1 AP (не ниже 1)
@@ -477,6 +513,9 @@ class GameState:
             "unlocked_locations": list(getattr(self, "unlocked_locations", [])),
             "current_location_state": getattr(self, "current_location_state", "forest_start"),
             "found_branch_once": getattr(self, "found_branch_once", False),
+            "location": getattr(self, "location", self.current_location),
+            "karma_goal": getattr(self, "karma_goal", 100),
+            "torch_research_count": getattr(self, "torch_research_count", 0),
             "campfire_active": bool(getattr(self, "campfire_active", False)),
             "campfire_durability": int(getattr(self, "campfire_durability", 0)),
             "campfire_max_durability": int(getattr(self, "campfire_max_durability", 10)),
@@ -599,45 +638,62 @@ class GameState:
             status_str = status_str.replace(f"{weather_icon} ", weather_icon, 1)
         return status_str
     def get_ui(self) -> str:
-        """Получить компактный статус-бар персонажа и дневную погоду."""
+        """Статус-бар + последние 3 записи лога событий."""
         max_width = self.max_line_length if self.display_mode == "phone" else None
-        status_bar = self.get_status_bar(max_width)
-        
-        # Добавляем активные подсказки, если они есть
-        hints = get_active_hints(self)
-        if hints:
-            status_bar += "\n" + "\n".join(hints)
-        
-        return status_bar
+        recent_logs = self.event_log[-3:] if self.event_log else []
+        log_part = "\n".join(f"> {line}" for line in recent_logs)
+        status = self.get_status_bar(max_width)
+        if log_part:
+            return (
+                f"{status}\n"
+                "━━━━━━━━━━━━━━━━━━━\n"
+                f"{log_part}\n"
+                "━━━━━━━━━━━━━━━━━━━"
+            )
+        return status
     
     def get_inventory_text(self) -> str:
-        """Получить текст инвентаря для отображения в боте."""
+        """Текст инвентаря с пометкой экипированных предметов."""
+        equipped_hands = {
+            self.equipment.get("hand_left"),
+            self.equipment.get("hand_right"),
+            self.equipment.get("hand"),
+        }
         lines = []
         for item, count in self.inventory.items():
             if count > 0:
-                line = f"• {item} x{count}" if count > 1 else f"• {item}"
+                item_clean = item.replace(" 🔥", "").replace("🔥", "")
+                equipped_mark = " (в руке)" if item in equipped_hands or item_clean in equipped_hands else ""
+                line = f"• {item} x{count}{equipped_mark}" if count > 1 else f"• {item}{equipped_mark}"
                 lines.append(line)
-        
         text = "Инвентарь:\n" + "\n".join(lines) if lines else "Инвентарь пуст"
         text += "\n━━━━━━━━━━━━━━━━━━━"
         return text
     
     def get_character_text(self) -> str:
-        """Получить текст персонажа для отображения в боте."""
+        """Текст экипировки персонажа."""
+        pet_name = self.equipment.get("pet") or getattr(self, "companion_name", None) or "Пусто"
         slots = {
-            "head": "🧢 Голова:",
-            "torso": "👕 Тело:",
-            "pants": "👖 Ноги:",
-            "boots": "🥾 Обувь:",
-            "hand_right": "🗡️ Правая рука:",
-            "hand_left": "🔦 Левая рука:",
-            "back": "🎒 Спина:",
-            "pet": "🐾 Питомец:",
-            "trinket": "💍 Аксессуар:",
+            "head": "🧢 Голова",
+            "torso": "👕 Торс",
+            "back": "🎒 Спина",
+            "pants": "👖 Штаны",
+            "boots": "🥾 Ботинки",
+            "hand_right": "🗡️ Правая рука",
+            "hand_left": "🔦 Левая рука",
+            "flask": "🧴 Фляга / Бутылка",
+            "trinket": "💍 Безделушка",
+            "pet": "🐾 Питомец",
         }
-        lines = [f"{name}: {self.equipment.get(slot) or 'Пусто'}" for slot, name in slots.items()]
+        lines = []
+        for slot, label in slots.items():
+            if slot == "pet":
+                lines.append(f"{label}: {pet_name}")
+            else:
+                lines.append(f"{label}: {self.equipment.get(slot) or 'Пусто'}")
         return "Персонаж:\n\n" + "\n".join(lines)
 
 
-# Глобальное состояние игры
-game = GameState()
+# Алиас для обратной совместимости: Game = GameState
+# Все модули, делающие from game_state import Game, получат тот же класс.
+Game = GameState

@@ -74,7 +74,7 @@ def get_trap_description(location_id: int = None) -> List[str]:
         "Охотничьи ловушки доступны с **Просеки Охотников (L4)**.",
         "После открытия — не более одной ловушки на локацию (L1–L7).",
         "Проверка улова — после **сна** (новый день).",
-        "40% — ловушка ломается без добычи; 60% — успех и лут по таблице локации.",
+        "40% — ловушка пуста, 20% — ломается, 40% — добыча по таблице локации.",
     ]
 
 
@@ -155,13 +155,22 @@ def roll_trap_roll(game_state, location_id: int) -> Optional[Dict]:
     if not trap or not trap.get("is_active"):
         return None
 
-    if random.randint(1, 100) <= 40:
+    roll = random.randint(1, 100)
+    if roll <= 40:
+        # 40% — ловушка пустая (остаётся активной, но улова нет)
+        trap["is_broken"] = False
+        trap["pending_animal"] = None
+        trap["pending_loot"] = None
+        return trap
+    elif roll <= 60:
+        # 20% (41-60) — ловушка ломается
         trap["is_broken"] = True
         trap["is_active"] = False
         trap["pending_animal"] = None
         trap["pending_loot"] = None
         return trap
 
+    # 40% (61-100) — успешная добыча
     entry = _pick_animal(location_id)
     if not entry:
         return trap

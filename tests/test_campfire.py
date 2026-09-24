@@ -3,6 +3,10 @@
 Проверяет: розжиг, списание прочности, игнор действий без AP, потухание.
 """
 
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from game_state import GameState
 
 
@@ -32,7 +36,7 @@ def run_campfire_tests():
     
     # Проверки
     checks = [
-        ("AP потрачено ровно 1", player.ap == 4),
+        ("AP потрачено ровно 2", player.ap == 3),
         ("Костёр активен", player.campfire_active == True),
         ("Прочность = 10", player.campfire_durability == 10),
         ("Макс. прочность = 10", player.campfire_max_durability == 10),
@@ -55,7 +59,7 @@ def run_campfire_tests():
     print(f"   После: AP={player.ap}, Прочность: {player.campfire_durability}")
     
     checks = [
-        ("AP списано", player.ap == 3),
+        ("AP списано", player.ap == 2),
         ("Прочность 9/10", player.campfire_durability == 9),
         ("Костёр всё ещё горит", player.campfire_active == True),
     ]

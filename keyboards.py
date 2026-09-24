@@ -71,6 +71,14 @@ def get_drop_quantity_kb(item_name: str):
         [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
     ])
 
+def get_bottle_actions_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🧴 Надеть на пояс (в слот фляги)", callback_data="equip_bottle_flask")],
+        [InlineKeyboardButton(text="💧 Сделать глоток (+15 жажды)", callback_data="drink_bottle_single")],
+        [InlineKeyboardButton(text="↩️ Назад в инвентарь", callback_data="action_2")],
+    ])
+
+
 def get_main_kb(game):
     row1 = [
         InlineKeyboardButton(text="🔍 Исследовать", callback_data="action_1"),
@@ -82,14 +90,17 @@ def get_main_kb(game):
         m = int(getattr(game, "campfire_max_durability", 10) or 10)
         row1.append(InlineKeyboardButton(text=f"🔥 Костёр {d}/{m}", callback_data="menu_campfire"))
 
-    water = game.inventory.get("Вода", 0)
-    drink_text = f"💧 Пить ({water}/{game.water_capacity})" if water > 0 else "💧 Пить (пусто)"
+    row2 = []
+    # Кнопка «Пить» отображается на главном экране ТОЛЬКО когда бутылка/фляга надета в слот flask
+    if game.equipment.get("flask"):
+        water_left = int(getattr(game, "flask_water", 0) or 0)
+        row2.append(InlineKeyboardButton(text=f"💧 Пить ({water_left}/20)", callback_data="action_3"))
+
+    row2.append(InlineKeyboardButton(text="😴 Спать", callback_data="action_4"))
+
     kb = InlineKeyboardMarkup(inline_keyboard=[
         row1,
-        [
-            InlineKeyboardButton(text=drink_text, callback_data="action_3"),
-            InlineKeyboardButton(text="😴 Спать", callback_data="action_4"),
-        ],
+        row2,
     ])
     if game.weather in {"rain", "storm"}:
         kb.inline_keyboard.append([

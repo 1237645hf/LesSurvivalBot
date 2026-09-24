@@ -217,6 +217,19 @@ ITEMS: Dict[str, Dict] = {
         "can_use": True,
         "stackable": True,
     },
+    "Бутылка воды": {
+        "description": "Стеклянная бутылка чистой воды (20 глотков). Можно экипировать в слот фляги или выпить.",
+        "type": "drink",
+        "effects": {"thirst": 15},
+        "can_use": True,
+        "stackable": True,
+    },
+    "Пустая бутылка": {
+        "description": "Пустая стеклянная бутылка. Можно наполнить водой у ручья или во время дождя.",
+        "type": "tool",
+        "can_use": False,
+        "stackable": True,
+    },
     "Сырое мясо": {
         "description": "Свежее мясо с ловушки.",
         "type": "food",
