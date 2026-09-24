@@ -1,26 +1,9 @@
 from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
 )
 
 from modules.items import is_item_consumable
-
-
-def get_bottom_menu():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🏠 Главное меню / Перезапуск")],
-            [
-                KeyboardButton(text="📊 Статус"),
-                KeyboardButton(text="🎒 Инвентарь"),
-                KeyboardButton(text="⚙️ Настройки"),
-            ],
-        ],
-        resize_keyboard=True,
-        is_persistent=True,
-    )
 
 
 def get_settings_kb(game):

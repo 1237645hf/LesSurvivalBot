@@ -1,5 +1,9 @@
 # Краткий Базис Разработки
 
+> [!NOTE]
+> **Канон проекта:** актуальные спецификации механик, точные цифры баланса, формулы и дерево модулей зафиксированы в **`README.md`** (включая блок STRICT RULES).
+> Настоящий документ — концептуальный конспект архитектурных паттернов. Если поля или параметры расходятся с кодом и `README.md`, источником правды всегда являются `README.md` и `game_state.py`.
+
 > **Основной принцип:** "Толстый модуль, тонкий загрузчик" — `main.py` оркестрирует, делегирует специалистам. Состояние централизовано в `GameState`, но доступно глобально.
 
 ---
@@ -10,13 +14,12 @@
 Единый источник правды. Хранит всё: карму, инвентарь, экипировку, историю.
 
 **Ключевые поля:**
-- **`inventory`** — `Counter` или `Dict`, где предметы + кол-во
-- **`equipment`** — слоты (`head`, `chest`, `legs`, `hands`, `feet`, `back`)
+- **`inventory`** — Counter или Dict, где предметы + кол-во
+- **`equipment`** — слоты (`head`, `chest`, `legs`, `feet`, `hand_left`, `hand_right`, `flask`, `pet`)
 - **`karma`** — 6 измерений (`heroic`, `brutal`, `gentle`, `clever`, `reckless`, `mysterious`)
-- **`story_state`** — текущий нарративный контекст ("wolf_flee", "cat_choice")
-- **`current_location_key`** — предмет-триггер текущей локации ("Факел", "Спички")
-- **`water_capacity`** / **`food_capacity`** — лимиты ресурсов
+- **`story_state`** — текущий нарративный контекст
 - **`weather`** — атмосферный контекст ("clear", "rain", "cloudy")
+
 
 ### 1.2. Методы-скальпели
 Каждый метод делает одну вещь идеально:
@@ -243,8 +246,7 @@ WEBHOOK_URL = f"{BASE_URL}{WEBHOOK_PATH}"
 
 ```python
 from game_state import GameState
-from location_stories import handle_location_2_ruchey
-from location_crafts import handle_craft_location_2_ruchey
+from story.location_stories import handle_location_2_ruchey
 from keyboards import get_main_kb, wolf_kb, cat_kb
 ```
 

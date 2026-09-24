@@ -50,8 +50,7 @@ LesSurvivalBot/
 ├── story/
 │   ├── __init__.py
 │   ├── location_sources.py  — Канонические исходные тексты локаций L1–L6
-│   ├── location_stories.py  — Интерактивные нарративные ветки L1–L7, 7 концовок (resolve_ending, ending_text)
-│   └── location_crafts.py   — Локационные рецепты и специфичные заготовки
+│   └── location_stories.py  — Интерактивные нарративные ветки L1–L7, 7 концовок (resolve_ending, ending_text)
 ├── modules/
 │   ├── __init__.py
 │   ├── items.py             — Реестр предметов ITEMS, типы, эффекты расходников, is_item_consumable

@@ -14,6 +14,7 @@ import pytest
 from game_state import GameState
 from crafts import can_craft, do_craft, handle_craft, has_torch
 from main import use_consumable
+from keyboards import get_main_kb
 from modules.cooking import cook_item
 from modules import traps, items
 
@@ -175,6 +176,24 @@ def test_2_3_campfire_morning_cold_penalty_when_extinguished():
 
     # Базовое AP = 5, но из-за холода без костра: 5 - 1 = 4 AP
     assert game.ap == 4
+
+
+def test_2_4_campfire_main_keyboard_button():
+    """Тест 2.4: Отображение кнопки костра на главном экране только пока он горит."""
+    game = GameState()
+    game.campfire_durability = 9
+    game.campfire_active = True
+
+    # Горящий костёр: кнопка присутствует
+    kb_hot = get_main_kb(game)
+    btn_texts_hot = [btn.text for row in kb_hot.inline_keyboard for btn in row]
+    assert any("🔥 Костёр 9/10" in t for t in btn_texts_hot)
+
+    # Потухший костёр: кнопки костра нет на главном экране
+    game.campfire_active = False
+    kb_cold = get_main_kb(game)
+    btn_texts_cold = [btn.text for row in kb_cold.inline_keyboard for btn in row]
+    assert not any("🔥 Костёр" in t for t in btn_texts_cold)
 
 
 # ==============================================================================

@@ -10,7 +10,7 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Message, ReplyKeyboardRemove
 from aiogram.filters import CommandStart, Command
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
-from pymongo import MongoClient  # noqa: F401 вЂ” РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РІ services/database.py
+from pymongo import MongoClient
 
 from game_math import (
     process_damage,
@@ -46,33 +46,33 @@ from modules.items import (
     get_item_display_name,
 )
 
-# Р“РѕС‚РѕРІРєР°: РµРґРёРЅС‹Р№ РёСЃС‚РѕС‡РЅРёРє вЂ” modules/cooking.py (РµРґР°.txt). CAMPFIRE_RECIPES СѓРґР°Р»С‘РЅ.
+# Готовка: единый источник — modules/cooking.py (еда.txt). CAMPFIRE_RECIPES удалён.
 
 
 def format_resource_log_text(deltas: dict) -> str:
-    """РЎРѕР±СЂР°С‚СЊ СЃС‚СЂРѕРєСѓ Р»РѕРіР° СЃС‚СЂРѕРіРѕ РїРѕ Р¤РђРљРўРР§Р•РЎРљРРњ РґРµР»СЊС‚Р°Рј РёР· consume_action/light_campfire.
+    """Собрать строку лога строго по ФАКТИЧЕСКИМ дельтам из consume_action/light_campfire.
 
-    РџСЂРёРјРµСЂ РІС‹РІРѕРґР°: В«Р“РѕР»РѕРґ -2, Р–Р°Р¶РґР° -1В» РёР»Рё В«Р“РѕР»РѕРґ -1, HP -3 (РіРѕР»РѕРґР°РЅРёРµ)В».
+    Пример вывода: «Голод -2, Жажда -1» или «Голод -1, HP -3 (голодание)».
     """
     parts = []
     if deltas.get("delta_hunger"):
-        parts.append(f"Р“РѕР»РѕРґ {deltas['delta_hunger']:+d}")
+        parts.append(f"Голод {deltas['delta_hunger']:+d}")
     if deltas.get("delta_thirst"):
-        parts.append(f"Р–Р°Р¶РґР° {deltas['delta_thirst']:+d}")
+        parts.append(f"Жажда {deltas['delta_thirst']:+d}")
     hp_delta = deltas.get("delta_hp", 0)
     if hp_delta:
         hp_reasons = []
         if deltas.get("hunger_damage_to_hp"):
-            hp_reasons.append("РіРѕР»РѕРґР°РЅРёРµ")
+            hp_reasons.append("голодание")
         if deltas.get("thirst_damage_to_hp"):
-            hp_reasons.append("РѕР±РµР·РІРѕР¶РёРІР°РЅРёРµ")
+            hp_reasons.append("обезвоживание")
         reason = f" ({', '.join(hp_reasons)})" if hp_reasons else ""
         parts.append(f"HP {hp_delta:+d}{reason}")
     return ", ".join(parts)
 
 
 def load_env_file(path: str = ".env"):
-    """Р—Р°РіСЂСѓР·РёС‚СЊ РїРµСЂРµРјРµРЅРЅС‹Рµ РёР· .env, РµСЃР»Рё РѕРЅРё РµС‰С‘ РЅРµ Р·Р°РґР°РЅС‹ РІ РѕРєСЂСѓР¶РµРЅРёРё."""
+    """Загрузить переменные из .env, если они ещё не заданы в окружении."""
     env_path = Path(path)
     if not env_path.exists():
         return
@@ -93,7 +93,6 @@ from keyboards import (
     get_main_kb,
     get_locations_kb,
     get_settings_kb,
-    get_bottom_menu,
     get_use_item_kb,
     get_drop_item_kb,
     get_drop_quantity_kb,
@@ -122,31 +121,31 @@ from story.location_stories import (
     resolve_ending,
     ENDING_TITLES,
 )
-# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
-# РќРђРЎРўР РћР™РљР
-# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ──────────────────────────────────────────────────────────────────────────────
+# НАСТРОЙКИ
+# ──────────────────────────────────────────────────────────────────────────────
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
-    raise ValueError("TOKEN РЅРµ РЅР°Р№РґРµРЅ!")
+    raise ValueError("TOKEN не найден!")
 
 MONGO_URI = os.getenv("MONGO_URI") or "mongodb://localhost:27017/test"
 
 logging.basicConfig(level=logging.INFO)
-logging.info("Р‘РѕС‚ Р·Р°РїСѓСЃРєР°РµС‚СЃСЏ РІ СЂРµР¶РёРјРµ Telegram polling")
+logging.info("Бот запускается в режиме Telegram polling")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Р“Р»РѕР±Р°Р»СЊРЅС‹Рµ СЃР»РѕРІР°СЂРё РґР»СЏ С‚СЂРµРєРёРЅРіР° СЃРѕСЃС‚РѕСЏРЅРёР№ (Р·Р°РїСЂРѕСЃС‹, СЃРѕРѕР±С‰РµРЅРёСЏ)
+# Глобальные словари для трекинга состояний (запросы, сообщения)
 last_request_time = {}
 last_active_msg_id = {}
 
-# Р РµРіРёСЃС‚СЂР°С†РёСЏ СЃРёСЃС‚РµРјРЅС‹С… РєРѕРјР°РЅРґ Telegram РґР»СЏ СЃРёРЅРµР№ РєРЅРѕРїРєРё Menu
-# set_my_commands РІС‹Р·С‹РІР°РµС‚СЃСЏ РІ run_bot() СЃ await
+# Регистрация системных команд Telegram для синей кнопки Menu
+# set_my_commands вызывается в run_bot() с await
 
-# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
-# Р‘РђР—Рђ Р”РђРќРќР«РҐ
-# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ──────────────────────────────────────────────────────────────────────────────
+# БАЗА ДАННЫХ
+# ──────────────────────────────────────────────────────────────────────────────
 from services.database import (
     players_collection,
     load_game,
@@ -157,12 +156,12 @@ from services.database import (
 
 
 ITEM_DESCRIPTIONS = {
-    "РЎРїРёС‡РєРё": "РќСѓР¶РЅС‹ РґР»СЏ СЂРѕР·Р¶РёРіР° Рё СЃРѕР·РґР°РЅРёСЏ С„Р°РєРµР»Р°.",
-    "Р’РµС‚РєР°": "РџРѕРґС…РѕРґРёС‚ РґР»СЏ РєСЂР°С„С‚Р° РїСЂРѕСЃС‚С‹С… РїСЂРµРґРјРµС‚РѕРІ.",
-    "Р¤Р°РєРµР»": "РћСЃРІРµС‰Р°РµС‚ РїСѓС‚СЊ Рё РїРѕРјРѕРіР°РµС‚ РїРµСЂРµР¶РёС‚СЊ РѕРїР°СЃРЅС‹Рµ РІСЃС‚СЂРµС‡Рё.",
-    "РЎР»Р°РЅС†РµРІР°СЏ РїР»Р°СЃС‚РёРЅР°": "РљР»СЋС‡РµРІРѕР№ РјР°С‚РµСЂРёР°Р» РґР»СЏ СЃРЅР°СЂСЏР¶РµРЅРёСЏ Сѓ СЂСѓС‡СЊСЏ.",
-    "РЎР»Р°РЅРµРІС‹Р№ С€Р»РµРј": "Р—Р°С‰РёС‰Р°РµС‚ РіРѕР»РѕРІСѓ РѕС‚ РѕРїР°СЃРЅРѕСЃС‚РµР№ Р»РѕРєР°С†РёРё.",
-    "РЎР»Р°РЅРµРІР°СЏ Р±СЂРѕРЅСЏ": "Р—Р°С‰РёС‰Р°РµС‚ РіСЂСѓРґСЊ РІ РїСѓС‚РµС€РµСЃС‚РІРёРё.",
+    "Спички": "Нужны для розжига и создания факела.",
+    "Ветка": "Подходит для крафта простых предметов.",
+    "Факел": "Освещает путь и помогает пережить опасные встречи.",
+    "Сланцевая пластина": "Ключевой материал для снаряжения у ручья.",
+    "Сланевый шлем": "Защищает голову от опасностей локации.",
+    "Сланевая броня": "Защищает грудь в путешествии.",
 }
 
 
@@ -184,38 +183,38 @@ def get_callback_answer(callback):
     data = callback.data or ""
     game = games.get(callback.from_user.id)
     if data == "inv_inspect" and (not game or not get_inspectable_items(game)):
-        return "РЈ РІР°СЃ РЅРµС‚ РєР»СЋС‡РµРІС‹С… РїСЂРµРґРјРµС‚РѕРІ РґР»СЏ РїРѕРґСЂРѕР±РЅРѕРіРѕ РѕСЃРјРѕС‚СЂР°", True
+        return "У вас нет ключевых предметов для подробного осмотра", True
     if data in ("inv_use", "inv_drop") and (
         not game or not any(count > 0 for count in game.inventory.values())
     ):
-        return ("РќРµС‡РµРіРѕ РёСЃРїРѕР»СЊР·РѕРІР°С‚СЊ" if data == "inv_use" else "РќРµС‡РµРіРѕ РІС‹РєРёРґС‹РІР°С‚СЊ"), True
+        return ("Нечего использовать" if data == "inv_use" else "Нечего выкидывать"), True
     if data == "inv_use" and not get_usable_items(game):
-        return "РќРµС‡РµРіРѕ РёСЃРїРѕР»СЊР·РѕРІР°С‚СЊ", True
+        return "Нечего использовать", True
     return None, False
 
 
 def use_consumable(item, game):
-    """РСЃРїРѕР»СЊР·РѕРІР°С‚СЊ РїСЂРµРґРјРµС‚ СЃ СѓС‡С‘С‚РѕРј РґРёРЅР°РјРёС‡РµСЃРєРёС… РєРѕСЌС„С„РёС†РёРµРЅС‚РѕРІ.
+    """Использовать предмет с учётом динамических коэффициентов.
 
-    РСЃС‚РѕС‡РЅРёРє РїСЂР°РІРґС‹ РїРѕ СЌС„С„РµРєС‚Р°Рј вЂ” modules/items.py (get_item_effects).
+    Источник правды по эффектам — modules/items.py (get_item_effects).
     """
-    if item == "Р’РѕРґР°":
+    if item == "Вода":
         hunger_mult = get_resource_multiplier(game, "hunger")
         water_cost = 1 + max(0, (30 - game.hunger) // 10)
-        if game.inventory.get("Р’РѕРґР°", 0) < water_cost:
-            return f"РќСѓР¶РЅРѕ РІРѕРґС‹: {water_cost}. Р’ РёРЅРІРµРЅС‚Р°СЂРµ РЅРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РІРѕРґС‹."
-        game.inventory["Р’РѕРґР°"] -= water_cost
-        if game.inventory["Р’РѕРґР°"] <= 0:
-            del game.inventory["Р’РѕРґР°"]
+        if game.inventory.get("Вода", 0) < water_cost:
+            return f"Нужно воды: {water_cost}. В инвентаре недостаточно воды."
+        game.inventory["Вода"] -= water_cost
+        if game.inventory["Вода"] <= 0:
+            del game.inventory["Вода"]
         thirst_restore = 10 * get_resource_multiplier(game, "thirst")
         game.thirst = min(100, game.thirst + thirst_restore)
-        result = f"Р–Р°Р¶РґР° РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅР° РЅР° {int(thirst_restore)}. РџРѕС‚СЂР°С‡РµРЅРѕ РІРѕРґС‹: {water_cost}."
+        result = f"Жажда восстановлена на {int(thirst_restore)}. Потрачено воды: {water_cost}."
     else:
         effects = get_item_effects(item)
 
-        if not effects and "Р·РµР»СЊ" in item.lower():
+        if not effects and "зель" in item.lower():
             effects = {"hp": 25}
-        if not effects and item == "Р•РґР°":
+        if not effects and item == "Еда":
             effects = {"hunger": 30}
 
         if not effects:
@@ -227,21 +226,21 @@ def use_consumable(item, game):
             hunger_mult = get_resource_multiplier(game, "hunger")
             hunger_val = int(effects["hunger"] * hunger_mult)
             game.hunger = min(100, game.hunger + hunger_val)
-            restore_parts.append(f"Р“РѕР»РѕРґ СѓС‚РѕР»РµРЅ ({hunger_val} РµРґ.)")
+            restore_parts.append(f"Голод утолен ({hunger_val} ед.)")
 
         if "thirst" in effects:
             thirst_mult = get_resource_multiplier(game, "thirst")
             thirst_val = int(effects["thirst"] * thirst_mult)
             game.thirst = min(100, game.thirst + thirst_val)
-            restore_parts.append(f"Р–Р°Р¶РґР° РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅР° ({thirst_val} РµРґ.)")
+            restore_parts.append(f"Жажда восстановлена ({thirst_val} ед.)")
 
         if "hp" in effects:
             hp_val = effects["hp"]
             game.hp = min(100, game.hp + hp_val)
             if hp_val >= 0:
-                restore_parts.append(f"Р—РґРѕСЂРѕРІСЊРµ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРѕ ({hp_val} РµРґ.)")
+                restore_parts.append(f"Здоровье восстановлено ({hp_val} ед.)")
             else:
-                restore_parts.append(f"РџРѕР»СѓС‡РµРЅ СѓСЂРѕРЅ ({abs(hp_val)} РµРґ.)")
+                restore_parts.append(f"Получен урон ({abs(hp_val)} ед.)")
 
         if "poison" in effects and effects["poison"]:
             poison_val = effects["poison"]
@@ -270,33 +269,33 @@ def use_consumable(item, game):
         if game.inventory[item] <= 0:
             del game.inventory[item]
 
-    game.add_log(f"РСЃРїРѕР»СЊР·РѕРІР°РЅРѕ: {item}. {result}")
-    return f"РСЃРїРѕР»СЊР·РѕРІР°РЅРѕ: {item}. {result}\n\n{game.get_ui()}"
+    game.add_log(f"Использовано: {item}. {result}")
+    return f"Использовано: {item}. {result}\n\n{game.get_ui()}"
 
-# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
-# РџР РР’Р•РўРЎРўР’РР•
-# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ──────────────────────────────────────────────────────────────────────────────
+# ПРИВЕТСТВИЕ
+# ──────────────────────────────────────────────────────────────────────────────
 GUIDE_TEXT = (
-    "Р”РѕР±СЂРѕ РїРѕР¶Р°Р»РѕРІР°С‚СЊ РІ Р»РµСЃ РІС‹Р¶РёРІР°РЅРёСЏ!\n\n"
-    "РљСЂР°С‚РєРёР№ РіР°Р№Рґ:\n"
-    "вќ¤пёЏ Р—РґРѕСЂРѕРІСЊРµ\n"
-    "рџЌ– РЎС‹С‚РѕСЃС‚СЊ\n"
-    "рџ’§ Р–Р°Р¶РґР°\n"
-    "вљЎ Р”РµР№СЃС‚РІРёСЏ РЅР° РґРµРЅСЊ\n\n"
-    "РљР°СЂРјР° РїРѕРјРѕР¶РµС‚ РІС‹Р±СЂР°С‚СЊСЃСЏ.\n\n"
-    "РџРѕРїСЂРѕР±СѓР№ РІС‹Р¶РёС‚СЊ, РґСЂСѓРі РјРѕР№..."
+    "Добро пожаловать в лес выживания!\n\n"
+    "Краткий гайд:\n"
+    "❤️ Здоровье\n"
+    "🍖 Сытость\n"
+    "💧 Жажда\n"
+    "⚡ Действия на день\n\n"
+    "Карма поможет выбраться.\n\n"
+    "Попробуй выжить, друг мой..."
 )
 
-# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
-# Р’РЎРџРћРњРћР“РђРўР•Р›Р¬РќРђРЇ Р¤РЈРќРљР¦РРЇ РЎ RETRY РџР Р FLOOD
-# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ──────────────────────────────────────────────────────────────────────────────
+# ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ С RETRY ПРИ FLOOD
+# ──────────────────────────────────────────────────────────────────────────────
 async def safe_delete_message(chat_id: int, message_id: int):
     try:
         await bot.delete_message(chat_id, message_id)
     except TelegramBadRequest as exc:
-        logging.warning(f"РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ {message_id}: {exc}")
+        logging.warning(f"Не удалось удалить {message_id}: {exc}")
     except Exception as exc:
-        logging.exception(f"РћС€РёР±РєР° СѓРґР°Р»РµРЅРёСЏ СЃРѕРѕР±С‰РµРЅРёСЏ {message_id}: {exc}")
+        logging.exception(f"Ошибка удаления сообщения {message_id}: {exc}")
 
 
 async def safe_edit_message(chat_id: int, msg_id: int, text: str, reply_markup=None):
@@ -304,24 +303,24 @@ async def safe_edit_message(chat_id: int, msg_id: int, text: str, reply_markup=N
         await bot.edit_message_text(text, chat_id=chat_id, message_id=msg_id, reply_markup=reply_markup)
         return True
     except TelegramRetryAfter as exc:
-        logging.warning(f"Flood control: Р¶РґС‘Рј {exc.retry_after} СЃРµРє РїРµСЂРµРґ РїРѕРІС‚РѕСЂРѕРј edit")
+        logging.warning(f"Flood control: ждём {exc.retry_after} сек перед повтором edit")
         try:
             await asyncio.sleep(exc.retry_after + 0.5)
             await bot.edit_message_text(text, chat_id=chat_id, message_id=msg_id, reply_markup=reply_markup)
             return True
         except TelegramBadRequest as exc2:
-            logging.warning(f"РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚СЂРµРґР°РєС‚РёСЂРѕРІР°С‚СЊ РїРѕСЃР»Рµ retry {msg_id}: {exc2}")
+            logging.warning(f"Не удалось отредактировать после retry {msg_id}: {exc2}")
             await safe_delete_message(chat_id, msg_id)
             return False
         except Exception as exc2:
-            logging.exception(f"РћС€РёР±РєР° РїРѕРІС‚РѕСЂРЅРѕРіРѕ edit {msg_id}: {exc2}")
+            logging.exception(f"Ошибка повторного edit {msg_id}: {exc2}")
             return False
     except TelegramBadRequest as exc:
-        logging.warning(f"РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚СЂРµРґР°РєС‚РёСЂРѕРІР°С‚СЊ {msg_id}: {exc}")
+        logging.warning(f"Не удалось отредактировать {msg_id}: {exc}")
         await safe_delete_message(chat_id, msg_id)
         return False
     except Exception as exc:
-        logging.exception(f"РќРµРѕР¶РёРґР°РЅРЅР°СЏ РѕС€РёР±РєР° edit {msg_id}: {exc}")
+        logging.exception(f"Неожиданная ошибка edit {msg_id}: {exc}")
         return False
 
 
@@ -340,25 +339,25 @@ async def update_or_send_message(chat_id: int, uid: int, text: str, reply_markup
         last_active_msg_id[uid] = msg.message_id
         return msg.message_id
     except TelegramRetryAfter as exc:
-        logging.warning(f"Flood control send_message: Р¶РґС‘Рј {exc.retry_after} СЃРµРє")
+        logging.warning(f"Flood control send_message: ждём {exc.retry_after} сек")
         try:
             await asyncio.sleep(exc.retry_after + 0.5)
             msg = await bot.send_message(chat_id, text, reply_markup=reply_markup)
             last_active_msg_id[uid] = msg.message_id
             return msg.message_id
         except Exception as exc2:
-            logging.exception(f"РћС€РёР±РєР° send_message РїРѕСЃР»Рµ retry: {exc2}")
+            logging.exception(f"Ошибка send_message после retry: {exc2}")
             return None
     except TelegramBadRequest as exc:
-        logging.warning(f"РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РїСЂР°РІРёС‚СЊ СЃРѕРѕР±С‰РµРЅРёРµ: {exc}")
+        logging.warning(f"Не удалось отправить сообщение: {exc}")
         return None
     except Exception as exc:
-        logging.exception(f"РќРµРѕР¶РёРґР°РЅРЅР°СЏ РѕС€РёР±РєР° send_message: {exc}")
+        logging.exception(f"Неожиданная ошибка send_message: {exc}")
         return None
 
 
 def format_game_text(text: str, game) -> str:
-    """РћС‚С„РѕСЂРјР°С‚РёСЂРѕРІР°С‚СЊ СЃРѕРѕР±С‰РµРЅРёРµ РїРѕРґ РІС‹Р±СЂР°РЅРЅС‹Р№ СЂРµР¶РёРј СЌРєСЂР°РЅР° РёРіСЂРѕРєР°."""
+    """Отформатировать сообщение под выбранный режим экрана игрока."""
     if not game:
         return text
 
@@ -374,27 +373,27 @@ def format_game_text(text: str, game) -> str:
     if len(lines) > max_lines:
         lines = lines[:max_lines]
         if lines:
-            lines[-1] = f"{lines[-1]}\nвЂ¦"
+            lines[-1] = f"{lines[-1]}\n…"
     return "\n".join(lines)
 
 
 def get_settings_text(game):
-    mode = "рџ“± РўРµР»РµС„РѕРЅ" if game.display_mode == "phone" else "рџ’» РљРѕРјРїСЊСЋС‚РµСЂ"
+    mode = "📱 Телефон" if game.display_mode == "phone" else "💻 Компьютер"
     return (
-        "вљ™пёЏ РќР°СЃС‚СЂРѕР№РєРё РѕС‚РѕР±СЂР°Р¶РµРЅРёСЏ\n\n"
-        f"Р РµР¶РёРј: {mode}\n"
-        f"Р”Р»РёРЅР° СЃС‚СЂРѕРєРё: {game.max_line_length}\n"
-        f"РЎС‚СЂРѕРє РЅР° СЃРѕРѕР±С‰РµРЅРёРµ: {game.max_lines_per_msg}"
+        "⚙️ Настройки отображения\n\n"
+        f"Режим: {mode}\n"
+        f"Длина строки: {game.max_line_length}\n"
+        f"Строк на сообщение: {game.max_lines_per_msg}"
     )
 
-# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
-# РҐР•РќР”Р›Р•Р Р«
-# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ──────────────────────────────────────────────────────────────────────────────
+# ХЕНДЛЕРЫ
+# ──────────────────────────────────────────────────────────────────────────────
 @dp.message(CommandStart())
 async def cmd_start(message: Message):
     uid = message.from_user.id
     chat_id = message.chat.id
-    logging.info(f"[START] РџРѕР»СѓС‡РµРЅ /start РѕС‚ {uid}")
+    logging.info(f"[START] Получен /start от {uid}")
     try:
         for i in range(1, 50):
             await bot.delete_message(chat_id, message.message_id - i)
@@ -402,26 +401,26 @@ async def cmd_start(message: Message):
         pass
     loaded = load_game(uid)
     if loaded:
-        text = "Р’С‹ РїСЂРёС€Р»Рё РІ СЃРµР±СЏ РїРѕСЃСЂРµРґРё Р»РµСЃР°. Р’С‹ РЅРёС‡РµРіРѕ РЅРµ РїРѕРјРЅРёС‚Рµ... Р’ РїР°РјСЏС‚Рё Р»РёС€СЊ РѕР±СЂС‹РІРєРё РїСЂРѕС€Р»РѕРіРѕ."
+        text = "Вы пришли в себя посреди леса. Вы ничего не помните... В памяти лишь обрывки прошлого."
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="рџ”„ РџСЂРѕРґРѕР»Р¶РёС‚СЊ", callback_data="load_game")],
-            [types.InlineKeyboardButton(text="вљ пёЏ РќР°С‡Р°С‚СЊ СЃРЅР°С‡Р°Р»Р°", callback_data="confirm_new_game")]
+            [types.InlineKeyboardButton(text="🔄 Продолжить", callback_data="load_game")],
+            [types.InlineKeyboardButton(text="⚠️ Начать сначала", callback_data="confirm_new_game")]
         ])
     else:
         text = GUIDE_TEXT
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="рџљЂ РќР°С‡Р°С‚СЊ РІС‹Р¶РёРІР°РЅРёРµ", callback_data="start_new_game")]
+            [types.InlineKeyboardButton(text="🚀 Начать выживание", callback_data="start_new_game")]
         ])
-    # РќРёР¶РЅСЏСЏ Reply-РєР»Р°РІРёР°С‚СѓСЂР° РѕС‚РєР»СЋС‡РµРЅР° вЂ” С‚РѕР»СЊРєРѕ Menu Рё inline
+    # Нижняя Reply-клавиатура полностью отключена — сбрасываем кэш у клиента
     try:
-        await message.answer("\u200b", reply_markup=ReplyKeyboardRemove())
+        await message.answer("🌲 LesSurvivalBot", reply_markup=ReplyKeyboardRemove())
     except Exception:
         pass
     await update_or_send_message(chat_id, uid, text, kb)
 
 
 def _ensure_game(uid: int):
-    """Р”РѕСЃС‚Р°С‚СЊ РёРіСЂСѓ РёР· РїР°РјСЏС‚Рё РёР»Рё Mongo."""
+    """Достать игру из памяти или Mongo."""
     game = games.get(uid)
     if game is None:
         game = load_game(uid)
@@ -436,7 +435,7 @@ async def cmd_main(message: Message):
     chat_id = message.chat.id
     game = _ensure_game(uid)
     if not game:
-        await message.answer("РЎРЅР°С‡Р°Р»Р° /start")
+        await message.answer("Сначала /start")
         return
     await update_or_send_message(chat_id, uid, game.get_ui(), get_main_kb(game))
 
@@ -447,7 +446,7 @@ async def cmd_inventory(message: Message):
     chat_id = message.chat.id
     game = _ensure_game(uid)
     if not game:
-        await message.answer("РЎРЅР°С‡Р°Р»Р° /start")
+        await message.answer("Сначала /start")
         return
     game.push_screen("inventory")
     await update_or_send_message(chat_id, uid, game.get_inventory_text(), inventory_inline_kb)
@@ -460,7 +459,7 @@ async def cmd_character(message: Message):
     chat_id = message.chat.id
     game = _ensure_game(uid)
     if not game:
-        await message.answer("РЎРЅР°С‡Р°Р»Р° /start")
+        await message.answer("Сначала /start")
         return
     game.push_screen("character")
     await update_or_send_message(chat_id, uid, game.get_character_text(), character_inline_kb)
@@ -473,7 +472,7 @@ async def cmd_settings(message: Message):
     chat_id = message.chat.id
     game = _ensure_game(uid)
     if not game:
-        await message.answer("РЎРЅР°С‡Р°Р»Р° /start")
+        await message.answer("Сначала /start")
         return
     game.push_screen("settings")
     await update_or_send_message(chat_id, uid, get_settings_text(game), get_settings_kb(game))
@@ -498,7 +497,7 @@ async def process_callback(callback: types.CallbackQuery):
         else:
             await callback.answer()
 
-        logging.info(f"[CALLBACK] {data} РѕС‚ {uid}")
+        logging.info(f"[CALLBACK] {data} от {uid}")
         game = games.get(uid)
         if game is None:
             game = load_game(uid)
@@ -521,10 +520,10 @@ async def process_callback(callback: types.CallbackQuery):
             await update_or_send_message(chat_id, uid, text, kb)
             return
         if data == "confirm_new_game":
-            text = "РЈРґР°Р»РёС‚СЊ С‚РµРєСѓС‰РµРіРѕ РїРµСЂСЃРѕРЅР°Р¶Р° Рё РЅР°С‡Р°С‚СЊ РЅРѕРІСѓСЋ РёСЃС‚РѕСЂРёСЋ?"
+            text = "Удалить текущего персонажа и начать новую историю?"
             kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                [types.InlineKeyboardButton(text="вњ… Р”Р°, РЅР°С‡Р°С‚СЊ Р·Р°РЅРѕРІРѕ", callback_data="start_new_game_confirmed")],
-                [types.InlineKeyboardButton(text="вќЊ РћСЃС‚Р°РІРёС‚СЊ РїРµСЂСЃРѕРЅР°Р¶Р°", callback_data="cancel_new_game")]
+                [types.InlineKeyboardButton(text="✅ Да, начать заново", callback_data="start_new_game_confirmed")],
+                [types.InlineKeyboardButton(text="❌ Оставить персонажа", callback_data="cancel_new_game")]
             ])
             await update_or_send_message(chat_id, uid, text, kb)
             return
@@ -537,11 +536,11 @@ async def process_callback(callback: types.CallbackQuery):
             await update_or_send_message(chat_id, uid, text, kb)
             return
         if data == "cancel_new_game":
-            # Р’РѕР·РІСЂР°С‰Р°РµРј РёРіСЂРѕРєР° РІ РіР»Р°РІРЅРѕРµ РјРµРЅСЋ СЃС‚Р°СЂС‚Р°
-            text = "Р’С‹ РѕС‚РјРµРЅРёР»Рё РїРµСЂРµР·Р°РїСѓСЃРє. Р§С‚Рѕ РґРµР»Р°РµРј?"
+            # Возвращаем игрока в главное меню старта
+            text = "Вы отменили перезапуск. Что делаем?"
             kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                [types.InlineKeyboardButton(text="рџ”„ РџСЂРѕРґРѕР»Р¶РёС‚СЊ", callback_data="load_game")],
-                [types.InlineKeyboardButton(text="вљ пёЏ РќР°С‡Р°С‚СЊ СЃРЅР°С‡Р°Р»Р°", callback_data="confirm_new_game")]
+                [types.InlineKeyboardButton(text="🔄 Продолжить", callback_data="load_game")],
+                [types.InlineKeyboardButton(text="⚠️ Начать сначала", callback_data="confirm_new_game")]
             ])
             await update_or_send_message(chat_id, uid, text, kb)
             return
@@ -550,9 +549,9 @@ async def process_callback(callback: types.CallbackQuery):
             await update_or_send_message(
                 chat_id,
                 uid,
-                "РЎРµСЃСЃРёСЏ РЅРµ РЅР°Р№РґРµРЅР°. РќР°Р¶РјРё /start",
+                "Сессия не найдена. Нажми /start",
                 types.InlineKeyboardMarkup(inline_keyboard=[
-                    [types.InlineKeyboardButton(text="рџљЂ РќР°С‡Р°С‚СЊ РІС‹Р¶РёРІР°РЅРёРµ", callback_data="start_new_game")]
+                    [types.InlineKeyboardButton(text="🚀 Начать выживание", callback_data="start_new_game")]
                 ]),
             )
             return
@@ -589,7 +588,7 @@ async def process_callback(callback: types.CallbackQuery):
             kb = get_settings_kb(game)
         elif data == "locations_menu":
             game.push_screen("locations")
-            text = "РљСѓРґР° РЅР°РїСЂР°РІРёС‚СЊСЃСЏ?"
+            text = "Куда направиться?"
             kb = get_locations_kb(game)
         elif data.startswith("trap_place_"):
             location_id = int(data.replace("trap_place_", ""))
@@ -599,8 +598,8 @@ async def process_callback(callback: types.CallbackQuery):
                 "is_broken": False,
                 "placed_day": game.day,
             }
-            game.add_log(f"Р›РѕРІСѓС€РєР° СѓСЃС‚Р°РЅРѕРІР»РµРЅР° РІ {location_id}-Р№ Р»РѕРєР°С†РёРё!")
-            text = f"Р›РѕРІСѓС€РєР° СѓСЃС‚Р°РЅРѕРІР»РµРЅР° РІ {location_id}-Р№ Р»РѕРєР°С†РёРё!"
+            game.add_log(f"Ловушка установлена в {location_id}-й локации!")
+            text = f"Ловушка установлена в {location_id}-й локации!"
             kb = get_main_kb(game)
         elif data.startswith("trap_replace_"):
             location_id = int(data.replace("trap_replace_", ""))
@@ -610,26 +609,26 @@ async def process_callback(callback: types.CallbackQuery):
                 "is_broken": False,
                 "placed_day": game.day,
             }
-            game.add_log(f"РќРѕРІР°СЏ Р»РѕРІСѓС€РєР° СѓСЃС‚Р°РЅРѕРІР»РµРЅР° РІ {location_id}-Р№ Р»РѕРєР°С†РёРё (СЃС‚Р°СЂР°СЏ СЃР»РѕРјР°РЅР°)!")
-            text = f"РќРѕРІР°СЏ Р»РѕРІСѓС€РєР° РІ {location_id}-Р№ Р»РѕРєР°С†РёРё!"
+            game.add_log(f"Новая ловушка установлена в {location_id}-й локации (старая сломана)!")
+            text = f"Новая ловушка в {location_id}-й локации!"
             kb = get_main_kb(game)
         elif data == "location_enter_2":
-            game.current_location = "Р СѓС‡РµР№ СЃ Р—РјРµСЏРјРё"
+            game.current_location = "Ручей с Змеями"
             text, kb = handle_location_2_ruchey("river_ferocious", game, uid)
         elif data == "location_enter_3":
-            game.current_location = "РЎРєСЂРѕРјРЅР°СЏ Р›РѕС‰РёРЅР°"
+            game.current_location = "Скромная Лощина"
             text, kb = handle_location_3_slate_hollow("slate_hollow_start", game, uid)
         elif data == "location_enter_4":
-            game.current_location = "РџСЂРѕСЃРµРєР° РћС…РѕС‚РЅРёРєРѕРІ"
+            game.current_location = "Просека Охотников"
             text, kb = handle_location_4_hunters_glade("hunters_glade_start", game, uid)
         elif data == "location_enter_5":
-            game.current_location = "РЇСЂ РЎР»РёР·РЅРµР№"
+            game.current_location = "Яр Слизней"
             text, kb = handle_location_5_slug_pit("slug_pit_start", game, uid)
         elif data == "location_enter_6":
-            game.current_location = "РњРѕС…РЅР°С‚Р°СЏ РџРµС‰РµСЂР°"
+            game.current_location = "Мохнатая Пещера"
             text, kb = handle_location_6_furry_cave("furry_cave_start", game, uid)
         elif data == "location_enter_7":
-            game.current_location = "Р’РµСЂС€РёРЅР° РЎРІСЏС‚РёР»РёС‰Р°"
+            game.current_location = "Вершина Святилища"
             text, kb = handle_location_7_sanctuary_peak("sanctuary_peak_start", game, uid)
         elif data == "sanctuary_resolve":
             text, kb = handle_location_7_sanctuary_peak(data, game, uid)
@@ -671,24 +670,24 @@ async def process_callback(callback: types.CallbackQuery):
             return
         elif data == "inv_craft":
             game.push_screen("craft")
-            unlocked = list(getattr(game, "unlocked_crafts", ["РљРѕСЃС‚С‘СЂ", "Р¤Р°РєРµР»"]) or ["РљРѕСЃС‚С‘СЂ", "Р¤Р°РєРµР»"])
+            unlocked = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
             kb_c = types.InlineKeyboardMarkup(inline_keyboard=[])
-            lines = ["рџ”Ё РљСЂР°С„С‚ (С‚РѕР»СЊРєРѕ РѕС‚РєСЂС‹С‚С‹Рµ СЂРµС†РµРїС‚С‹):", ""]
+            lines = ["🔨 Крафт (только открытые рецепты):", ""]
             for name in unlocked:
                 if name not in CRAFT_RECIPES:
                     continue
                 mark = craft_mark(game, name)
-                ings = ", ".join(f"{n}Г—{q}" for n, q in CRAFT_RECIPES[name])
-                lines.append(f"{name} {mark} вЂ” {ings}")
+                ings = ", ".join(f"{n}×{q}" for n, q in CRAFT_RECIPES[name])
+                lines.append(f"{name} {mark} — {ings}")
                 kb_c.inline_keyboard.append([
                     types.InlineKeyboardButton(
-                        text=f"рџ”Ё {name} {mark}",
+                        text=f"🔨 {name} {mark}",
                         callback_data=f"craft_{name}",
                     )
                 ])
             if not kb_c.inline_keyboard:
-                lines.append("РџРѕРєР° РЅРµС‡РµРіРѕ РєСЂР°С„С‚РёС‚СЊ.")
-            kb_c.inline_keyboard.append([types.InlineKeyboardButton(text="в†©пёЏ РќР°Р·Р°Рґ", callback_data="action_2")])
+                lines.append("Пока нечего крафтить.")
+            kb_c.inline_keyboard.append([types.InlineKeyboardButton(text="↩️ Назад", callback_data="action_2")])
             text = "\n".join(lines)
             kb = kb_c
 
@@ -697,8 +696,8 @@ async def process_callback(callback: types.CallbackQuery):
                 game.add_log("Нет костра в инвентаре.")
                 text = game.get_ui()
                 kb = get_main_kb(game)
-            elif game.ap < 2:
-                game.add_log("Не хватает очков действий, чтобы развести костёр (требуется 2 ⚡).")
+            elif game.ap < 1:
+                game.add_log("Не хватает очков действий, чтобы развести костёр.")
                 text = game.get_ui()
                 kb = get_main_kb(game)
             else:
@@ -716,72 +715,72 @@ async def process_callback(callback: types.CallbackQuery):
                     kb = get_main_kb(game)
 
         elif data == "inv_recipes":
-            unlocked = list(getattr(game, "unlocked_crafts", ["РљРѕСЃС‚С‘СЂ", "Р¤Р°РєРµР»"]) or ["РљРѕСЃС‚С‘СЂ", "Р¤Р°РєРµР»"])
-            lines = ["рџ“њ Р РµС†РµРїС‚С‹:", ""]
+            unlocked = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
+            lines = ["📜 Рецепты:", ""]
             for name in unlocked:
                 if name not in CRAFT_RECIPES:
-                    lines.append(f"вЂў {name}")
+                    lines.append(f"• {name}")
                     continue
                 mark = craft_mark(game, name)
-                ings = ", ".join(f"{n}Г—{q}" for n, q in CRAFT_RECIPES[name])
-                lines.append(f"вЂў {name} {mark}")
+                ings = ", ".join(f"{n}×{q}" for n, q in CRAFT_RECIPES[name])
+                lines.append(f"• {name} {mark}")
                 lines.append(f"  ({ings})")
             text = "\n".join(lines)
             kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                [types.InlineKeyboardButton(text="в†©пёЏ РќР°Р·Р°Рґ", callback_data="action_2")]
+                [types.InlineKeyboardButton(text="↩️ Назад", callback_data="action_2")]
             ])
 
         elif data == "campfire_screen":
-            # Р­РєСЂР°РЅ РєРѕСЃС‚СЂР°
+            # Экран костра
             max_durability = game.campfire_max_durability
             durability = game.campfire_durability
-            text = f"рџ”Ґ РљРћРЎРўРЃР \nРџСЂРѕС‡РЅРѕСЃС‚СЊ РїР»Р°РјРµРЅРё: {durability}/{max_durability} РґРµР»РµРЅРёР№."
+            text = f"🔥 КОСТЁР\nПрочность пламени: {durability}/{max_durability} делений."
             kb = get_campfire_kb(game)
         elif data == "menu_campfire":
-            # РњРµРЅСЋ РєРѕСЃС‚СЂР° (РѕСЃРЅРѕРІРЅРѕРµ)
-            text = f"рџ”Ґ РљРћРЎРўРЃР \nРџСЂРѕС‡РЅРѕСЃС‚СЊ РїР»Р°РјРµРЅРё: {game.campfire_durability}/{game.campfire_max_durability} РґРµР»РµРЅРёР№."
+            # Меню костра (основное)
+            text = f"🔥 КОСТЁР\nПрочность пламени: {game.campfire_durability}/{game.campfire_max_durability} делений."
             kb = get_campfire_kb(game)
         elif data == "campfire_add_fuel_menu":
-            # РџРѕРґРјРµРЅСЋ РІС‹Р±РѕСЂР° РґСЂРѕРІ
-            text = "Р’С‹Р±РµСЂРёС‚Рµ, СЃРєРѕР»СЊРєРѕ РґСЂРѕРІ РїРѕРґРєРёРЅСѓС‚СЊ:"
+            # Подменю выбора дров
+            text = "Выберите, сколько дров подкинуть:"
             kb = get_campfire_fuel_kb(game)
         elif data == "campfire_fuel_max":
-            # Р”Рѕ РјР°РєСЃРёРјСѓРјР°
-            if "Р’РµС‚РєР°" in game.inventory:
+            # До максимума
+            if "Ветка" in game.inventory:
                 needed = game.campfire_max_durability - game.campfire_durability
-                branches = game.inventory["Р’РµС‚РєР°"]
+                branches = game.inventory["Ветка"]
                 if branches == 0 or needed == 0:
-                    text = "РљРѕСЃС‚С‘СЂ РїРѕС‡С‚Рё РїРѕР»РѕРЅ РёР»Рё РІРµС‚РѕРє РЅРµС‚!"
+                    text = "Костёр почти полон или веток нет!"
                     kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                        [types.InlineKeyboardButton(text="[ в¬…пёЏ РќР°Р·Р°Рґ РІ РєРѕСЃС‚С‘СЂ ]", callback_data="menu_campfire")]
+                        [types.InlineKeyboardButton(text="[ ⬅️ Назад в костёр ]", callback_data="menu_campfire")]
                     ])
                 else:
                     to_use = min(branches, needed)
-                    game.inventory["Р’РµС‚РєР°"] -= to_use
-                    if game.inventory["Р’РµС‚РєР°"] <= 0:
-                        del game.inventory["Р’РµС‚РєР°"]
+                    game.inventory["Ветка"] -= to_use
+                    if game.inventory["Ветка"] <= 0:
+                        del game.inventory["Ветка"]
                     game.campfire_durability += to_use
-                    text = f"рџЄµ Р”РѕР±Р°РІР»РµРЅРѕ РІРµС‚РѕРє: {to_use}. РџСЂРѕС‡РЅРѕСЃС‚СЊ РєРѕСЃС‚СЂР°: {game.campfire_durability}/{game.campfire_max_durability}."
+                    text = f"🪵 Добавлено веток: {to_use}. Прочность костра: {game.campfire_durability}/{game.campfire_max_durability}."
                     kb = get_campfire_kb(game)
             else:
-                text = "РќРµС‚ РІРµС‚РѕРє РІ РёРЅРІРµРЅС‚Р°СЂРµ!"
+                text = "Нет веток в инвентаре!"
                 kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                    [types.InlineKeyboardButton(text="[ в¬…пёЏ РќР°Р·Р°Рґ РІ РєРѕСЃС‚С‘СЂ ]", callback_data="menu_campfire")]
+                    [types.InlineKeyboardButton(text="[ ⬅️ Назад в костёр ]", callback_data="menu_campfire")]
                 ])
         elif data == "campfire_fuel_custom":
-            # РЎРІРѕС‘ РєРѕР»РёС‡РµСЃС‚РІРѕ вЂ” Р¶РґС‘Рј РІРІРѕРґР° РѕС‚ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
-            text = "РЎРєРѕР»СЊРєРѕ РІРµС‚РѕРє РїРѕРґРєРёРЅСѓС‚СЊ?"
+            # Своё количество — ждём ввода от пользователя
+            text = "Сколько веток подкинуть?"
             kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                [types.InlineKeyboardButton(text="[ в¬…пёЏ РќР°Р·Р°Рґ РІ РєРѕСЃС‚С‘СЂ ]", callback_data="menu_campfire")]
+                [types.InlineKeyboardButton(text="[ ⬅️ Назад в костёр ]", callback_data="menu_campfire")]
             ])
         elif data == "campfire_cook_single":
-            # РџРѕР¶Р°СЂРёС‚СЊ РѕРґРёРЅ РїСЂРµРґРјРµС‚ вЂ” РІС‹Р±РёСЂР°РµРј РёР· РёРЅРІРµРЅС‚Р°СЂСЏ
-            text = "рџҐ© Р§С‚Рѕ РїРѕР¶Р°СЂРёС‚СЊ?"
+            # Пожарить один предмет — выбираем из инвентаря
+            text = "🥩 Что пожарить?"
             kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                [types.InlineKeyboardButton(text="рџЌ– РњСЏСЃРѕ", callback_data="campfire_cook_meat")],
-                [types.InlineKeyboardButton(text="рџЌ„ Р“СЂРёР±С‹", callback_data="campfire_cook_mushroom")],
-                [types.InlineKeyboardButton(text="рџҐ• РћРІРѕС‰Рё", callback_data="campfire_cook_veg")],
-                [types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data="menu_campfire")],
+                [types.InlineKeyboardButton(text="🍖 Мясо", callback_data="campfire_cook_meat")],
+                [types.InlineKeyboardButton(text="🍄 Грибы", callback_data="campfire_cook_mushroom")],
+                [types.InlineKeyboardButton(text="🥕 Овощи", callback_data="campfire_cook_veg")],
+                [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="menu_campfire")],
             ])
         elif data == "campfire_recipes":
             # Список рецептов из modules/cooking.py (ранжированы по качеству)
@@ -830,14 +829,14 @@ async def process_callback(callback: types.CallbackQuery):
             if not usable:
                 return
             game.push_screen("use")
-            text = "Р’С‹Р±РµСЂРёС‚Рµ РїСЂРµРґРјРµС‚ РґР»СЏ РёСЃРїРѕР»СЊР·РѕРІР°РЅРёСЏ:"
+            text = "Выберите предмет для использования:"
             kb = get_use_item_kb(game)
 
         elif data == "inv_drop":
             if not any(count > 0 for count in game.inventory.values()):
                 return
             game.push_screen("drop")
-            text = "Р’С‹Р±РµСЂРёС‚Рµ РїСЂРµРґРјРµС‚ РґР»СЏ СѓРґР°Р»РµРЅРёСЏ:"
+            text = "Выберите предмет для удаления:"
             kb = get_drop_item_kb(game)
 
         elif data.startswith("use_consumable_"):
@@ -902,7 +901,7 @@ async def process_callback(callback: types.CallbackQuery):
         elif data == "drink_bottle_single":
             if game.equipment.get("flask") and getattr(game, "flask_water", 0) > 0:
                 game.flask_water -= 1
-                game.thirst = min(100, game.thirst + 15)
+                game.thirst = min(100, game.thirst + 30)
                 game.add_log(f"💧 Ты сделал глоток воды (+15 жажды). Во фляге: {game.flask_water}/20.")
                 if game.flask_water <= 0:
                     container_name = game.equipment.get("flask") or "Бутылка воды"
@@ -915,7 +914,7 @@ async def process_callback(callback: types.CallbackQuery):
                     del game.inventory["Бутылка воды"]
                 game.equipment["flask"] = "Бутылка воды"
                 game.flask_water = 19
-                game.thirst = min(100, game.thirst + 15)
+                game.thirst = min(100, game.thirst + 30)
                 game.add_log("🧴 Ты экипировал бутылку на пояс и сделал глоток (+15 жажды). Во фляге: 19/20.")
             else:
                 game.add_log("Нет доступной воды для питья.")
@@ -926,7 +925,7 @@ async def process_callback(callback: types.CallbackQuery):
             if game.inventory.get(item, 0) > 0:
                 game.push_screen("drop_qty")
                 current_count = game.inventory[item]
-                text = f"РЎРєРѕР»СЊРєРѕ РІС‹РєРёРЅСѓС‚СЊ В«{item}В»?\nР’ РёРЅРІРµРЅС‚Р°СЂРµ: {current_count} С€С‚."
+                text = f"Сколько выкинуть «{item}»?\nВ инвентаре: {current_count} шт."
                 kb = get_drop_quantity_kb(item)
 
         elif data.startswith("drop_qty:"):
@@ -939,7 +938,7 @@ async def process_callback(callback: types.CallbackQuery):
             if current_count <= 0:
                 while len(game.nav_stack) > 1 and game.nav_stack[-1] in ("drop", "drop_qty"):
                     game.nav_stack.pop()
-                text = f"РџСЂРµРґРјРµС‚Р° В«{item}В» РЅРµС‚ РІ РёРЅРІРµРЅС‚Р°СЂРµ.\n\n{game.get_inventory_text()}"
+                text = f"Предмета «{item}» нет в инвентаре.\n\n{game.get_inventory_text()}"
                 kb = inventory_inline_kb
             else:
                 drop_count = 0
@@ -950,9 +949,9 @@ async def process_callback(callback: types.CallbackQuery):
                 elif qty_type == "custom":
                     game.story_state = "WAITING_FOR_DROP_QUANTITY"
                     game.story_flags["drop_item_name"] = item
-                    text = f"Р’РІРµРґРёС‚Рµ РєРѕР»РёС‡РµСЃС‚РІРѕ В«{item}В» РґР»СЏ РІС‹Р±СЂРѕСЃР°:\n(Р”РѕСЃС‚СѓРїРЅРѕ: {current_count} С€С‚.)"
+                    text = f"Введите количество «{item}» для выброса:\n(Доступно: {current_count} шт.)"
                     kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                        [types.InlineKeyboardButton(text="в¬…пёЏ РќР°Р·Р°Рґ", callback_data="drop_qty_cancel")]
+                        [types.InlineKeyboardButton(text="⬅️ Назад", callback_data="drop_qty_cancel")]
                     ])
                     if text is not None:
                         game.record_route(data)
@@ -966,8 +965,8 @@ async def process_callback(callback: types.CallbackQuery):
                     game.inventory[item] -= drop_count
                     if game.inventory[item] <= 0:
                         del game.inventory[item]
-                    game.add_log(f"Р’С‹РєРёРЅСѓС‚Рѕ: {item} Г—{drop_count}")
-                    text = f"РЈРґР°Р»РµРЅРѕ: {item} Г—{drop_count}.\n\n{game.get_inventory_text()}"
+                    game.add_log(f"Выкинуто: {item} ×{drop_count}")
+                    text = f"Удалено: {item} ×{drop_count}.\n\n{game.get_inventory_text()}"
                     kb = inventory_inline_kb
 
         elif data == "drop_qty_cancel":
@@ -979,7 +978,7 @@ async def process_callback(callback: types.CallbackQuery):
                 prev = game.pop_screen()
             if prev == "drop":
                 if any(count > 0 for count in game.inventory.values()):
-                    text = "Р’С‹Р±РµСЂРёС‚Рµ РїСЂРµРґРјРµС‚ РґР»СЏ СѓРґР°Р»РµРЅРёСЏ:"
+                    text = "Выберите предмет для удаления:"
                     kb = get_drop_item_kb(game)
                 else:
                     text = game.get_inventory_text()
@@ -1007,31 +1006,31 @@ async def process_callback(callback: types.CallbackQuery):
                 kb = inventory_inline_kb
             elif prev == "drop_qty":
                 if any(count > 0 for count in game.inventory.values()):
-                    text = "Р’С‹Р±РµСЂРёС‚Рµ РїСЂРµРґРјРµС‚ РґР»СЏ СѓРґР°Р»РµРЅРёСЏ:"
+                    text = "Выберите предмет для удаления:"
                     kb = get_drop_item_kb(game)
                 else:
                     text = game.get_inventory_text()
                     kb = inventory_inline_kb
             elif prev == "craft":
-                unlocked = list(getattr(game, "unlocked_crafts", ["РљРѕСЃС‚С‘СЂ", "Р¤Р°РєРµР»"]) or ["РљРѕСЃС‚С‘СЂ", "Р¤Р°РєРµР»"])
+                unlocked = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
                 kb_c = types.InlineKeyboardMarkup(inline_keyboard=[])
-                lines = ["рџ”Ё РљСЂР°С„С‚:", ""]
+                lines = ["🔨 Крафт:", ""]
                 for name in unlocked:
                     if name not in CRAFT_RECIPES:
                         continue
                     mark = craft_mark(game, name)
-                    ings = ", ".join(f"{n}Г—{q}" for n, q in CRAFT_RECIPES[name])
-                    lines.append(f"{name} {mark} вЂ” {ings}")
+                    ings = ", ".join(f"{n}×{q}" for n, q in CRAFT_RECIPES[name])
+                    lines.append(f"{name} {mark} — {ings}")
                     kb_c.inline_keyboard.append([
                         types.InlineKeyboardButton(
-                            text=f"рџ”Ё {name} {mark}",
+                            text=f"🔨 {name} {mark}",
                             callback_data=f"craft_{name}",
                         )
                     ])
                 if not kb_c.inline_keyboard:
-                    lines.append("РџРѕРєР° РЅРµС‡РµРіРѕ РєСЂР°С„С‚РёС‚СЊ.")
+                    lines.append("Пока нечего крафтить.")
                 kb_c.inline_keyboard.append([
-                    types.InlineKeyboardButton(text="в†©пёЏ РќР°Р·Р°Рґ", callback_data="action_2")
+                    types.InlineKeyboardButton(text="↩️ Назад", callback_data="action_2")
                 ])
                 text = chr(10).join(lines)
                 kb = kb_c
@@ -1089,7 +1088,7 @@ async def process_callback(callback: types.CallbackQuery):
 
         elif data in ("wolf_leave", "wolf_torch", "peek_den", "pet_leave", "pet_take", "story_next"):
             if game.ap <= 0:
-                text = "РќРµС‚ СЃРёР». РќСѓР¶РЅРѕ РїРѕСЃРїР°С‚СЊ."
+                text = "Нет сил. Нужно поспать."
                 kb = get_main_kb(game)
             else:
                 text, kb = handle_story(data, game, uid)
@@ -1146,7 +1145,7 @@ async def process_callback(callback: types.CallbackQuery):
                     text = game.get_ui()
                     kb = get_main_kb(game)
             else:
-                # Без факела — обычный поиск по локации
+                # Лут по локации (еда.txt → modules/finds.py)
                 loc_id = location_id_from_game(game)
                 found_list = roll_find(loc_id)
                 msg = apply_finds_to_inventory(game, found_list)
@@ -1157,7 +1156,7 @@ async def process_callback(callback: types.CallbackQuery):
         elif data in ("action_sleep", "action_4"):
             game.sleep_and_turn_day()
             trap_msgs = []
-            # Утро: 40% пусто / 20% ломка / 40% добыча по таблице локации
+            # Утро: 40% ломка / 60% успех + лут по таблице локации (еда.txt)
             for event in process_trap_rollover(game):
                 loc_id = event.get("location_id")
                 if event.get("broken"):
@@ -1211,10 +1210,10 @@ async def process_callback(callback: types.CallbackQuery):
                 game.inventory["Вода"] -= 1
                 if game.inventory["Вода"] <= 0:
                     del game.inventory["Вода"]
-                game.thirst = min(100, game.thirst + 15)
-                game.add_log("Ты сделал глоток воды (+15 жажды).")
+                game.thirst = min(100, game.thirst + 30)
+                game.add_log("Ты сделал глоток воды. Жажда уменьшилась.")
             else:
-                game.add_log("У тебя нет воды для питья.")
+                game.add_log("Воды больше нет.")
             text = game.get_ui()
             kb = get_main_kb(game)
 
@@ -1224,18 +1223,18 @@ async def process_callback(callback: types.CallbackQuery):
                 res_log = format_resource_log_text(campfire_result)
                 if res_log:
                     game.add_log(res_log)
-                text = f"рџ”Ґ Р’С‹ СЂР°Р·РІРµР»Рё РєРѕСЃС‚С‘СЂ! (РџСЂРѕС‡РЅРѕСЃС‚СЊ: {game.campfire_durability}/{game.campfire_max_durability})"
+                text = f"🔥 Вы развели костёр! (Прочность: {game.campfire_durability}/{game.campfire_max_durability})"
                 kb = get_campfire_kb(game)
             else:
-                text = "РќРµ С…РІР°С‚Р°РµС‚ AP РґР»СЏ РєРѕСЃС‚СЂР°!"
+                text = "Не хватает AP для костра!"
                 kb = get_main_kb(game)
 
         elif data == "action_collect_water":
             if game.weather in {"rain", "storm"} and game.ap > 0:
                 game.ap -= 1
-                game.inventory["Р’РѕРґР°"] = game.inventory.get("Р’РѕРґР°", 0) + 1
-                game.add_log("РўС‹ РЅР°Р±СЂР°Р» РґРѕР¶РґРµРІРѕР№ РІРѕРґС‹!")
-                text = "РўС‹ РЅР°Р±СЂР°Р» РґРѕР¶РґРµРІРѕР№ РІРѕРґС‹!"
+                game.inventory["Вода"] = game.inventory.get("Вода", 0) + 1
+                game.add_log("Ты набрал дождевой воды!")
+                text = "Ты набрал дождевой воды!"
                 kb = get_main_kb(game)
             else:
                 text = game.get_ui()
@@ -1248,10 +1247,10 @@ async def process_callback(callback: types.CallbackQuery):
         elif data == "karma_escape":
             karma_ok = all(v > 0 for v in game.karma.values())
             if karma_ok:
-                game.add_log("РљР°СЂРјР° РёРґРµР°Р»СЊРЅР° вЂ” С‚С‹ СЃР±РµР¶Р°Р» РёР· Р»РµСЃР°!")
+                game.add_log("Карма идеальна — ты сбежал из леса!")
                 game.story_state = "karma_escape"
             else:
-                game.add_log("РљР°СЂРјР° РЅРµ РёРґРµР°Р»СЊРЅР° вЂ” РѕСЃС‚Р°С‘С€СЊСЃСЏ РІ Р»РµСЃСѓ.")
+                game.add_log("Карма не идеальна — остаёшься в лесу.")
                 game.story_state = "karma_stuck"
             text = game.get_ui()
             kb = get_main_kb(game)
@@ -1261,10 +1260,10 @@ async def process_callback(callback: types.CallbackQuery):
             await update_or_send_message(chat_id, uid, text, kb)
             save_game(uid, game)
     except Exception as exc:
-        logging.exception(f"РћС€РёР±РєР° callback {data if 'data' in locals() else 'unknown'} РґР»СЏ {uid}: {exc}")
+        logging.exception(f"Ошибка callback {data if 'data' in locals() else 'unknown'} для {uid}: {exc}")
         try:
-            await callback.answer("РћС€РёР±РєР° РѕР±СЂР°Р±РѕС‚РєРё РєРЅРѕРїРєРё. РџРѕРїСЂРѕР±СѓР№ РµС‰С‘ СЂР°Р· РёР»Рё /start", show_alert=True)
-        except Exception:
+            await callback.answer("Ошибка обработки кнопки. Попробуй ещё раз или /start", show_alert=True)
+        except Exception as e:
             pass
 
 @dp.message(F.text & ~F.text.startswith("/"))
@@ -1274,28 +1273,37 @@ async def process_text_message(message: Message):
     try:
         raw_text = message.text.strip() if message.text else ""
         text = raw_text[:80] if raw_text else ""
-        # РќРёР¶РЅСЏСЏ РєР»Р°РІРёР°С‚СѓСЂР° РѕС‚РєР»СЋС‡РµРЅР°; РµСЃР»Рё РѕСЃС‚Р°Р»Р°СЃСЊ вЂ” С‚Рµ Р¶Рµ РґРµР№СЃС‚РІРёСЏ
-        if text in ("рџљЂ РќР°С‡Р°С‚СЊ / РЎС‚Р°СЂС‚", "рџЏ  Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ / РџРµСЂРµР·Р°РїСѓСЃРє", "рџЏ  Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ"):
-            await cmd_start(message)
-            return
-        if text in ("рџ“Љ РЎС‚Р°С‚СѓСЃ", "рџЏ  Р“Р»Р°РІРЅС‹Р№ СЌРєСЂР°РЅ"):
-            await cmd_main(message)
-            return
-        if text in ("рџЋ’ РРЅРІРµРЅС‚Р°СЂСЊ",):
-            await cmd_inventory(message)
-            return
-        if text in ("рџ‘¤ РџРµСЂСЃРѕРЅР°Р¶",):
-            await cmd_character(message)
-            return
-        if text in ("вљ™пёЏ РќР°СЃС‚СЂРѕР№РєРё",):
-            await cmd_settings(message)
-            return
+        # Если пришло сообщение от старой кэшированной Reply-панели — принудительно удаляем её у клиента
+        old_reply_buttons = (
+            "🚀 Начать / Старт", "🏠 Главное меню / Перезапуск", "🏠 Главное меню",
+            "📊 Статус", "🏠 Главный экран", "🎒 Инвентарь", "👤 Персонаж", "⚙️ Настройки"
+        )
+        if text in old_reply_buttons:
+            try:
+                await message.answer("Нижняя панель отключена. Управление ведётся через кнопки сообщений.", reply_markup=ReplyKeyboardRemove())
+            except Exception:
+                pass
+            if text in ("🚀 Начать / Старт", "🏠 Главное меню / Перезапуск", "🏠 Главное меню"):
+                await cmd_start(message)
+                return
+            if text in ("📊 Статус", "🏠 Главный экран"):
+                await cmd_main(message)
+                return
+            if text in ("🎒 Инвентарь",):
+                await cmd_inventory(message)
+                return
+            if text in ("👤 Персонаж",):
+                await cmd_character(message)
+                return
+            if text in ("⚙️ Настройки",):
+                await cmd_settings(message)
+                return
 
         game = _ensure_game(uid)
         if not game:
             return
 
-        # Р”РµР»РµРіРёСЂСѓРµРј РґРёР°Р»РѕРіРѕРІС‹Рµ FSM-СЃРѕСЃС‚РѕСЏРЅРёСЏ РІ services/dialogs.py
+        # Делегируем диалоговые FSM-состояния в services/dialogs.py
         from services.dialogs import process_text_input
         bot_ctx = {
             "last_active_msg_id": last_active_msg_id,
@@ -1309,53 +1317,53 @@ async def process_text_message(message: Message):
         await process_text_input(uid, chat_id, text, message, game, bot_ctx)
 
     except Exception as exc:
-        logging.exception(f"РћС€РёР±РєР° process_text_message РґР»СЏ {uid}: {exc}")
+        logging.exception(f"Ошибка process_text_message для {uid}: {exc}")
         try:
-            await message.answer("РЇ РЅРµ СЃРјРѕРі РѕР±СЂР°Р±РѕС‚Р°С‚СЊ СЌС‚Рѕ СЃРѕРѕР±С‰РµРЅРёРµ. РџРѕРїСЂРѕР±СѓР№С‚Рµ РµС‰С‘ СЂР°Р·.")
-        except Exception:
+            await message.answer("Я не смог обработать это сообщение. Попробуйте ещё раз.")
+        except Exception as e:
             pass
 
 
 
-# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ──────────────────────────────────────────────────────────────────────────────
 # РЎР•Р Р’Р•Р  Р РџРРќР“
-# в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+# ──────────────────────────────────────────────────────────────────────────────
 from services.server import keep_alive_pinger, start_health_check_server, PING_URLS
 
 
 async def run_bot():
-    """Р—Р°РїСѓСЃС‚РёС‚СЊ polling Рё РіР°СЂР°РЅС‚РёСЂРѕРІР°РЅРЅРѕ Р·Р°РєСЂС‹С‚СЊ РІРЅРµС€РЅРёРµ СЂРµСЃСѓСЂСЃС‹ РїСЂРё РѕСЃС‚Р°РЅРѕРІРєРµ."""
+    """Запустить polling и гарантированно закрыть внешние ресурсы при остановке."""
     await start_health_check_server()
     
-    # Р—Р°РїСѓСЃРє РїРёРЅРіР° РІ РѕС‚РґРµР»СЊРЅРѕРј task вЂ” С‡С‚РѕР±С‹ РЅРµ РјРµС€Р°Р» Р·Р°РїСѓСЃРєСѓ Р±РѕС‚Р°
+    # Запуск пинга в отдельном task — чтобы не мешал запуску бота
     pinger_task = asyncio.create_task(keep_alive_pinger(300))
     
     try:
-        # Р”Р°РµРј СЃРµСЂРІРµСЂСѓ "РѕС‚РґРѕС…РЅСѓС‚СЊ" РїРµСЂРµРґ СѓСЃС‚Р°РЅРѕРІРєРѕР№ РєРѕРјР°РЅРґ
-        logging.info("РЎРµСЂРІРµСЂ Р·Р°РїСѓС‰РµРЅ вЂ” РґР°РµРј РµРјСѓ 10 СЃРµРєСѓРЅРґ РЅР° 'СЂР°Р·РѕРіСЂРµРІ'...")
+        # Даем серверу "отдохнуть" перед установкой команд
+        logging.info("Сервер запущен — даем ему 10 секунд на 'разогрев'...")
         await asyncio.sleep(10)
-        logging.info("Р—Р°РїСѓСЃРєР°РµРј РєРѕРјР°РЅРґС‹ Р±РѕС‚Р°...")
-        # РћР±РµСЂС‚С‹РІР°РµРј РєРѕРјР°РЅРґС‹ РІ try/except вЂ” aiogram РјРѕР¶РµС‚ СЂРѕРЅСЏС‚СЊ Unauthorized РЅР° СѓР¶Рµ Р·Р°РїСѓС‰РѕРЅРЅРѕРј Р±РѕС‚Рµ
+        logging.info("Запускаем команды бота...")
+        # Обертываем команды в try/except — aiogram может ронять Unauthorized на уже запущонном боте
         try:
             await bot.set_my_commands([
-                types.BotCommand(command="start", description="РќР°С‡Р°С‚СЊ РІС‹Р¶РёРІР°РЅРёРµ"),
-                types.BotCommand(command="main", description="Р“Р»Р°РІРЅС‹Р№ СЌРєСЂР°РЅ"),
-                types.BotCommand(command="inventory", description="РРЅРІРµРЅС‚Р°СЂСЊ"),
-                types.BotCommand(command="character", description="РџРµСЂСЃРѕРЅР°Р¶"),
-                types.BotCommand(command="settings", description="РќР°СЃС‚СЂРѕР№РєРё"),
+                types.BotCommand(command="start", description="Начать выживание"),
+                types.BotCommand(command="main", description="Главный экран"),
+                types.BotCommand(command="inventory", description="Инвентарь"),
+                types.BotCommand(command="character", description="Персонаж"),
+                types.BotCommand(command="settings", description="Настройки"),
             ])
             await bot.delete_webhook(drop_pending_updates=False)
-            logging.info("РљРѕРјР°РЅРґС‹ СѓСЃС‚Р°РЅРѕРІР»РµРЅС‹ вЂ” Р·Р°РїСѓСЃРєР°РµРј polling...")
+            logging.info("Команды установлены — запускаем polling...")
             await dp.start_polling(bot)
         except Exception as cmd_err:
-            logging.error(f"РћС€РёР±РєР° РїСЂРё РЅР°СЃС‚СЂРѕР№РєРµ РєРѕРјР°РЅРґ: {cmd_err}")
-            # РџСЂРѕРґРѕР»Р¶Р°РµРј polling вЂ” РѕРЅ СЃР°Рј РѕР±СЂР°Р±РѕС‚Р°РµС‚ РєРѕРјР°РЅРґС‹
+            logging.error(f"Ошибка при настройке команд: {cmd_err}")
+            # Продолжаем polling — он сам обработает команды
             await dp.start_polling(bot)
     except Exception as e:
-        logging.error(f"РћС€РёР±РєР° РІ РѕСЃРЅРѕРІРЅРѕРј РїРѕС‚РѕРєРµ Р±РѕС‚Р°: {e}")
-        # РџРµСЂРµР·Р°РїСѓСЃРєР°РµРј РїРёРЅРі, РµСЃР»Рё Р±РѕС‚ СѓРїР°Р»
+        logging.error(f"Ошибка в основном потоке бота: {e}")
+        # Перезапускаем пинг, если бот упал
         if pinger_task.done() and not pinger_task.cancelled():
-            logging.warning("РџРёРЅРіРµСЂ Р·Р°РІРµСЂС€РёР» СЂР°Р±РѕС‚Сѓ вЂ” РїРµСЂРµР·Р°РїСѓСЃРєР°РµРј РµРіРѕ...")
+            logging.warning("Пингер завершил работу — перезапускаем его...")
             pinger_task = asyncio.create_task(keep_alive_pinger(300))
     finally:
         from services.database import mongo_client
