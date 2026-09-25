@@ -994,16 +994,31 @@ def test_12_unified_emojis_torch_and_navigation():
     # 1. Реестр эмодзи
     assert get_item_emoji("Ветка") == "🪵"
     assert get_item_emoji("Факел") == "🔦"
-    assert get_item_emoji("Кора") == "🟫"
-    assert get_item_emoji("Кусок коры") == "🟫"
+    assert get_item_emoji("Кора") == "🍂"
+    assert get_item_emoji("Кусок коры") == "🍂"
     assert get_item_emoji("Спички") == "📦"
+    assert get_item_emoji("Мох") == "🧽"
+    assert get_item_emoji("Сухой мох") == "🧽"
+    assert get_item_emoji("Сухая трава") == "🧽"
+    assert get_item_emoji("Пещерный мох") == "🧽"
+    assert get_item_emoji("Горный лишайник") == "🧽"
+    assert get_item_emoji("Кожа") == "🟤"
+    assert get_item_emoji("Мех") == "🧶"
+    assert get_item_emoji("Глина") == "🏺"
+    assert get_item_emoji("Сланец") == "⛰️"
+    assert get_item_emoji("Сланцевая заготовка") == "◽"
+    assert get_item_emoji("Сланцевая пластина") == "🛡️"
+    assert get_item_emoji("Сухпай") == "🟨"
+    assert get_item_emoji("Лесная ягода") == "🫐"
+    assert get_item_emoji("Дикий гриб") == "🍄"
     assert get_item_emoji("НеизвестныйПредмет") == "📦"
 
-    # 2. Дикоросы (ягоды и грибы) имеют маркер 🌿
-    assert get_item_rank_marker("Лесная ягода") == "🌿"
-    assert get_item_rank_marker("Дикий гриб") == "🌿"
+    # 2. Дикоросы (ягоды и грибы) имеют маркеры 🫐 и 🍄
+    assert get_item_rank_marker("Лесная ягода") == "🫐"
+    assert get_item_rank_marker("Дикий гриб") == "🍄"
     assert get_item_rank_marker("Ягодный отвар") == "🟢"
     assert get_item_rank_marker("Мясо на коре") == "🔵"
+    assert get_item_rank_marker("Сухпай") == "🟨"
 
     # 3. Факел в руке на экране персонажа
     game = GameState()
