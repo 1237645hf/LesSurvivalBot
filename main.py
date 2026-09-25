@@ -132,6 +132,9 @@ from keyboards import (
     inventory_inline_kb,
     character_inline_kb,
     get_fuel_quantity_kb,
+    get_start_resume_kb,
+    get_confirm_new_game_kb,
+    get_start_new_game_kb,
 )
 from crafts import (
     handle_craft,
@@ -426,6 +429,25 @@ def get_campfire_text(game=None) -> str:
     )
 
 
+def format_start_character_text(game) -> str:
+    hero_name = getattr(game, "character_name", None) or "Выживший"
+    day = getattr(game, "day", 1)
+    hp = getattr(game, "hp", 100)
+    hunger = getattr(game, "hunger", 100)
+    thirst = getattr(game, "thirst", 100)
+    ap = getattr(game, "ap", 0)
+    return (
+        "Ты медленно открываешь глаза среди вековых деревьев и холодного тумана. "
+        "В голове пустота, в памяти — лишь неясные обрывки прошлого... Но тело помнит тропы этого леса.\n\n"
+        f"👤 Выживший: **{hero_name}**\n"
+        f"📅 День в лесу: **{day}**\n"
+        f"❤️ Здоровье: **{hp}/100**\n"
+        f"🍖 Сытость: **{hunger}/100**\n"
+        f"💧 Жажда: **{thirst}/100**\n"
+        f"⚡ Энергия: **{ap} AP**"
+    )
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # ХЕНДЛЕРЫ
 # ──────────────────────────────────────────────────────────────────────────────
@@ -441,16 +463,12 @@ async def cmd_start(message: Message):
         pass
     loaded = load_game(uid)
     if loaded and getattr(loaded, "is_name_set", False):
-        text = "Вы пришли в себя посреди леса. Вы ничего не помните... В памяти лишь обрывки прошлого."
-        kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="🔄 Продолжить выживание", callback_data="load_game")],
-            [types.InlineKeyboardButton(text="⚠️ Начать сначала", callback_data="confirm_new_game")]
-        ])
+        hero_name = loaded.character_name or "Выживший"
+        text = format_start_character_text(loaded)
+        kb = get_start_resume_kb(hero_name)
     else:
         text = GUIDE_TEXT
-        kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="🚀 Начать выживание", callback_data="start_new_game")]
-        ])
+        kb = get_start_new_game_kb()
     # Нижняя Reply-клавиатура полностью отключена — сбрасываем кэш у клиента
     try:
         await message.answer("🌲 LesSurvivalBot", reply_markup=ReplyKeyboardRemove())
@@ -607,12 +625,17 @@ async def process_callback(callback: types.CallbackQuery):
                 games[uid] = game
         if data in ("new_game", "start_new_game"):
             existing = load_game(uid)
+            if existing is None:
+                existing = games.get(uid)
             if existing is not None and getattr(existing, "is_name_set", False):
-                text = "У вас уже есть сохранённая игра. Продолжить выживание или начать сначала?"
-                kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                    [types.InlineKeyboardButton(text="🔄 Продолжить выживание", callback_data="load_game")],
-                    [types.InlineKeyboardButton(text="⚠️ Начать сначала", callback_data="confirm_new_game")]
-                ])
+                hero_name = existing.character_name or "Выживший"
+                day = getattr(existing, "day", 1)
+                text = (
+                    "⚠️ **Внимание!** Вы собираетесь начать с чистого листа.\n"
+                    f"Персонаж **{hero_name}** ({day}-й день) и весь накопленный инвентарь будут безвозвратно удалены!\n\n"
+                    "Вы уверены?"
+                )
+                kb = get_confirm_new_game_kb()
                 await update_or_send_message(chat_id, uid, text, kb)
                 return
             game = Game()
@@ -634,9 +657,7 @@ async def process_callback(callback: types.CallbackQuery):
                 game = games.get(uid)
             if game is None:
                 text = "Сохранение не найдено. Начните новую игру!"
-                kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                    [types.InlineKeyboardButton(text="🚀 Начать выживание", callback_data="start_new_game")]
-                ])
+                kb = get_start_new_game_kb()
                 await update_or_send_message(chat_id, uid, text, kb)
                 return
             if game.story_state == "WAITING_FOR_CHARACTER_NAME" or not getattr(game, "is_name_set", False):
@@ -655,11 +676,17 @@ async def process_callback(callback: types.CallbackQuery):
             await update_or_send_message(chat_id, uid, text, kb)
             return
         if data == "confirm_new_game":
-            text = "Удалить текущего персонажа и начать новую историю?"
-            kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                [types.InlineKeyboardButton(text="✅ Да, начать заново", callback_data="start_new_game_confirmed")],
-                [types.InlineKeyboardButton(text="❌ Оставить персонажа", callback_data="cancel_new_game")]
-            ])
+            existing = load_game(uid)
+            if existing is None:
+                existing = games.get(uid)
+            hero_name = (existing.character_name if existing else None) or "Выживший"
+            day = getattr(existing, "day", 1) if existing else 1
+            text = (
+                "⚠️ **Внимание!** Вы собираетесь начать с чистого листа.\n"
+                f"Персонаж **{hero_name}** ({day}-й день) и весь накопленный инвентарь будут безвозвратно удалены!\n\n"
+                "Вы уверены?"
+            )
+            kb = get_confirm_new_game_kb()
             await update_or_send_message(chat_id, uid, text, kb)
             return
         if data == "start_new_game_confirmed":
@@ -678,12 +705,16 @@ async def process_callback(callback: types.CallbackQuery):
             return
 
         if data == "cancel_new_game":
-            # Возвращаем игрока в главное меню старта
-            text = "Вы отменили перезапуск. Что делаем?"
-            kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                [types.InlineKeyboardButton(text="🔄 Продолжить выживание", callback_data="load_game")],
-                [types.InlineKeyboardButton(text="⚠️ Начать сначала", callback_data="confirm_new_game")]
-            ])
+            existing = load_game(uid)
+            if existing is None:
+                existing = games.get(uid)
+            if existing and getattr(existing, "is_name_set", False):
+                hero_name = existing.character_name or "Выживший"
+                text = format_start_character_text(existing)
+                kb = get_start_resume_kb(hero_name)
+            else:
+                text = GUIDE_TEXT
+                kb = get_start_new_game_kb()
             await update_or_send_message(chat_id, uid, text, kb)
             return
 
@@ -692,9 +723,7 @@ async def process_callback(callback: types.CallbackQuery):
                 chat_id,
                 uid,
                 "Сессия не найдена. Нажми /start",
-                types.InlineKeyboardMarkup(inline_keyboard=[
-                    [types.InlineKeyboardButton(text="🚀 Начать выживание", callback_data="start_new_game")]
-                ]),
+                get_start_new_game_kb(),
             )
             return
 

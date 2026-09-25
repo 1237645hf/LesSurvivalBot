@@ -700,12 +700,18 @@ def test_9_6_inventory_inspect_button_hand_emoji():
 # ==============================================================================
 
 def test_10_1_save_game_protection_and_load_game():
-    """S1: Защита сохранения от случайного затирания."""
+    """S1: Защита сохранения от случайного затирания и канонический старт."""
     from unittest.mock import patch
     import main
+    from keyboards import get_start_resume_kb, get_confirm_new_game_kb, get_start_new_game_kb
+    from main import format_start_character_text
 
     existing_game = GameState()
     existing_game.day = 5
+    existing_game.hp = 85
+    existing_game.hunger = 70
+    existing_game.thirst = 60
+    existing_game.ap = 2
     existing_game.character_name = "Следопыт"
     existing_game.is_name_set = True
 
@@ -716,6 +722,33 @@ def test_10_1_save_game_protection_and_load_game():
         assert loaded.day == 5
         assert loaded.character_name == "Следопыт"
         assert loaded.is_name_set is True
+
+    # Текст карточки существующего персонажа
+    char_text = format_start_character_text(existing_game)
+    assert "Ты медленно открываешь глаза среди вековых деревьев и холодного тумана" in char_text
+    assert "👤 Выживший: **Следопыт**" in char_text
+    assert "📅 День в лесу: **5**" in char_text
+    assert "❤️ Здоровье: **85/100**" in char_text
+    assert "🍖 Сытость: **70/100**" in char_text
+    assert "💧 Жажда: **60/100**" in char_text
+    assert "⚡ Энергия: **2 AP**" in char_text
+
+    # Клавиатура продолжения игры (Случай А)
+    resume_kb = get_start_resume_kb("Следопыт")
+    resume_btns = [btn for row in resume_kb.inline_keyboard for btn in row]
+    assert any(b.text == "▶️ Продолжить за Следопыт" and b.callback_data == "load_game" for b in resume_btns)
+    assert any(b.text == "⚠️ Начать с чистого листа" and b.callback_data == "confirm_new_game" for b in resume_btns)
+
+    # Клавиатура подтверждения сброса
+    confirm_kb = get_confirm_new_game_kb()
+    confirm_btns = [btn for row in confirm_kb.inline_keyboard for btn in row]
+    assert any(b.text == "🔥 Да, удалить и начать заново" and b.callback_data == "start_new_game_confirmed" for b in confirm_btns)
+    assert any(b.text == "↩️ Вернуться к персонажу" and b.callback_data == "cancel_new_game" for b in confirm_btns)
+
+    # Клавиатура нового игрока (Случай Б)
+    new_kb = get_start_new_game_kb()
+    new_btns = [btn for row in new_kb.inline_keyboard for btn in row]
+    assert any(b.text == "🚀 Начать выживание" and b.callback_data == "start_new_game" for b in new_btns)
 
 
 def test_10_2_character_name_input_state_guard():

@@ -12,6 +12,29 @@ def get_settings_kb(game=None):
     ])
 
 
+def get_start_resume_kb(hero_name: str) -> InlineKeyboardMarkup:
+    """Стартовая клавиатура для продолжения игры за существующего персонажа."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"▶️ Продолжить за {hero_name}", callback_data="load_game")],
+        [InlineKeyboardButton(text="⚠️ Начать с чистого листа", callback_data="confirm_new_game")],
+    ])
+
+
+def get_confirm_new_game_kb() -> InlineKeyboardMarkup:
+    """Подтверждение удаления персонажа и начала игры заново."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔥 Да, удалить и начать заново", callback_data="start_new_game_confirmed")],
+        [InlineKeyboardButton(text="↩️ Вернуться к персонажу", callback_data="cancel_new_game")],
+    ])
+
+
+def get_start_new_game_kb() -> InlineKeyboardMarkup:
+    """Стартовая кнопка для нового игрока."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚀 Начать выживание", callback_data="start_new_game")],
+    ])
+
+
 
 from modules.items import is_item_consumable, get_item_rank, get_item_rank_marker
 
