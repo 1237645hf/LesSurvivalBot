@@ -473,6 +473,8 @@ PARENT_SCREEN = {
     # Прочие экраны
     "locations": "main",
     "wolf_lair": "locations",
+    "wolf_battle": "wolf_lair",
+    "combat": "wolf_lair",
     "settings": "main",
 }
 
@@ -491,6 +493,8 @@ CANONICAL_STACKS = {
     "recipe_card": ["main", "campfire", "campfire_recipes", "recipe_card"],
     "locations": ["main", "locations"],
     "wolf_lair": ["main", "locations", "wolf_lair"],
+    "wolf_battle": ["main", "locations", "wolf_lair", "wolf_battle"],
+    "combat": ["main", "locations", "wolf_lair", "combat"],
     "settings": ["main", "settings"],
 }
 
@@ -1420,6 +1424,9 @@ async def process_callback(callback: types.CallbackQuery):
             elif target == "locations":
                 text = "Куда направиться?"
                 kb = get_locations_kb(game)
+            elif target == "wolf_lair":
+                from story.location_stories import handle_l1_wolf_lair
+                text, kb = handle_l1_wolf_lair("wolf_lair_enter", game, uid)
             elif target == "settings":
                 text = get_settings_text(game)
                 kb = get_settings_kb(game)

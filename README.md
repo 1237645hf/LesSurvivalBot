@@ -258,6 +258,8 @@ modules/combat/          — или один modules/combat.py на старте
 | `campfire_recipes` | Меню доступных рецептов | `campfire` | `["main", "campfire", "campfire_recipes"]` | Кнопка `📜 Рецепты` в Костре |
 | `recipe_card` | Карточка рецепта костра | `campfire_recipes` | `["main", "campfire", "campfire_recipes", "recipe_card"]` | Выбор блюда в списке рецептов |
 | `locations` | Меню локаций и карты | `main` | `["main", "locations"]` | Кнопка `🗺️ Локации` на Главном |
+| `wolf_lair` | Экран входа в Волчье логово | `locations` | `["main", "locations", "wolf_lair"]` | Меню «Локации» (если открыто) |
+| `wolf_battle` / `combat` | Экран пошагового боя | `wolf_lair` | `["main", "locations", "wolf_lair", "wolf_battle"]` | Вход в пещеру из Волчьего логова |
 | `settings` | Меню настроек интерфейса | `main` | `["main", "settings"]` | Меню Telegram / команда `/settings` |
 
 ### 🛑 Обязательные правила для ИИ при добавлении новых экранов:

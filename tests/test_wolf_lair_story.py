@@ -13,6 +13,14 @@ from story.location_stories import (
     check_forest_research_story_trigger,
     is_story_callback,
 )
+from modules.combat import (
+    start_battle,
+    apply_action,
+    get_battle_text,
+    get_wolf_battle_text,
+    ENEMIES,
+    get_enemy,
+)
 from main import PARENT_SCREEN, CANONICAL_STACKS
 
 
@@ -434,8 +442,43 @@ def test_architectural_rule_1_mongodb_persistence():
 
 
 def test_architectural_rule_4_canonical_navigation_stack():
-    """Правило 4: Стек навигации экрана wolf_lair каноничен и защищён от циклов."""
+    """Правило 4: Стек навигации экрана wolf_lair и wolf_battle каноничен и защищён от циклов."""
     assert PARENT_SCREEN["wolf_lair"] == "locations"
     assert PARENT_SCREEN["locations"] == "main"
     assert CANONICAL_STACKS["wolf_lair"] == ["main", "locations", "wolf_lair"]
+    assert PARENT_SCREEN["wolf_battle"] == "wolf_lair"
+    assert CANONICAL_STACKS["wolf_battle"] == ["main", "locations", "wolf_lair", "wolf_battle"]
+    assert PARENT_SCREEN["combat"] == "wolf_lair"
+    assert CANONICAL_STACKS["combat"] == ["main", "locations", "wolf_lair", "combat"]
+
+
+def test_combat_module_engine_and_enemies():
+    """Проверка независимой работы модуля modules.combat."""
+    assert "old_wolf" in ENEMIES
+    cfg = get_enemy("old_wolf")
+    assert cfg["name"] == "Старый волк"
+    assert cfg["max_hp"] == 50
+
+    game = GameState()
+    game.equipment["hand_right"] = "Крепкий посох"
+    game.equipment["hand_left"] = "Факел"
+
+    # 1. start_battle
+    text, kb = start_battle(game, "old_wolf")
+    assert game.wolf_battle is not None
+    assert game.wolf_battle["wolf_hp"] == 50
+    assert "ЛОГОВО СТАРОГО ВОЛКА" in text
+
+    # 2. apply_action attack
+    text_atk, kb_atk = apply_action("attack", game, "old_wolf")
+    assert game.wolf_battle["wolf_hp"] < 50
+
+    # 3. apply_action defend
+    text_def, kb_def = apply_action("defend", game, "old_wolf")
+    assert "снижено на 50%" in game.wolf_battle["last_log"] or "Ты уходишь в глухую защиту" in game.wolf_battle["last_log"]
+
+    # 4. apply_action flee
+    text_flee, kb_flee = apply_action("flee", game, "old_wolf")
+    assert game.wolf_battle is None
+    assert "сломя голову выбегаешь" in text_flee
 

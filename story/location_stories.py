@@ -15,6 +15,11 @@ from keyboards import (
     get_wolf_battle_kb,
 )
 from modules.items import is_item_consumable, get_item_rank, get_item_type
+from modules.combat import (
+    start_battle,
+    apply_action,
+    get_battle_text as get_wolf_battle_text,
+)
 
 from game_math import (
     process_damage,
@@ -202,24 +207,6 @@ def handle_story(data: str, game, uid: int):
     return text, kb
 
 
-def get_wolf_battle_text(game) -> str:
-    """Форматирует интерфейс боевого экрана со старым волком."""
-    battle = getattr(game, "wolf_battle", None) or {}
-    wolf_hp = battle.get("wolf_hp", 50)
-    wolf_max_hp = battle.get("wolf_max_hp", 50)
-    last_log = battle.get("last_log", "Ты переступаешь порог пещеры. Волк припадает на передние лапы и глухо рычит.")
-    return (
-        "🐺 ЛОГОВО СТАРОГО ВОЛКА\n"
-        "━━━━━━━━━━━━━━━━━━━\n"
-        f"❤️ Твоё здоровье: {game.hp}/100 HP\n"
-        f"🐺 Старый волк: {wolf_hp}/{wolf_max_hp} HP\n"
-        "━━━━━━━━━━━━━━━━━━━\n"
-        f"{last_log}\n"
-        "━━━━━━━━━━━━━━━━━━━\n"
-        "Выбери действие:"
-    )
-
-
 def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool) -> tuple[str | None, str | None]:
     """Проверяет сюжетные триггеры при исследовании локации 1 (Лесной старт).
     
@@ -356,128 +343,10 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
             ])
 
     elif data == "wolf_battle_start":
-        game.story_state = "wolf_battle"
-        game.wolf_battle = {
-            "wolf_hp": 50,
-            "wolf_max_hp": 50,
-            "player_dmg_dealt": 0,
-            "wolf_dmg_dealt": 0,
-            "last_log": "Ты переступаешь порог пещеры. Волк припадает на передние лапы и глухо рычит.",
-        }
-        text = get_wolf_battle_text(game)
-        kb = get_wolf_battle_kb()
+        return start_battle(game, "old_wolf")
 
-    elif data == "wolf_battle_attack":
-        if not getattr(game, "wolf_battle", None):
-            game.wolf_battle = {
-                "wolf_hp": 50,
-                "wolf_max_hp": 50,
-                "player_dmg_dealt": 0,
-                "wolf_dmg_dealt": 0,
-                "last_log": "",
-            }
-        p_dmg = random.randint(4, 6)
-        has_torch = (
-            game.equipment.get("hand_left") == "Факел"
-            or game.equipment.get("hand") == "Факел"
-            or game.equipment.get("hand_right") == "Факел"
-        )
-        torch_burn = 1 if has_torch else 0
-        total_p_dmg = p_dmg + torch_burn
-
-        game.wolf_battle["wolf_hp"] = max(0, game.wolf_battle["wolf_hp"] - total_p_dmg)
-        game.wolf_battle["player_dmg_dealt"] += total_p_dmg
-
-        log_lines = [f"💥 Ты бьёшь посохом: −{p_dmg} HP."]
-        if torch_burn:
-            log_lines.append("🔥 Огонь факела обжигает зверя: −1 HP.")
-
-        if game.wolf_battle["wolf_hp"] <= 0:
-            text = (
-                "⚔️ ПОБЕДА!\n"
-                "━━━━━━━━━━━━━━━━━━━\n"
-                f"• Нанесено тобой: {game.wolf_battle['player_dmg_dealt']} ед.\n"
-                f"• Нанёс волк: {game.wolf_battle['wolf_dmg_dealt']} ед.\n"
-                "━━━━━━━━━━━━━━━━━━━\n"
-                "Зверь повержен и больше не может нападать."
-            )
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="➡️ Продолжить", callback_data="l1_5_aftermath")]
-            ])
-            return text, kb
-
-        scared = has_torch and (random.random() < 0.35)
-        if scared:
-            log_lines.append("🐺 Волк шарахается от пламени факела и промахивается!")
-        else:
-            w_dmg = random.randint(5, 7)
-            game.hp = max(1, game.hp - w_dmg)
-            game.wolf_battle["wolf_dmg_dealt"] += w_dmg
-            log_lines.append(f"🐺 Волк щёлкает клыками и полосует тебя: −{w_dmg} HP.")
-
-        game.wolf_battle["last_log"] = "\n".join(log_lines)
-        text = get_wolf_battle_text(game)
-        kb = get_wolf_battle_kb()
-
-    elif data == "wolf_battle_defend":
-        if not getattr(game, "wolf_battle", None):
-            game.wolf_battle = {
-                "wolf_hp": 50,
-                "wolf_max_hp": 50,
-                "player_dmg_dealt": 0,
-                "wolf_dmg_dealt": 0,
-                "last_log": "",
-            }
-        has_torch = (
-            game.equipment.get("hand_left") == "Факел"
-            or game.equipment.get("hand") == "Факел"
-            or game.equipment.get("hand_right") == "Факел"
-        )
-        torch_burn = 1 if has_torch else 0
-        if torch_burn:
-            game.wolf_battle["wolf_hp"] = max(0, game.wolf_battle["wolf_hp"] - torch_burn)
-            game.wolf_battle["player_dmg_dealt"] += torch_burn
-            log_lines = ["🛡️ Ты закрываешься посохом. Пламя факела опаляет зверя: −1 HP."]
-        else:
-            log_lines = ["🛡️ Ты уходишь в глухую защиту, выставив перед собой посох."]
-
-        if game.wolf_battle["wolf_hp"] <= 0:
-            text = (
-                "⚔️ ПОБЕДА!\n"
-                "━━━━━━━━━━━━━━━━━━━\n"
-                f"• Нанесено тобой: {game.wolf_battle['player_dmg_dealt']} ед.\n"
-                f"• Нанёс волк: {game.wolf_battle['wolf_dmg_dealt']} ед.\n"
-                "━━━━━━━━━━━━━━━━━━━\n"
-                "Зверь повержен и больше не может нападать."
-            )
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="➡️ Продолжить", callback_data="l1_5_aftermath")]
-            ])
-            return text, kb
-
-        scared = has_torch and (random.random() < 0.35)
-        if scared:
-            log_lines.append("🐺 Волк пугается огня и пятится назад: урон 0 HP.")
-        else:
-            w_dmg = random.randint(2, 4)
-            game.hp = max(1, game.hp - w_dmg)
-            game.wolf_battle["wolf_dmg_dealt"] += w_dmg
-            log_lines.append(f"🐺 Волк бьёт по защите, скользнув клыками: −{w_dmg} HP (снижено на 50%).")
-
-        game.wolf_battle["last_log"] = "\n".join(log_lines)
-        text = get_wolf_battle_text(game)
-        kb = get_wolf_battle_kb()
-
-    elif data == "wolf_battle_flee":
-        game.wolf_battle = None
-        game.story_state = None
-        text = (
-            "Ты резко отшатываешься назад, выставив посох перед собой, и сломя голову выбегаешь из пещеры обратно в овраг. "
-            "За спиной раздаётся яростный, но бессильный хрип зверя."
-        )
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="↩️ В меню локаций", callback_data="locations_menu")]
-        ])
+    elif data in ("wolf_battle_attack", "wolf_battle_defend", "wolf_battle_flee"):
+        return apply_action(data, game, "old_wolf")
 
     elif data == "l1_5_aftermath":
         has_pet = bool(game.equipment.get("pet")) or game.is_story_flag_set("has_pet")
