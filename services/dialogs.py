@@ -103,11 +103,25 @@ async def handle_waiting_for_character_name(
     game.story_state = None
     game.add_log(f"Имя персонажа: {name}. Удачи в лесу!")
 
+    save_ok = True
+    try:
+        save_ok = bool(save_game(uid, game))
+        from services.database import is_mongo_connected
+        if not is_mongo_connected():
+            logging.warning(f"Предупреждение: имя {name} сохранено в in-memory fallback (нет подключения к MongoDB).")
+    except Exception as exc:
+        save_ok = False
+        logging.error(f"Критическая ошибка сохранения персонажа {name} ({uid}): {exc}", exc_info=True)
 
     from keyboards import get_main_kb
+    warning_suffix = ""
+    if not save_ok:
+        warning_suffix = "\n\n⚠️ Внимание: не удалось сохранить персонажа в облачную базу данных! Прогресс может быть утерян при перезагрузке сервера."
+
     text_out = (
         f"Имя принято: {name}!\n\n"
         + game.get_ui()
+        + warning_suffix
     )
     msg_id = bot_ctx["last_active_msg_id"].get(uid)
     if msg_id:
@@ -115,7 +129,6 @@ async def handle_waiting_for_character_name(
     else:
         await bot_ctx["update_or_send_message"](chat_id, uid, text_out, get_main_kb(game))
 
-    save_game(uid, game)
     return True
 
 

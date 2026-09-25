@@ -530,13 +530,13 @@ class GameState:
     def to_document(self) -> Dict[str, Any]:
         """Вернуть MongoDB-документ состояния без служебных объектов dataclass."""
         return {
-            "schema_version": self.schema_version,
-            "display_mode": self.display_mode,
-            "max_line_length": self.max_line_length,
-            "max_lines_per_msg": self.max_lines_per_msg,
+            "schema_version": getattr(self, "schema_version", 2),
+            "display_mode": getattr(self, "display_mode", "standard"),
+            "max_line_length": getattr(self, "max_line_length", 4096),
+            "max_lines_per_msg": getattr(self, "max_lines_per_msg", 100),
             "inventory": dict(self.inventory),
             "equipment": dict(self.equipment),
-            "traps": dict(self.traps),
+            "traps": {str(k): dict(v) if isinstance(v, dict) else v for k, v in getattr(self, "traps", {}).items()},
             "karma": dict(self.karma),
             "narrative_karma": dict(self.narrative_karma),
             "story_flags": dict(self.story_flags),
@@ -571,6 +571,7 @@ class GameState:
             "player_name": str(getattr(self, "player_name", getattr(self, "character_name", "Выживший"))),
             "character_name": str(getattr(self, "character_name", getattr(self, "player_name", "Выживший"))),
             "is_name_set": bool(getattr(self, "is_name_set", False)),
+            "equipment_ap_bonus": int(getattr(self, "equipment_ap_bonus", 0)),
         }
 
 
@@ -602,8 +603,12 @@ class GameState:
         p_name = data.get("player_name") or data.get("character_name") or "Выживший"
         game.player_name = str(p_name)
         game.character_name = str(p_name)
-        game.hunger = max(0, int(game.hunger))
+        if "is_name_set" in data:
+            game.is_name_set = bool(data["is_name_set"])
+        elif p_name != "Выживший":
+            game.is_name_set = True
 
+        game.hunger = max(0, int(game.hunger))
         game.thirst = max(0, int(game.thirst))
         game.inventory = dict(game.inventory or {})
         game.inventory.pop("Вилка", None)
@@ -616,8 +621,13 @@ class GameState:
             game.equipment["hand_right"] = None
         if game.equipment.get("hand_left") == "Вилка":
             game.equipment["hand_left"] = None
-        if "traps" in data:
-            game.traps = dict(game.traps or data["traps"])
+        if "traps" in data and isinstance(data["traps"], dict):
+            game.traps = {}
+            for k, v in data["traps"].items():
+                try:
+                    game.traps[int(k)] = v
+                except (ValueError, TypeError):
+                    game.traps[k] = v
         game.story_flags = dict(game.story_flags or {})
         game.compact_route = list(game.compact_route or [])
         game.nav_stack = list(game.nav_stack or ["main"])
