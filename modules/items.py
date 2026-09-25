@@ -660,53 +660,47 @@ def is_item_consumable(item_name: str) -> bool:
 def format_item_card(item_name: str) -> str:
     """
     Форматирует информационную карточку предмета:
-    1. Название и маркер ранга
-    2. Художественное описание
-    3. Положительные эффекты
-    4. Негативные эффекты / риски с шансом
-    5. Примечания
+    - Название без ** и без (Армейское...) в заголовке
+    - Описание без _курсива_, абзацы без слипания
+    - Блоки Эффекты:, Негативный эффект:, Примечание: без markdown-звёздочек
     """
     data = ITEMS.get(item_name, {})
     if not data:
-        return f"📦 **{item_name}**\n\n_Информация отсутствует._"
+        return f"📦 {item_name}\n\nИнформация отсутствует."
 
-    marker = get_item_rank_marker(item_name)
-    rank_name = get_item_rank_name(item_name)
-    title = f"{marker} {item_name} ({rank_name})"
-
-    lines = [f"📦 **{title}**", ""]
+    lines = [f"📦 {item_name}", ""]
 
     # 1. Художественное описание
     desc = data.get("description", "")
     if desc:
-        lines.append(f"_{desc}_")
+        lines.append(desc)
         lines.append("")
 
     # 2. Положительные эффекты
     effects = data.get("effects", {})
     eff_parts = []
     if effects.get("hunger"):
-        eff_parts.append(f"🍖 Сытость: +{effects['hunger']}")
+        eff_parts.append(f"🍖 Сытость +{effects['hunger']}")
     if effects.get("thirst"):
-        eff_parts.append(f"💧 Жажда: +{effects['thirst']}")
+        eff_parts.append(f"💧 Жажда +{effects['thirst']}")
     if effects.get("hp"):
         hp_val = effects["hp"]
-        eff_parts.append(f"❤️ Здоровье: {'+' if hp_val > 0 else ''}{hp_val} HP")
+        eff_parts.append(f"❤️ Здоровье {'+' if hp_val > 0 else ''}{hp_val} HP")
     if effects.get("light"):
-        eff_parts.append(f"💡 Освещение: +{effects['light']}")
+        eff_parts.append(f"💡 Освещение +{effects['light']}")
 
-    lines.append("✨ **Эффекты:** " + (", ".join(eff_parts) if eff_parts else "Нет прямых эффектов"))
+    lines.append("✨ Эффекты: " + (", ".join(eff_parts) if eff_parts else "Нет прямых эффектов"))
 
     # 3. Негативные эффекты / риски
     neg = data.get("negative_effects")
     if neg:
-        lines.append(f"⚠️ **Негативный эффект:** {neg.get('description', 'Неизвестно')}")
+        lines.append(f"⚠️ Негативный эффект: {neg.get('description', 'Неизвестно')}")
     else:
-        lines.append("⚠️ **Негативный эффект:** Отсутствуют")
+        lines.append("⚠️ Негативный эффект: Отсутствуют")
 
     # 4. Примечание
     note = data.get("note")
     if note:
-        lines.append(f"📌 **Примечание:** {note}")
+        lines.append(f"📌 Примечание: {note}")
 
     return "\n".join(lines)

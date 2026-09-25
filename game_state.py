@@ -4,6 +4,7 @@ game_state.py — Центральное хранилище состояния �
 """
 
 import random
+import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
 from datetime import datetime
@@ -403,9 +404,9 @@ class GameState:
         self.equipment.setdefault("flask", None)
     
     def add_log(self, message: str, source: str = "game"):
-        """Добавить запись в лог событий (макс. 50 записей)."""
-        timestamp = datetime.now().strftime("%H:%M")
-        self.event_log.append(f"[{timestamp}] {message}")
+        """Добавить запись в лог событий (макс. 50 записей) без серверных часов."""
+        clean_msg = re.sub(r"^\[\d{2}:\d{2}\]\s*", "", message)
+        self.event_log.append(clean_msg)
         # Ограничение: хранить не более 50 последних записей
         if len(self.event_log) > 50:
             self.event_log = self.event_log[-50:]
@@ -699,11 +700,12 @@ class GameState:
             status_str = status_str.replace(f"{weather_icon} ", weather_icon, 1)
         return status_str
     def get_ui(self) -> str:
-        """Статус-бар + последние 3 записи лога событий."""
-        recent_logs = self.event_log[-3:] if self.event_log else []
-        log_part = "\n".join(f"> {line}" for line in recent_logs)
+        """Статус-бар + разделитель + лог событий (8-12 строк) + разделитель без часов сервера."""
+        recent_logs = self.event_log[-10:] if self.event_log else []
+        clean_logs = [re.sub(r"^\[\d{2}:\d{2}\]\s*", "", line) for line in recent_logs]
         status = self.get_status_bar()
-        if log_part:
+        if clean_logs:
+            log_part = "\n".join(f"> {line}" for line in clean_logs)
             return (
                 f"{status}\n"
                 "━━━━━━━━━━━━━━━━━━━\n"
@@ -712,10 +714,40 @@ class GameState:
             )
         return status
 
-    
     def get_inventory_text(self) -> str:
-        """Текст инвентаря с рангами качества и сортировкой еды сверху вниз."""
+        """Текст инвентаря: еда с маркерами ранга (🟡), остальные предметы со своими смайликами."""
         from modules.items import get_item_rank, get_item_rank_marker, is_item_consumable
+
+        # Смайлики для несъедобных предметов и ресурсов
+        item_emojis: Dict[str, str] = {
+            "Ветка": "🪵",
+            "Палка": "🪵",
+            "Палки": "🪵",
+            "Кусок коры": "🪵",
+            "Спички": "📦",
+            "Факел": "🔦",
+            "Костёр": "🔥",
+            "Охотничья ловушка": "🪤",
+            "Схема": "📜",
+            "Мох": "🌿",
+            "Сухой мох": "🌿",
+            "Сухая трава": "🌿",
+            "Пещерный мох": "🌿",
+            "Горный лишайник": "🌿",
+            "Камень": "🪨",
+            "Заострённый камень": "🪨",
+            "Глина": "🧱",
+            "Слизь": "🧪",
+            "Сланец": "🪨",
+            "Сланцевая пластина": "🛡️",
+            "Сланцевая заготовка": "🪨",
+            "Кость": "🦴",
+            "Кожа": "👞",
+            "Мех": "🧶",
+            "Пустая бутылка": "🧴",
+            "Бутылка воды": "🧴",
+            "Вода": "💧",
+        }
 
         equipped_hands = {
             self.equipment.get("hand_left"),
@@ -730,17 +762,18 @@ class GameState:
             item, _ = entry
             is_food = is_item_consumable(item)
             rank = get_item_rank(item)
-            # 0 для еды/расходников (сверху), 1 для остальных предметов
-            # Внутри группы — по рангу от большего к меньшему (-rank), затем по имени
             return (0 if is_food else 1, -rank, item)
 
         sorted_items = sorted(items_list, key=sort_key)
 
         lines = []
         for item, count in sorted_items:
-            item_clean = item.replace(" 🔥", "").replace("🔥", "")
+            item_clean = item.replace(" 🔥", "").replace("🔥", "").strip()
             equipped_mark = " (в руке)" if item in equipped_hands or item_clean in equipped_hands else ""
-            marker = get_item_rank_marker(item)
+            if is_item_consumable(item_clean):
+                marker = get_item_rank_marker(item_clean)
+            else:
+                marker = item_emojis.get(item_clean, "📦")
             line = f"• {marker} {item} x{count}{equipped_mark}" if count > 1 else f"• {marker} {item}{equipped_mark}"
             lines.append(line)
         text = "Инвентарь:\n" + "\n".join(lines) if lines else "Инвентарь пуст"

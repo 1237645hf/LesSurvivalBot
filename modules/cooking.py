@@ -171,8 +171,48 @@ def _consume(inventory: Dict[str, int], name: str, amount: int = 1) -> None:
         del inventory[name]
 
 
+def can_cook(game: Any, recipe_id: str) -> bool:
+    """Проверяет, хватает ли ингредиентов прямо сейчас для приготовления блюда."""
+    recipe = get_recipe_for_id(recipe_id)
+    if not recipe:
+        return False
+
+    inv = getattr(game, "inventory", {}) or {}
+    bark = "Кусок коры"
+    if recipe.get("needs_bark", True):
+        if inv.get(bark, 0) < 1:
+            return False
+
+    if recipe.get("needs_meat"):
+        if inv.get("Сырое мясо", 0) < 1:
+            return False
+
+    berries_needed = int(recipe.get("berries_needed", 0))
+    if berries_needed > 0:
+        if _count_tagged_items(inv, "berry") < berries_needed:
+            return False
+
+    mushrooms_needed = int(recipe.get("mushrooms_needed", 0))
+    if mushrooms_needed > 0:
+        if _count_tagged_items(inv, "mushroom") < mushrooms_needed:
+            return False
+
+    water_needed = int(recipe.get("water_from_flask", 0))
+    if water_needed > 0:
+        flask = int(getattr(game, "flask_water", 0) or 0)
+        has_flask_item = bool(getattr(game, "equipment", {}).get("flask"))
+        flask_water_available = flask if has_flask_item else 0
+        bottles_in_inv = inv.get("Бутылка воды", 0)
+        plain_water = inv.get("Вода", 0)
+        total_water = flask_water_available + bottles_in_inv * 20 + plain_water
+        if total_water < water_needed:
+            return False
+
+    return True
+
+
 def format_recipe_card(recipe_id: str) -> str:
-    """Форматирует информационную карточку рецепта для костра."""
+    """Форматирует информационную карточку рецепта для костра по единой Модели экранов."""
     recipe = get_recipe_for_id(recipe_id)
     if not recipe:
         return "Рецепт не найден."
@@ -180,26 +220,28 @@ def format_recipe_card(recipe_id: str) -> str:
     res_name = recipe["result"]
     res_data = items.ITEMS.get(res_name, {})
     rank_marker = items.get_item_rank_marker(res_name)
-    rank_name = items.get_item_rank_name(res_name)
 
-    lines = [f"🍳 **{rank_marker} {res_name}** ({rank_name} ранг)", ""]
-    lines.append(f"_{recipe.get('description', '')}_")
-    lines.append("")
+    lines = [f"🍳 {rank_marker} {res_name}", ""]
+    desc = recipe.get("description", "")
+    if desc:
+        lines.append(desc)
+        lines.append("")
 
-    # Ингредиенты
+    # Ингредиенты в едином формате
     ing_parts = []
     if recipe.get("needs_bark"):
-        ing_parts.append("Кусок коры ×1")
+        ing_parts.append("Кусок коры: 1")
     if recipe.get("needs_meat"):
-        ing_parts.append("Сырое мясо ×1")
+        ing_parts.append("Сырое мясо: 1")
     if recipe.get("berries_needed"):
-        ing_parts.append(f"Любые ягоды [Ягоды] ×{recipe['berries_needed']}")
+        ing_parts.append(f"Любые [Ягоды]: {recipe['berries_needed']}")
     if recipe.get("mushrooms_needed"):
-        ing_parts.append(f"Любые грибы [Грибы] ×{recipe['mushrooms_needed']}")
+        ing_parts.append(f"Любые [Грибы]: {recipe['mushrooms_needed']}")
     water = recipe.get("water_from_flask", 0)
-    ing_parts.append(f"Вода из фляги: {water} делений" if water > 0 else "Вода: не требуется")
+    if water > 0:
+        ing_parts.append(f"Вода: {water}")
 
-    lines.append("📋 **Ингредиенты:**")
+    lines.append("Ингредиенты:")
     for ing in ing_parts:
         lines.append(f"• {ing}")
     lines.append("")
@@ -213,17 +255,17 @@ def format_recipe_card(recipe_id: str) -> str:
         eff_parts.append(f"💧 Жажда +{effects['thirst']}")
     if effects.get("hp"):
         eff_parts.append(f"❤️ Здоровье +{effects['hp']} HP")
-    lines.append("✨ **Эффект блюда:** " + (", ".join(eff_parts) if eff_parts else "Сытный обед"))
+    lines.append("Эффект блюда: " + (", ".join(eff_parts) if eff_parts else "Сытный обед"))
 
     neg = res_data.get("negative_effects")
     if neg:
-        lines.append(f"⚠️ **Негативный эффект:** {neg.get('description')}")
+        lines.append(f"Негативный эффект: {neg.get('description')}")
     else:
-        lines.append("⚠️ **Негативный эффект:** Отсутствуют (безопасная горячая пища)")
+        lines.append("Негативный эффект: Отсутствуют (безопасная горячая пища)")
 
     note = res_data.get("note")
     if note:
-        lines.append(f"📌 **Примечание:** {note}")
+        lines.append(f"Примечание: {note}")
 
     return "\n".join(lines)
 

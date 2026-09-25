@@ -130,17 +130,71 @@ def do_craft(game, recipe_name: str):
     return True, f"Успешно создано: {recipe_name}"
 
 
+CRAFT_ICONS = {
+    "Факел": "🔦",
+    "Костёр": "🔥",
+}
+
+
+def get_craft_menu_text(game) -> str:
+    """Формирует текст экрана крафта: показывает сколько есть / сколько надо для каждого ингредиента."""
+    unlocked = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
+    lines = ["🔨 Крафт (только открытые рецепты):", ""]
+    has_any = False
+    for name in unlocked:
+        if name not in CRAFT_RECIPES:
+            continue
+        has_any = True
+        icon = CRAFT_ICONS.get(name, "📦")
+        ingredients = CRAFT_RECIPES[name]
+        ing_strs = []
+        for n, q in ingredients:
+            if n in ("Сушняк", "Трут"):
+                have = count_tinder(game)
+                display_n = "Мох"
+            else:
+                have = game.inventory.get(n, 0)
+                display_n = n
+            ing_strs.append(f"{display_n} ({have}/{q})")
+        lines.append(f"• {icon} {name}: {', '.join(ing_strs)}")
+    if not has_any:
+        lines.append("Пока нечего крафтить.")
+    return "\n".join(lines)
+
+
+def get_craft_menu_kb(game):
+    """Клавиатура крафта: иконка предмета + короткое название + статус ✅/❌ n/m."""
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    unlocked = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
+    keyboard = []
+    for name in unlocked:
+        if name not in CRAFT_RECIPES:
+            continue
+        icon = CRAFT_ICONS.get(name, "📦")
+        mark = craft_mark(game, name)
+        keyboard.append([
+            InlineKeyboardButton(text=f"{icon} {name} {mark}", callback_data=f"craft_{name}")
+        ])
+    keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
 def handle_craft(data, game, uid):
     text = None
     kb = None
     if data in ("craft_Факел", "craft_Костёр"):
         recipe = data.removeprefix("craft_")
         ok, msg = do_craft(game, recipe)
-        if not ok:
+        if ok:
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            text = f"🔨 {msg}\n\nПредмет успешно добавлен в инвентарь."
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="↩️ В инвентарь", callback_data="back")]
+            ])
+        else:
             game.add_log(msg)
-        inv_text = game.get_inventory_text() if hasattr(game, "get_inventory_text") else ""
-        text = f"{msg}\n\n{inv_text}" if inv_text else msg
-        kb = inventory_inline_kb
+            text = f"❌ {msg}\n\n{get_craft_menu_text(game)}"
+            kb = get_craft_menu_kb(game)
     elif data == "use_item_Факел":
         if game.inventory.get("Факел", 0) > 0:
             # Факел помещается ТОЛЬКО в левую руку
