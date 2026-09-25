@@ -131,6 +131,7 @@ from keyboards import (
     get_inventory_kb,
     inventory_inline_kb,
     character_inline_kb,
+    get_fuel_quantity_kb,
 )
 from crafts import (
     handle_craft,
@@ -302,7 +303,7 @@ def use_consumable(item, game):
             del game.inventory[item]
 
     game.add_log(f"Использовано: {item}. {result}")
-    return f"Использовано: {item}. {result}\n\n{game.get_ui()}"
+    return game.get_ui()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ПРИВЕТСТВИЕ
@@ -698,16 +699,9 @@ async def process_callback(callback: types.CallbackQuery):
                 return
             ok, message = cook_item(game, recipe_id)
             if not ok:
-                await callback.answer(message, show_alert=True)
+                await callback.answer(f"⚠️ {message}", show_alert=True)
                 return
-            deltas = game.consume_action(action_type="cook", base_hunger=2, base_thirst=1)
-            res_log = format_resource_log_text(deltas)
-            if res_log:
-                game.add_log(res_log)
-            game.campfire_durability = max(0, game.campfire_durability - 1)
-            if game.campfire_durability <= 0:
-                game.campfire_active = False
-                game.add_log("Костёр потух после готовки.")
+            game.add_log(message)
             save_game(uid, game)
             while len(game.nav_stack) > 1 and game.nav_stack[-1] in ("recipe_card", "campfire_recipes"):
                 game.nav_stack.pop()
@@ -731,18 +725,30 @@ async def process_callback(callback: types.CallbackQuery):
             kb = get_craft_menu_kb(game)
 
         elif data == "campfire_confirm_light":
+            has_torch = (
+                game.equipment.get("hand_left") == "Факел"
+                or game.equipment.get("hand") == "Факел"
+            )
+            has_matches = game.inventory.get("Спички", 0) > 0
+            min_ap = 1 if (has_torch or has_matches) else 2
+
             if game.inventory.get("Костёр", 0) < 1:
-                game.add_log("Нет костра в инвентаре.")
+                game.add_log("⚠️ Нет костра в инвентаре.")
+                await callback.answer("⚠️ Нет костра в инвентаре!", show_alert=True)
                 text = game.get_ui()
                 kb = get_main_kb(game)
-            elif game.ap < 1:
-                game.add_log("Не хватает очков действий, чтобы развести костёр.")
+            elif game.ap < min_ap:
+                warning_msg = f"⚠️ Не хватает очков действий (требуется {min_ap} ⚡)!"
+                game.add_log(warning_msg)
+                await callback.answer(warning_msg, show_alert=True)
                 text = game.get_ui()
                 kb = get_main_kb(game)
             else:
                 campfire_result = game.light_campfire()
                 if not campfire_result.get("lit"):
-                    game.add_log("Не удалось развести костёр (не хватает сил).")
+                    warning_msg = f"⚠️ Не хватает очков действий (требуется {min_ap} ⚡)!"
+                    game.add_log(warning_msg)
+                    await callback.answer(warning_msg, show_alert=True)
                     text = game.get_ui()
                     kb = get_main_kb(game)
                 else:
@@ -764,14 +770,14 @@ async def process_callback(callback: types.CallbackQuery):
             text = get_campfire_text(game)
             kb = get_campfire_kb(game)
         elif data == "campfire_add_fuel_menu":
-            # Подменю выбора топлива (Ветки, Палки, Кусок коры)
+            game.push_screen("campfire_fuel")
             inv = getattr(game, "inventory", {}) or {}
-            has_branches = (inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)) > 0
-            has_bark = inv.get("Кусок коры", 0) > 0
-            if not has_branches and not has_bark:
-                text = "❌ В инвентаре нет подходящего топлива!\nНужны ветки/палки или кусок коры."
+            sticks = inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)
+            bark = inv.get("Кусок коры", 0) + inv.get("Кора", 0)
+            if sticks <= 0 and bark <= 0:
+                text = "⚠️ В инвентаре нет подходящего топлива!\nНужны палки/ветки или кора."
                 kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                    [types.InlineKeyboardButton(text="⬅️ Назад в костёр", callback_data="menu_campfire")]
+                    [types.InlineKeyboardButton(text="↩️ Назад", callback_data="back")]
                 ])
             else:
                 cur_d = getattr(game, "campfire_durability", 0)
@@ -779,37 +785,121 @@ async def process_callback(callback: types.CallbackQuery):
                 text = f"🔥 КОСТЁР ({cur_d}/{max_d})\nВыберите топливо для поддержания огня:"
                 kb = get_campfire_fuel_kb(game)
 
-        elif data.startswith("feed_fuel:"):
-            # feed_fuel:<item_name>:<1|max>
-            parts = data.split(":", 2)
-            if len(parts) >= 3:
-                fuel_item = parts[1]
-                feed_mode = parts[2]
-                inv = getattr(game, "inventory", {}) or {}
-                avail = inv.get(fuel_item, 0)
-                needed = game.campfire_max_durability - game.campfire_durability
+        elif data.startswith("fuel_menu:"):
+            fuel_type = data.removeprefix("fuel_menu:")
+            inv = getattr(game, "inventory", {}) or {}
+            needed = max(0, game.campfire_max_durability - game.campfire_durability)
+            if not game.campfire_active or game.campfire_durability <= 0:
+                await callback.answer("🔥 Костёр уже погас! Разведите его заново.", show_alert=True)
+                text = game.get_ui()
+                kb = get_main_kb(game)
+            elif needed <= 0:
+                await callback.answer(f"🔥 Костёр уже разгорелся до максимума ({game.campfire_max_durability}/{game.campfire_max_durability})!", show_alert=True)
+                text = get_campfire_text(game)
+                kb = get_campfire_kb(game)
+            elif fuel_type == "sticks":
+                sticks = inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)
+                if sticks <= 0:
+                    await callback.answer("⚠️ В инвентаре нет палок/веток!", show_alert=True)
+                    return
+                game.push_screen("fuel_qty")
+                text = f"🪵 Палки (1 шт = +1 к огню)\nВ наличии: {sticks} шт., нужно до максимума: {needed} шт.\n\nВыберите вариант или введите число в чат:"
+                kb = get_fuel_quantity_kb("sticks", game)
+            else:
+                bark = inv.get("Кусок коры", 0) + inv.get("Кора", 0)
+                if bark < 2:
+                    await callback.answer(f"⚠️ Нужно чётное число коры, минимум 2 (в наличии: {bark} шт.)", show_alert=True)
+                    return
+                game.push_screen("fuel_qty")
+                text = f"🧱 Кора (2 шт = +1 к огню, только парами!)\nВ наличии: {bark} шт., нужно до максимума: {needed} огня.\n\nВыберите вариант или введите число в чат:"
+                kb = get_fuel_quantity_kb("bark", game)
 
-                if not game.campfire_active or game.campfire_durability <= 0:
-                    await callback.answer("🔥 Костёр уже погас! Разведите его заново.", show_alert=True)
-                    text = game.get_ui()
-                    kb = get_main_kb(game)
-                elif needed <= 0:
-                    await callback.answer(f"🔥 Костёр уже разгорелся до максимума ({game.campfire_max_durability}/{game.campfire_max_durability})!", show_alert=True)
-                    text = get_campfire_text(game)
-                    kb = get_campfire_kb(game)
-                elif avail <= 0:
-                    await callback.answer(f"❌ «{fuel_item}» закончился в инвентаре!", show_alert=True)
-                    text = get_campfire_text(game)
-                    kb = get_campfire_kb(game)
+        elif data.startswith("feed_fuel_action:") or data.startswith("feed_fuel:"):
+            if data.startswith("feed_fuel_action:"):
+                parts = data.split(":", 2)
+                fuel_kind = parts[1]  # sticks or bark
+                action_mode = parts[2]  # 1, 2, max, custom
+            else:
+                parts = data.split(":", 2)
+                raw_item = parts[1]
+                action_mode = parts[2]
+                fuel_kind = "bark" if "кор" in raw_item.lower() else "sticks"
+
+            inv = getattr(game, "inventory", {}) or {}
+            needed = max(0, game.campfire_max_durability - game.campfire_durability)
+
+            if not game.campfire_active or game.campfire_durability <= 0:
+                await callback.answer("🔥 Костёр уже погас! Разведите его заново.", show_alert=True)
+                text = game.get_ui()
+                kb = get_main_kb(game)
+            elif needed <= 0:
+                await callback.answer(f"🔥 Костёр уже разгорелся до максимума ({game.campfire_max_durability}/{game.campfire_max_durability})!", show_alert=True)
+                text = get_campfire_text(game)
+                kb = get_campfire_kb(game)
+            elif action_mode == "custom":
+                game.story_state = "WAITING_FOR_FUEL_COUNT"
+                game.story_flags["fuel_item"] = fuel_kind
+                if fuel_kind == "bark":
+                    bark = inv.get("Кусок коры", 0) + inv.get("Кора", 0)
+                    text = f"🧱 Введите количество коры для костра в чат:\n(Доступно: {bark} шт., 2 коры = +1 к огню, минимум 2)"
                 else:
-                    to_use = 1 if feed_mode == "1" else min(avail, needed)
-                    inv[fuel_item] -= to_use
-                    if inv[fuel_item] <= 0:
-                        del inv[fuel_item]
-                    game.campfire_durability += to_use
-                    game.add_log(f"🪵 Подкинуто: {fuel_item} ×{to_use}. Огонь: {game.campfire_durability}/{game.campfire_max_durability}.")
-                    text = f"Подкинуто {fuel_item} ×{to_use}.\n\n{get_campfire_text(game)}"
-                    kb = get_campfire_kb(game)
+                    sticks = inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)
+                    text = f"🪵 Введите количество палок для костра в чат:\n(Доступно: {sticks} шт., нужно до максимума: {needed} шт.)"
+                kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                    [types.InlineKeyboardButton(text="↩️ Назад", callback_data="back")]
+                ])
+            elif fuel_kind == "bark":
+                bark_avail = inv.get("Кусок коры", 0) + inv.get("Кора", 0)
+                if bark_avail < 2:
+                    await callback.answer("⚠️ Нужно чётное число коры, минимум 2", show_alert=True)
+                    return
+                if action_mode in ("2", "1"):
+                    count = 2
+                else:
+                    count = bark_avail
+                spent = (count // 2) * 2
+                spent = min(spent, (bark_avail // 2) * 2, needed * 2)
+                if spent == 0:
+                    await callback.answer("⚠️ Нужно чётное число коры, минимум 2", show_alert=True)
+                    return
+                to_deduct = spent
+                for k in ("Кусок коры", "Кора"):
+                    if to_deduct <= 0:
+                        break
+                    have = inv.get(k, 0)
+                    take = min(have, to_deduct)
+                    inv[k] -= take
+                    if inv[k] <= 0:
+                        del inv[k]
+                    to_deduct -= take
+                fire_added = spent // 2
+                game.campfire_durability += fire_added
+                game.add_log(f"🧱 Подкинуто: Кора ×{spent} (+{fire_added} 🔥). Огонь: {game.campfire_durability}/{game.campfire_max_durability}.")
+                text = f"🧱 Подкинуто Кора ×{spent} (+{fire_added} к огню).\n\n{get_campfire_text(game)}"
+                kb = get_campfire_kb(game)
+            else:
+                sticks_avail = inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)
+                if sticks_avail <= 0:
+                    await callback.answer("⚠️ В инвентаре нет палок/веток!", show_alert=True)
+                    return
+                to_use = 1 if action_mode == "1" else min(sticks_avail, needed)
+                if to_use <= 0:
+                    await callback.answer("⚠️ В инвентаре нет палок/веток!", show_alert=True)
+                    return
+                to_deduct = to_use
+                for k in ("Ветка", "Палки", "Палка"):
+                    if to_deduct <= 0:
+                        break
+                    have = inv.get(k, 0)
+                    take = min(have, to_deduct)
+                    inv[k] -= take
+                    if inv[k] <= 0:
+                        del inv[k]
+                    to_deduct -= take
+                game.campfire_durability += to_use
+                game.add_log(f"🪵 Подкинуто: Палки ×{to_use}. Огонь: {game.campfire_durability}/{game.campfire_max_durability}.")
+                text = f"🪵 Подкинуто Палки ×{to_use}.\n\n{get_campfire_text(game)}"
+                kb = get_campfire_kb(game)
 
         elif data == "campfire_recipes":
             game.push_screen("campfire_recipes")
@@ -862,7 +952,8 @@ async def process_callback(callback: types.CallbackQuery):
             item = data.removeprefix("use_consumable_")
             if item == "Костёр":
                 if game.inventory.get("Костёр", 0) < 1:
-                    game.add_log("Нет костра в инвентаре.")
+                    game.add_log("⚠️ Нет костра в инвентаре.")
+                    await callback.answer("⚠️ Нет костра в инвентаре!", show_alert=True)
                     text = game.get_ui()
                     kb = get_main_kb(game)
                 else:
@@ -873,18 +964,25 @@ async def process_callback(callback: types.CallbackQuery):
                     has_matches = game.inventory.get("Спички", 0) > 0
                     min_ap = 1 if (has_torch or has_matches) else 2
 
-                    if game.ap < min_ap:
-                        game.add_log(f"Не хватает очков действий для розжига костра (требуется {min_ap} ⚡).")
-                        text = game.get_ui()
-                        kb = get_main_kb(game)
+                    if has_torch:
+                        cost_text = "🔥 Источник огня: горящий факел в руке!\nЗатраты: 1 ⚡ AP. Спички, сытость и жажда НЕ тратятся."
+                    elif has_matches:
+                        cost_text = "🪵 Источник огня: спички из инвентаря.\nЗатраты: 1 спичка, 1 ⚡ AP. Сытость и жажда НЕ тратятся."
                     else:
-                        if has_torch:
-                            cost_text = "🔥 Источник огня: горящий факел в руке!\nЗатраты: 1 ⚡ AP. Спички, сытость и жажда НЕ тратятся."
-                        elif has_matches:
-                            cost_text = "🪵 Источник огня: спички из инвентаря.\nЗатраты: 1 спичка, 1 ⚡ AP. Сытость и жажда НЕ тратятся."
-                        else:
-                            cost_text = "⏳ Спичек и факела нет — розжиг трением вручную.\nЗатраты: 2 ⚡ AP, голод −7, жажда −18 (тяжёлые усилия)."
+                        cost_text = "⏳ Спичек и факела нет — розжиг трением вручную.\nЗатраты: 2 ⚡ AP, голод −7, жажда −18 (тяжёлые усилия)."
 
+                    if game.ap < min_ap:
+                        warning_text = f"\n\n⚠️ Не хватает очков действий! Требуется: {min_ap} ⚡ AP (в наличии: {game.ap} ⚡). Нужно поспать."
+                        text = (
+                            "Ты складываешь камни и ветки в аккуратную кладку.\n"
+                            "В круге света теплее не только телу: даже лес будто отступает на шаг.\n\n"
+                            f"{cost_text}"
+                            f"{warning_text}"
+                        )
+                        kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                            [types.InlineKeyboardButton(text="↩️ Назад", callback_data="back")]
+                        ])
+                    else:
                         text = (
                             "Ты складываешь камни и ветки в аккуратную кладку.\n"
                             "В круге света теплее не только телу: даже лес будто отступает на шаг.\n\n"
@@ -901,7 +999,7 @@ async def process_callback(callback: types.CallbackQuery):
             else:
                 result = use_consumable(item, game)
                 if result is not None:
-                    text = result
+                    text = game.get_ui()
                     kb = get_main_kb(game)
 
         elif data == "equip_bottle_flask":
@@ -1053,7 +1151,7 @@ async def process_callback(callback: types.CallbackQuery):
                 else:
                     text = "📜 Рецепты костра\n\nСейчас у вас недостаточно ингредиентов ни для одного блюда.\nНайдите ягоды, грибы, мясо, воду или кусок коры."
                 kb = get_campfire_recipes_kb(game)
-            elif prev == "campfire_fuel":
+            elif prev in ("campfire_fuel", "fuel_qty"):
                 cur_d = getattr(game, "campfire_durability", 0)
                 max_d = getattr(game, "campfire_max_durability", 10)
                 text = f"🔥 КОСТЁР ({cur_d}/{max_d})\nВыберите топливо для поддержания огня:"
@@ -1233,27 +1331,47 @@ async def process_callback(callback: types.CallbackQuery):
             kb = get_main_kb(game)
 
         elif data == "action_light_campfire":
-            campfire_result = game.light_campfire()
-            if campfire_result.get("lit"):
-                res_log = format_resource_log_text(campfire_result)
-                if res_log:
-                    game.add_log(res_log)
-                text = f"🔥 Вы развели костёр! (Прочность: {game.campfire_durability}/{game.campfire_max_durability})"
-                kb = get_campfire_kb(game)
-            else:
-                text = "Не хватает AP для костра!"
-                kb = get_main_kb(game)
-
-        elif data == "action_collect_water":
-            if game.weather in {"rain", "storm"} and game.ap > 0:
-                game.ap -= 1
-                game.inventory["Вода"] = game.inventory.get("Вода", 0) + 1
-                game.add_log("Ты набрал дождевой воды!")
-                text = "Ты набрал дождевой воды!"
-                kb = get_main_kb(game)
-            else:
+            has_torch = (
+                game.equipment.get("hand_left") == "Факел"
+                or game.equipment.get("hand") == "Факел"
+            )
+            has_matches = game.inventory.get("Спички", 0) > 0
+            min_ap = 1 if (has_torch or has_matches) else 2
+            if game.ap < min_ap:
+                warning_msg = f"⚠️ Не хватает очков действий (требуется {min_ap} ⚡)!"
+                game.add_log(warning_msg)
+                await callback.answer(warning_msg, show_alert=True)
                 text = game.get_ui()
                 kb = get_main_kb(game)
+            else:
+                campfire_result = game.light_campfire()
+                if campfire_result.get("lit"):
+                    res_log = format_resource_log_text(campfire_result)
+                    if res_log:
+                        game.add_log(res_log)
+                    text = f"🔥 Вы развели костёр! (Прочность: {game.campfire_durability}/{game.campfire_max_durability})"
+                    kb = get_campfire_kb(game)
+                else:
+                    warning_msg = f"⚠️ Не хватает очков действий (требуется {min_ap} ⚡)!"
+                    game.add_log(warning_msg)
+                    await callback.answer(warning_msg, show_alert=True)
+                    text = game.get_ui()
+                    kb = get_main_kb(game)
+
+        elif data == "action_collect_water":
+            if game.weather in {"rain", "storm"}:
+                # 80% thirst +20, 20% light HP damage (-5..-8)
+                if random.random() < 0.8:
+                    game.thirst = min(100, game.thirst + 20)
+                    game.add_log("🌧️ Ты подставил ладони под дождь и напился.")
+                else:
+                    dmg = random.randint(5, 8)
+                    game.hp = max(1, game.hp - dmg)
+                    game.add_log(f"⚠️ Дождевая вода оказалась скверной. Горло жжёт (−{dmg} HP).")
+            else:
+                game.add_log("⚠️ Дождь уже закончился.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
         
         elif data == "menu_main":
             text = game.get_ui()

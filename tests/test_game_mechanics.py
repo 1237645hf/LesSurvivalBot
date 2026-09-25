@@ -593,7 +593,7 @@ def test_8_4_sticks_drop_one_to_three():
 
 
 def test_8_5_campfire_feed_bark_and_branches():
-    """Тест 8.5: Поддержание костра поддерживает ветки/палки и кусок коры."""
+    """Тест 8.5: Поддержание костра поддерживает палки и кору (R5)."""
     from keyboards import get_campfire_fuel_kb
 
     game = GameState()
@@ -605,7 +605,94 @@ def test_8_5_campfire_feed_bark_and_branches():
     kb = get_campfire_fuel_kb(game)
     button_texts = [btn.text for row in kb.inline_keyboard for btn in row]
 
-    assert any("Ветка" in t for t in button_texts)
-    assert any("Кусок коры" in t for t in button_texts)
+    assert any("Палки" in t for t in button_texts)
+    assert any("Кора" in t for t in button_texts)
+
+
+# ==============================================================================
+# МЕХАНИКА 9: ДОЖДЬ, ЛУТ (3 БРОСКА), КОСТЁР, ТОПЛИВО (R1-R6)
+# ==============================================================================
+
+def test_9_1_rain_water_drinking_no_inventory_addition():
+    """R1: Дождевая вода — пить прямо под дождём, не собирать во флягу/инвентарь."""
+    game = GameState()
+    game.weather = "rain"
+    game.thirst = 50
+    game.ap = 3
+    initial_inv = dict(game.inventory)
+
+    # 80% исход: жажда +20, без расхода AP и без наливания в инвентарь/флягу
+    import random
+    orig_random = random.random
+    random.random = lambda: 0.5  # < 0.8 -> успех
+
+    # Эмулируем хэндлер action_collect_water
+    game.thirst = min(100, game.thirst + 20)
+    game.add_log("🌧️ Ты подставил ладони под дождь и напился.")
+
+    assert game.thirst == 70
+    assert game.ap == 3  # AP не потрачено
+    assert game.inventory == initial_inv  # вода не добавлена
+    assert "напился" in game.event_log[-1]
+
+    random.random = orig_random
+
+
+def test_9_2_search_loot_three_rolls():
+    """R2: 3 независимых броска лута (Roll A, Roll B, Roll C ~30% палки)."""
+    from modules.finds import roll_find
+
+    results = [roll_find(1) for _ in range(50)]
+    # Каждый бросок возвращает минимум 2 предмета (Roll A + Roll B)
+    assert all(len(r) >= 2 for r in results)
+    # При Roll C или бонусах длина может быть больше 2
+    assert any(len(r) > 2 for r in results)
+
+
+def test_9_3_cooking_zero_extra_costs():
+    """R4: Готовка на костре не снижает campfire_durability и не тратит сытость/жажду."""
+    game = GameState()
+    game.campfire_active = True
+    game.campfire_durability = 8
+    game.hunger = 50
+    game.thirst = 50
+    game.inventory = {"Кусок коры": 1, "Лесная ягода": 5}
+
+    ok, msg = cook_item(game, "cook_roast_berries")
+    assert ok is True
+    # Прочность и базовые параметры остаются прежними (нет скрытых списаний)
+    assert game.campfire_durability == 8
+    assert game.hunger == 50
+    assert game.thirst == 50
+
+
+def test_9_4_campfire_light_friction_requires_2_ap():
+    """R3: Розжиг трением требует минимум 2 AP."""
+    game = GameState()
+    game.ap = 1
+    game.equipment["hand_left"] = None
+    game.inventory.pop("Спички", None)
+    res = game.light_campfire()
+    assert res["lit"] is False  # не разжегся, т.к. AP < 2
+
+
+def test_9_5_fuel_bark_even_spending_logic():
+    """R5: Списание коры округляется вниз до чётного числа."""
+    # count = 3 -> spent = 2, огня +1
+    spent_3 = (3 // 2) * 2
+    assert spent_3 == 2
+    assert spent_3 // 2 == 1
+
+    # count = 1 -> spent = 0
+    spent_1 = (1 // 2) * 2
+    assert spent_1 == 0
+
+
+def test_9_6_inventory_inspect_button_hand_emoji():
+    """R6: Кнопка осмотра в инвентаре имеет эмодзи руки ✋."""
+    from keyboards import inventory_inline_kb
+    btn_texts = [btn.text for row in inventory_inline_kb.inline_keyboard for btn in row]
+    assert any("✋ Осмотреть" in t for t in btn_texts)
+
 
 

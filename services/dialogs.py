@@ -196,32 +196,78 @@ async def handle_waiting_for_fuel_count(
         save_game(uid, game)
 
     try:
-        fuel_amount = int(text)
+        fuel_amount = int(text.strip())
         if fuel_amount <= 0:
-            await _reply_error("❌ Введите число больше нуля!")
+            await _reply_error("⚠️ Введите число больше нуля!")
             return True
     except ValueError:
-        await _reply_error("❌ Введите корректное положительное число!")
+        await _reply_error("⚠️ Введите корректное положительное число!")
         return True
 
-    branches = game.inventory.get("Ветка", 0)
-    if branches <= 0:
-        await _reply_error("❌ У вас нет столько веток! Доступно: 0")
+    fuel_type = game.story_flags.get("fuel_item", "sticks")
+    inv = game.inventory
+    needed_fire = max(0, game.campfire_max_durability - game.campfire_durability)
+    if needed_fire <= 0:
+        game.story_state = None
+        game.story_flags.pop("fuel_item", None)
+        await _reply_error(f"🔥 Костёр уже разгорелся до максимума ({game.campfire_max_durability}/{game.campfire_max_durability})!")
         return True
 
-    needed = game.campfire_max_durability - game.campfire_durability
-    if fuel_amount > needed:
-        fuel_amount = needed
+    if fuel_type == "bark":
+        spent = (fuel_amount // 2) * 2
+        if spent == 0:
+            await _reply_error("⚠️ Нужно чётное число коры, минимум 2")
+            return True
+        bark_avail = inv.get("Кусок коры", 0) + inv.get("Кора", 0)
+        if bark_avail < spent:
+            spent = (bark_avail // 2) * 2
+            if spent == 0:
+                await _reply_error(f"⚠️ Недостаточно коры в инвентаре (доступно: {bark_avail} шт.). Нужно чётное число, минимум 2.")
+                return True
+        if spent > needed_fire * 2:
+            spent = needed_fire * 2
 
-    game.inventory["Ветка"] -= fuel_amount
-    if game.inventory["Ветка"] <= 0:
-        del game.inventory["Ветка"]
-    game.campfire_durability += fuel_amount
-    game.story_state = None
+        to_deduct = spent
+        for k in ("Кусок коры", "Кора"):
+            if to_deduct <= 0:
+                break
+            have = inv.get(k, 0)
+            take = min(have, to_deduct)
+            inv[k] -= take
+            if inv[k] <= 0:
+                del inv[k]
+            to_deduct -= take
 
-    result_text = f"🪵 Добавлено {fuel_amount} ветки. Прочность: {game.campfire_durability}/{game.campfire_max_durability}."
+        fire_added = spent // 2
+        game.campfire_durability += fire_added
+        game.story_state = None
+        game.story_flags.pop("fuel_item", None)
+        game.add_log(f"🧱 Подкинуто: Кора ×{spent} (+{fire_added} 🔥). Огонь: {game.campfire_durability}/{game.campfire_max_durability}.")
+        result_text = f"🧱 Подкинуто {spent} шт. коры (+{fire_added} к огню). Огонь: {game.campfire_durability}/{game.campfire_max_durability}."
+    else:
+        sticks_avail = inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)
+        if sticks_avail <= 0:
+            await _reply_error("⚠️ У вас нет палок/веток в инвентаре!")
+            return True
+        to_use = min(fuel_amount, sticks_avail, needed_fire)
+        to_deduct = to_use
+        for k in ("Ветка", "Палки", "Палка"):
+            if to_deduct <= 0:
+                break
+            have = inv.get(k, 0)
+            take = min(have, to_deduct)
+            inv[k] -= take
+            if inv[k] <= 0:
+                del inv[k]
+            to_deduct -= take
+
+        game.campfire_durability += to_use
+        game.story_state = None
+        game.story_flags.pop("fuel_item", None)
+        game.add_log(f"🪵 Подкинуто: Палки ×{to_use}. Огонь: {game.campfire_durability}/{game.campfire_max_durability}.")
+        result_text = f"🪵 Добавлено {to_use} палок/веток. Огонь: {game.campfire_durability}/{game.campfire_max_durability}."
+
     kb = get_campfire_kb(game)
-
     msg_id = bot_ctx["last_active_msg_id"].get(uid)
     if msg_id:
         await bot_ctx["safe_edit_message"](chat_id, msg_id, result_text, kb)

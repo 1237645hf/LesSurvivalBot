@@ -10,15 +10,15 @@ import random
 
 LOCATION_FINDS: Dict[int, List[Dict[str, Any]]] = {
     1: [
-        {"item": "Лесная ягода", "chance": 20},
-        {"item": "Лесной гриб", "chance": 20},
-        {"item": "Мох", "chance": 25},
-        {"item": "Ветка", "chance": 20},
+        {"item": "Лесная ягода", "chance": 15},
+        {"item": "Лесной гриб", "chance": 15},
+        {"item": "Мох", "chance": 20},
+        {"item": "Ветка", "chance": 35},
         {"item": "Камень", "chance": 15},
     ],
     2: [
-        {"item": "Красная ягода", "chance": 30},
-        {"item": "Ветка", "chance": 35},
+        {"item": "Красная ягода", "chance": 25},
+        {"item": "Ветка", "chance": 40},
         {"item": "Камень", "chance": 25},
         {"item": "Сланцевая пластина", "chance": 10},
     ],
@@ -26,35 +26,36 @@ LOCATION_FINDS: Dict[int, List[Dict[str, Any]]] = {
         {"item": "Фиолетовая ягода", "chance": 15},
         {"item": "Дикий гриб", "chance": 15},
         {"item": "Сухой мох", "chance": 15},
-        {"item": "Сланец", "chance": 40},
-        {"item": "Сланцевая заготовка", "chance": 15},
+        {"item": "Ветка", "chance": 25},
+        {"item": "Сланец", "chance": 30},
     ],
     4: [
-        {"item": "Лесная ягода", "chance": 15},
-        {"item": "Лесной гриб", "chance": 15},
-        {"item": "Сухая трава", "chance": 20},
-        {"item": "Ветка", "chance": 30},
-        {"item": "Кость", "chance": 10},
+        {"item": "Лесная ягода", "chance": 10},
+        {"item": "Лесной гриб", "chance": 10},
+        {"item": "Сухая трава", "chance": 15},
+        {"item": "Ветка", "chance": 40},
+        {"item": "Кость", "chance": 15},
         {"item": "Кожа", "chance": 10},
     ],
     5: [
-        {"item": "Болотная ягода", "chance": 20},
-        {"item": "Болотный гриб", "chance": 20},
+        {"item": "Болотная ягода", "chance": 15},
+        {"item": "Болотный гриб", "chance": 15},
         {"item": "Светящийся гриб", "chance": 5},
         {"item": "Слизь", "chance": 35},
-        {"item": "Ветка", "chance": 20},
+        {"item": "Ветка", "chance": 30},
     ],
     6: [
-        {"item": "Пещерный гриб", "chance": 25},
+        {"item": "Пещерный гриб", "chance": 20},
         {"item": "Пещерный мох", "chance": 20},
-        {"item": "Камень", "chance": 30},
-        {"item": "Ветка", "chance": 25},
+        {"item": "Камень", "chance": 25},
+        {"item": "Ветка", "chance": 35},
     ],
     7: [
-        {"item": "Горная ягода", "chance": 25},
-        {"item": "Горный гриб", "chance": 25},
-        {"item": "Горный лишайник", "chance": 25},
-        {"item": "Камень", "chance": 25},
+        {"item": "Горная ягода", "chance": 20},
+        {"item": "Горный гриб", "chance": 20},
+        {"item": "Горный лишайник", "chance": 20},
+        {"item": "Камень", "chance": 15},
+        {"item": "Ветка", "chance": 25},
     ],
 }
 
@@ -73,6 +74,20 @@ BONUS_FINDS: Dict[int, List[Dict[str, Any]]] = {
 
 
 STICK_NAMES = {"Ветка", "Палка", "Палки"}
+
+
+def _roll_single_item(table: List[Dict[str, Any]]) -> str:
+    """Выбрать ровно 1 предмет из таблицы по процентным шансам."""
+    if not table:
+        return "Ветка"
+    total_chance = sum(int(entry.get("chance", 0)) for entry in table)
+    roll = random.randint(1, max(100, total_chance))
+    acc = 0
+    for entry in table:
+        acc += int(entry.get("chance", 0))
+        if roll <= acc:
+            return entry["item"]
+    return table[-1]["item"]
 
 
 def _roll_table(table: List[Dict[str, Any]]) -> List[str]:
@@ -122,10 +137,37 @@ def location_id_from_game(game) -> int:
 
 
 def roll_find(location_id: int) -> List[str]:
+    """3 броска при исследовании:
+    Бросок A: таблица локации (1 предмет по шансам).
+    Бросок B: второй независимый бросок по таблице локации (всегда делается).
+    Бросок C: ~30% шанс на ветки/палки, количество 1, 2 или 3 с равной вероятностью.
+    + Бонусный бросок (кора, глина).
+    """
     location_id = int(location_id)
-    main = _roll_table(LOCATION_FINDS.get(location_id, LOCATION_FINDS[1]))
+    table = LOCATION_FINDS.get(location_id, LOCATION_FINDS[1])
+    found: List[str] = []
+
+    # Бросок A
+    item_a = _roll_single_item(table)
+    if item_a:
+        found.append(item_a)
+
+    # Бросок B
+    item_b = _roll_single_item(table)
+    if item_b:
+        found.append(item_b)
+
+    # Бросок C (~30% шанс на палки, 1..3 шт.)
+    if random.randint(1, 100) <= 30:
+        count = random.choice([1, 2, 3])
+        found.extend(["Ветка"] * count)
+
+    # Бонусный бросок
     bonus = _roll_bonus(BONUS_FINDS.get(location_id, []))
-    return main + bonus
+    if bonus:
+        found.extend(bonus)
+
+    return found
 
 
 def apply_finds_to_inventory(game, found: List[str]) -> str:

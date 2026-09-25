@@ -134,7 +134,7 @@ def get_main_kb(game):
     kb = InlineKeyboardMarkup(inline_keyboard=[row1, row2])
     if game.weather in {"rain", "storm"}:
         kb.inline_keyboard.append([
-            InlineKeyboardButton(text="🌧️ Собрать дождевую воду", callback_data="action_collect_water")
+            InlineKeyboardButton(text="🌧️ Выпить дождевой воды", callback_data="action_collect_water")
         ])
     kb.inline_keyboard.append([
         InlineKeyboardButton(text="🗺️ Локации", callback_data="locations_menu")
@@ -153,35 +153,43 @@ def get_campfire_kb(game=None):
 
 
 def get_campfire_fuel_kb(game):
-    """Подменю выбора топлива: Ветка/Палки (+1 к огню) и Кусок коры (+1 к огню)."""
-    keyboard = []
+    """Подменю выбора топлива: Палки (1 шт = +1 к огню) и Кора (2 шт = +1 к огню)."""
     inv = getattr(game, "inventory", {}) or {}
+    sticks = inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)
+    bark = inv.get("Кусок коры", 0) + inv.get("Кора", 0)
 
-    # 1. Ветка / Палки
-    branches = inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)
-    if branches > 0:
-        actual_branch = "Ветка" if inv.get("Ветка", 0) > 0 else ("Палки" if inv.get("Палки", 0) > 0 else "Палка")
-        keyboard.append([
-            InlineKeyboardButton(text=f"🪵 Ветка (+1) — {branches} шт.", callback_data=f"feed_fuel:{actual_branch}:1")
-        ])
-        if branches > 1:
-            keyboard.append([
-                InlineKeyboardButton(text="🪵 Ветки (до максимума)", callback_data=f"feed_fuel:{actual_branch}:max")
-            ])
-
-    # 2. Кусок коры
-    bark = inv.get("Кусок коры", 0)
-    if bark > 0:
-        keyboard.append([
-            InlineKeyboardButton(text=f"🪵 Кусок коры (+1) — {bark} шт.", callback_data="feed_fuel:Кусок коры:1")
-        ])
-        if bark > 1:
-            keyboard.append([
-                InlineKeyboardButton(text="🪵 Кусок коры (до максимума)", callback_data="feed_fuel:Кусок коры:max")
-            ])
-
-    keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
+    keyboard = [
+        [InlineKeyboardButton(text=f"🪵 Палки ({sticks})", callback_data="fuel_menu:sticks")],
+        [InlineKeyboardButton(text=f"🧱 Кора ({bark})", callback_data="fuel_menu:bark")],
+        [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
+    ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_fuel_quantity_kb(fuel_type: str, game=None):
+    """Выбор количества топлива для подкидывания в костёр."""
+    if fuel_type == "sticks":
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🪵 Добавить 1", callback_data="feed_fuel_action:sticks:1"),
+                InlineKeyboardButton(text="🪵 До максимума", callback_data="feed_fuel_action:sticks:max"),
+            ],
+            [
+                InlineKeyboardButton(text="✏️ Ввести число", callback_data="feed_fuel_action:sticks:custom"),
+                InlineKeyboardButton(text="↩️ Назад", callback_data="back"),
+            ],
+        ])
+    else:
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🧱 Добавить 2 коры (+1 🔥)", callback_data="feed_fuel_action:bark:2"),
+                InlineKeyboardButton(text="🧱 До максимума", callback_data="feed_fuel_action:bark:max"),
+            ],
+            [
+                InlineKeyboardButton(text="✏️ Ввести число", callback_data="feed_fuel_action:bark:custom"),
+                InlineKeyboardButton(text="↩️ Назад", callback_data="back"),
+            ],
+        ])
 
 
 def get_campfire_recipes_kb(game):
@@ -261,7 +269,7 @@ def get_trap_buttons_kb(game):
 
 
 inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="🔍 Осмотреть", callback_data="inv_inspect"),
+    [InlineKeyboardButton(text="✋ Осмотреть", callback_data="inv_inspect"),
      InlineKeyboardButton(text="🔨 Крафт", callback_data="inv_craft")],
     [InlineKeyboardButton(text="🗑 Выкинуть", callback_data="inv_drop"),
      InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
