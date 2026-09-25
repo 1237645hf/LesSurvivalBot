@@ -619,28 +619,28 @@ def test_8_5_campfire_feed_bark_and_branches():
 # ==============================================================================
 
 def test_9_1_rain_water_drinking_no_inventory_addition():
-    """R1: Дождевая вода — пить прямо под дождём, не собирать во флягу/инвентарь."""
+    """R1: Дождевая вода — пить дождь, короткая кнопка '🌧️ Пить дождь', 100% успех (+20 жажды, без урона)."""
+    from keyboards import get_main_kb
+
     game = GameState()
     game.weather = "rain"
     game.thirst = 50
     game.ap = 3
     initial_inv = dict(game.inventory)
 
-    # 80% исход: жажда +20, без расхода AP и без наливания в инвентарь/флягу
-    import random
-    orig_random = random.random
-    random.random = lambda: 0.5  # < 0.8 -> успех
+    # Проверка текста кнопки в клавиатуре главного экрана
+    kb = get_main_kb(game)
+    btn_texts = [btn.text for row in kb.inline_keyboard for btn in row]
+    assert "🌧️ Пить дождь" in btn_texts
 
-    # Эмулируем хэндлер action_collect_water
+    # Детерминированное питьё дождя (100% успех, +20 к жажде)
     game.thirst = min(100, game.thirst + 20)
-    game.add_log("🌧️ Ты подставил ладони под дождь и напился.")
+    game.add_log("🌧️ Ты подставил ладони под дождь и напился свежей воды (+20 жажды).")
 
     assert game.thirst == 70
     assert game.ap == 3  # AP не потрачено
-    assert game.inventory == initial_inv  # вода не добавлена
-    assert "напился" in game.event_log[-1]
-
-    random.random = orig_random
+    assert game.inventory == initial_inv  # вода не добавлена во флягу/инвентарь
+    assert "напился свежей воды" in game.event_log[-1]
 
 
 def test_9_2_search_loot_three_rolls():

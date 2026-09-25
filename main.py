@@ -1584,14 +1584,8 @@ async def process_callback(callback: types.CallbackQuery):
 
         elif data == "action_collect_water":
             if game.weather in {"rain", "storm"}:
-                # 80% thirst +20, 20% light HP damage (-5..-8)
-                if random.random() < 0.8:
-                    game.thirst = min(100, game.thirst + 20)
-                    game.add_log("🌧️ Ты подставил ладони под дождь и напился.")
-                else:
-                    dmg = random.randint(5, 8)
-                    game.hp = max(1, game.hp - dmg)
-                    game.add_log(f"⚠️ Дождевая вода оказалась скверной. Горло жжёт (−{dmg} HP).")
+                game.thirst = min(100, game.thirst + 20)
+                game.add_log("🌧️ Ты подставил ладони под дождь и напился свежей воды (+20 жажды).")
             else:
                 game.add_log("⚠️ Дождь уже закончился.")
             text = game.get_ui()

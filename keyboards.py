@@ -163,7 +163,7 @@ def get_main_kb(game):
     kb_rows = [row1, row2]
     if game.weather in {"rain", "storm"}:
         kb_rows.append([
-            InlineKeyboardButton(text="🌧️ Выпить дождевой воды", callback_data="action_collect_water")
+            InlineKeyboardButton(text="🌧️ Пить дождь", callback_data="action_collect_water")
         ])
     kb_rows.append([
         InlineKeyboardButton(text="🗺️ Локации", callback_data="locations_menu")
