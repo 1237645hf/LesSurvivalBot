@@ -36,7 +36,7 @@ def get_start_new_game_kb() -> InlineKeyboardMarkup:
 
 
 
-from modules.items import is_item_consumable, get_item_rank, get_item_rank_marker
+from modules.items import is_item_consumable, get_item_rank, get_item_rank_marker, get_item_emoji
 
 
 def get_use_item_kb(game):
@@ -63,23 +63,13 @@ def get_inspect_menu_kb(game):
     items_list = [(item, count) for item, count in game.inventory.items() if count > 0]
     items_list.sort(key=lambda entry: (0 if is_item_consumable(entry[0]) else 1, -get_item_rank(entry[0]), entry[0]))
 
-    item_emojis = {
-        "Ветка": "🪵", "Палка": "🪵", "Палки": "🪵", "Кусок коры": "🪵", "Спички": "📦",
-        "Факел": "🔦", "Костёр": "🔥", "Охотничья ловушка": "🪤", "Схема": "📜",
-        "Мох": "🌿", "Сухой мох": "🌿", "Сухая трава": "🌿", "Пещерный мох": "🌿",
-        "Горный лишайник": "🌿", "Камень": "🪨", "Заострённый камень": "🪨",
-        "Глина": "🧱", "Слизь": "🧪", "Сланец": "🪨", "Сланцевая пластина": "🛡️",
-        "Сланцевая заготовка": "🪨", "Кость": "🦴", "Кожа": "👞", "Мех": "🧶",
-        "Пустая бутылка": "🧴", "Бутылка воды": "🧴", "Вода": "💧",
-    }
-
     keyboard = []
     for item, count in items_list:
         item_clean = item.replace(" 🔥", "").replace("🔥", "").strip()
         if is_item_consumable(item_clean):
             marker = get_item_rank_marker(item_clean)
         else:
-            marker = item_emojis.get(item_clean, "📦")
+            marker = get_item_emoji(item_clean)
         qty_str = f" ×{count}" if count > 1 else ""
         keyboard.append([
             InlineKeyboardButton(text=f"{marker} {item}{qty_str}", callback_data=f"inspect_item_{item}")

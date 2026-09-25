@@ -608,7 +608,13 @@ def get_item_rank(item_name: str) -> int:
 
 
 def get_item_rank_marker(item_name: str) -> str:
-    rank = get_item_rank(item_name)
+    item_clean = item_name.replace(" 🔥", "").replace("🔥", "").strip()
+    for prefix in ("⚪ ", "🟢 ", "🔵 ", "🟣 ", "🟡 ", "🟨 ", "🌿 ", "📦 "):
+        if item_clean.startswith(prefix):
+            item_clean = item_clean[len(prefix):].strip()
+    if is_berry(item_clean) or is_mushroom(item_clean) or get_item_type(item_clean) in ("berry", "mushroom"):
+        return "🌿"
+    rank = get_item_rank(item_clean)
     return RANKS.get(rank, {}).get("marker", "⚪")
 
 
@@ -674,14 +680,45 @@ def is_item_consumable(item_name: str) -> bool:
 
 
 ITEM_EMOJIS: Dict[str, str] = {
-    "Ветка": "🪵", "Палка": "🪵", "Палки": "🪵", "Кусок коры": "🪵", "Спички": "📦",
-    "Факел": "🔦", "Костёр": "🔥", "Охотничья ловушка": "🪤", "Схема": "📜",
-    "Мох": "🌿", "Сухой мох": "🌿", "Сухая трава": "🌿", "Пещерный мох": "🌿",
-    "Горный лишайник": "🌿", "Камень": "🪨", "Заострённый камень": "🪨",
-    "Глина": "🧱", "Слизь": "🧪", "Сланец": "🪨", "Сланцевая пластина": "🛡️",
-    "Сланцевая заготовка": "🪨", "Кость": "🦴", "Кожа": "👞", "Мех": "🧶",
+    # Ресурсы и материалы
+    "Ветка": "🪵", "Палка": "🪵", "Палки": "🪵",
+    "Камень": "🪨", "Заострённый камень": "🪨", "Сланец": "🪨", "Сланцевая заготовка": "🪨", "Сланцевая пластина": "🛡️",
+    "Кусок коры": "🟫", "Кора": "🟫",
+    "Мох": "🌿", "Сухой мох": "🌿", "Сухая трава": "🌿", "Пещерный мох": "🌿", "Горный лишайник": "🌿",
+    "Глина": "🧱", "Слизь": "🧪", "Кость": "🦴", "Кожа": "👞", "Мех": "🧶",
+    # Инструменты и экипировка
+    "Спички": "📦", "Факел": "🔦", "Костёр": "🔥", "Охотничья ловушка": "🪤", "Схема": "📜",
     "Пустая бутылка": "🧴", "Бутылка воды": "🧴", "Вода": "💧",
+    "Грязная кепка": "🧢", "Потасканная куртка": "👕", "Потасканная майка": "👕",
+    "Рваные штаны": "👖", "Стоптанные ботинки": "🥾",
+    # Дикоросы (дары леса)
+    "Лесная ягода": "🌿", "Красная ягода": "🌿", "Фиолетовая ягода": "🌿", "Болотная ягода": "🌿", "Горная ягода": "🌿",
+    "Лесной гриб": "🌿", "Дикий гриб": "🌿", "Болотный гриб": "🌿", "Пещерный гриб": "🌿", "Горный гриб": "🌿", "Светящийся гриб": "🌿",
+    "Сырое мясо": "🥩", "Мясо": "🥩",
+    # Блюда и готовая кулинария
+    "Печёные ягоды": "⚪", "Жареные грибы": "⚪",
+    "Ягодный отвар": "🟢", "Грибная похлёбка": "🟢", "Сухпай": "🟢",
+    "Мясо на коре": "🔵", "Зелье здоровья": "🔵",
+    "Охотничья похлёбка": "🟣", "Лесная тушёнка": "🟣",
+    "Таёжный пир": "🟡",
 }
+
+
+def get_item_emoji(item_name: str) -> str:
+    """Возвращает единый канонический эмодзи предмета."""
+    if not item_name:
+        return ""
+    clean = item_name.replace(" 🔥", "").replace("🔥", "").strip()
+    for prefix in ("⚪ ", "🟢 ", "🔵 ", "🟣 ", "🟡 ", "🟨 ", "🌿 ", "📦 "):
+        if clean.startswith(prefix):
+            clean = clean[len(prefix):].strip()
+    if clean in ITEM_EMOJIS:
+        return ITEM_EMOJIS[clean]
+    if is_berry(clean) or is_mushroom(clean) or get_item_type(clean) in ("berry", "mushroom"):
+        return "🌿"
+    if is_item_consumable(clean):
+        return get_item_rank_marker(clean)
+    return "📦"
 
 
 def format_item_card(item_name: str) -> str:
@@ -698,12 +735,9 @@ def format_item_card(item_name: str) -> str:
         return f"━━━━━━━━━━━━━━━━━━━\n📦 {item_name}\n\nИнформация отсутствует.\n━━━━━━━━━━━━━━━━━━━"
 
     item_clean = item_name.replace(" 🔥", "").replace("🔥", "").strip()
-    if is_item_consumable(item_clean):
-        marker = get_item_rank_marker(item_clean)
-    else:
-        marker = ITEM_EMOJIS.get(item_clean, "📦")
+    marker = get_item_emoji(item_clean)
 
-    lines = [f"{marker} {item_name}", ""]
+    lines = [f"{marker} {item_clean}", ""]
 
     # 1. Художественное описание
     desc = data.get("description", "")

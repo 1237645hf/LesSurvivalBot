@@ -450,7 +450,7 @@ class GameState:
                 self.equipment["hand_right"] = None
             if "Факел" in self.inventory:
                 del self.inventory["Факел"]
-            self.add_log("За ночь твой факел прогорел и погас.", "sleep")
+            self.add_log("💨 Твой факел догорел и угас за ночь.", "sleep")
 
         # 4. AP на новый день (факел уже сгорел — бонуса +1 AP нет)
         self.reset_daily_ap()
@@ -726,39 +726,8 @@ class GameState:
         return status
 
     def get_inventory_text(self) -> str:
-        """Текст инвентаря: еда с маркерами ранга (🟡), остальные предметы со своими смайликами."""
-        from modules.items import get_item_rank, get_item_rank_marker, is_item_consumable
-
-        # Смайлики для несъедобных предметов и ресурсов
-        item_emojis: Dict[str, str] = {
-            "Ветка": "🪵",
-            "Палка": "🪵",
-            "Палки": "🪵",
-            "Кусок коры": "🪵",
-            "Спички": "📦",
-            "Факел": "🔦",
-            "Костёр": "🔥",
-            "Охотничья ловушка": "🪤",
-            "Схема": "📜",
-            "Мох": "🌿",
-            "Сухой мох": "🌿",
-            "Сухая трава": "🌿",
-            "Пещерный мох": "🌿",
-            "Горный лишайник": "🌿",
-            "Камень": "🪨",
-            "Заострённый камень": "🪨",
-            "Глина": "🧱",
-            "Слизь": "🧪",
-            "Сланец": "🪨",
-            "Сланцевая пластина": "🛡️",
-            "Сланцевая заготовка": "🪨",
-            "Кость": "🦴",
-            "Кожа": "👞",
-            "Мех": "🧶",
-            "Пустая бутылка": "🧴",
-            "Бутылка воды": "🧴",
-            "Вода": "💧",
-        }
+        """Текст инвентаря: еда с маркерами ранга (🟡) и дикоросов (🌿), остальные предметы с каноническими эмодзи."""
+        from modules.items import get_item_rank, get_item_rank_marker, get_item_emoji, is_item_consumable
 
         equipped_hands = {
             self.equipment.get("hand_left"),
@@ -784,7 +753,7 @@ class GameState:
             if is_item_consumable(item_clean):
                 marker = get_item_rank_marker(item_clean)
             else:
-                marker = item_emojis.get(item_clean, "📦")
+                marker = get_item_emoji(item_clean)
             line = f"• {marker} {item} x{count}{equipped_mark}" if count > 1 else f"• {marker} {item}{equipped_mark}"
             lines.append(line)
         content = "Инвентарь:\n" + "\n".join(lines) if lines else "Инвентарь пуст"
@@ -792,6 +761,8 @@ class GameState:
     
     def get_character_text(self) -> str:
         """Экран персонажа: имя + экипировка по слотам + стартовая одежда + фляга + бонусы."""
+        from modules.items import get_item_emoji
+
         p_name = getattr(self, "player_name", None)
         c_name = getattr(self, "character_name", None)
         if p_name and p_name != "Выживший":
@@ -808,7 +779,7 @@ class GameState:
         # Стартовая одежда (если слот пуст)
         starting_clothes = {
             "head": "⚪ Грязная кепка",
-            "torso": "⚪ Потасканная майка",
+            "torso": "⚪ Потасканная куртка",
             "pants": "⚪ Рваные штаны",
             "boots": "⚪ Стоптанные ботинки",
         }
@@ -833,14 +804,36 @@ class GameState:
         else:
             flask_str = "Пусто"
 
+        left_item = self.equipment.get("hand_left") or self.equipment.get("hand")
+        if left_item == "Факел":
+            left_emoji = get_item_emoji("Факел")
+            left_label = f"{left_emoji} Левая рука:"
+            left_val = "⚪ Факел\n⚡ AP: +1"
+        elif left_item:
+            left_emoji = get_item_emoji(left_item)
+            left_label = f"{left_emoji} Левая рука:"
+            left_val = f"⚪ {left_item}"
+        else:
+            left_label = "✋ Левая рука:"
+            left_val = "Пусто"
+
+        right_item = self.equipment.get("hand_right")
+        if right_item:
+            right_emoji = get_item_emoji(right_item)
+            right_label = f"{right_emoji} Правая рука:"
+            right_val = f"⚪ {right_item}"
+        else:
+            right_label = "✋ Правая рука:"
+            right_val = "Пусто"
+
         slots_order = [
             ("head", "🧢 Голова:"),
             ("torso", "👕 Торс:"),
             ("pants", "👖 Штаны:"),
             ("boots", "🥾 Ботинки:"),
             ("back", "🎒 Спина:"),
-            ("hand_right", "🗡️ Правая рука:"),
-            ("hand_left", "🔦 Левая рука:"),
+            ("hand_right", right_label),
+            ("hand_left", left_label),
             ("flask", "🧴 Фляга:"),
             ("trinket", "💍 Безделушка:"),
             ("pet", "🐾 Питомец:"),
@@ -848,7 +841,11 @@ class GameState:
 
         blocks = [f"👤 ВЫЖИВШИЙ: {hero_name}"]
         for slot_key, label in slots_order:
-            if slot_key in starting_clothes:
+            if slot_key == "hand_left":
+                val = left_val
+            elif slot_key == "hand_right":
+                val = right_val
+            elif slot_key in starting_clothes:
                 val = self.equipment.get(slot_key) or starting_clothes[slot_key]
             elif slot_key == "flask":
                 val = flask_str

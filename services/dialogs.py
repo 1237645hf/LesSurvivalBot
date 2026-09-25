@@ -257,7 +257,7 @@ async def handle_waiting_for_fuel_count(
         game.story_flags.pop("fuel_item", None)
         game.nav_stack = ["main", "campfire"]
         game.add_log(f"🧱 Подкинуто: Кора ×{spent} (+{fire_added} 🔥). Огонь: {game.campfire_durability}/{game.campfire_max_durability}.")
-        action_header = f"✅ Подкинуто: Кора ×{spent} (+{fire_added} 🔥)"
+        action_header = f"🧱 Подкинуто: Кора ×{spent} (+{fire_added} огня)"
     else:
         sticks_avail = inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)
         if sticks_avail <= 0:
@@ -280,7 +280,7 @@ async def handle_waiting_for_fuel_count(
         game.story_flags.pop("fuel_item", None)
         game.nav_stack = ["main", "campfire"]
         game.add_log(f"🪵 Подкинуто: Палки ×{to_use}. Огонь: {game.campfire_durability}/{game.campfire_max_durability}.")
-        action_header = f"✅ Подкинуто: Палки ×{to_use} (+{to_use} 🔥)"
+        action_header = f"🪵 Подкинуто: Ветка ×{to_use} (+{to_use} огня)"
 
     from main import get_campfire_text
     result_text = get_campfire_text(game, action_header=action_header)
@@ -373,7 +373,7 @@ async def handle_waiting_for_drop_quantity(
     game.inventory[item_name] -= drop_amount
     if game.inventory[item_name] <= 0:
         del game.inventory[item_name]
-    game.add_log(f"Выкинуто: {item_name} ×{drop_amount}")
+    game.add_log(f"🗑️ Выброшено: {item_name} ×{drop_amount}.")
     game.story_state = None
     game.story_flags.pop("drop_item_name", None)
 

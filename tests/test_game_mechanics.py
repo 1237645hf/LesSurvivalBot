@@ -945,7 +945,7 @@ def test_11_3_character_screen_no_default_cat_and_frames():
     # Имя и стартовая одежда
     assert "👤 ВЫЖИВШИЙ: Бродяга" in char_text
     assert "🧢 Голова:\n⚪ Грязная кепка" in char_text
-    assert "👕 Торс:\n⚪ Потасканная майка" in char_text
+    assert "👕 Торс:\n⚪ Потасканная куртка" in char_text
     assert "👖 Штаны:\n⚪ Рваные штаны" in char_text
     assert "🥾 Ботинки:\n⚪ Стоптанные ботинки" in char_text
 
@@ -984,6 +984,54 @@ def test_11_4_item_card_torch_and_frames():
     # Рамки
     assert torch_card.startswith("━━━━━━━━━━━━━━━━━━━\n")
     assert torch_card.endswith("\n━━━━━━━━━━━━━━━━━━━")
+
+
+def test_12_unified_emojis_torch_and_navigation():
+    """Тест 12: Единый реестр эмодзи, маркер дикоросов 🌿, факел в руке и порядок текста костра."""
+    from modules.items import get_item_emoji, get_item_rank_marker
+    from main import get_campfire_text, LOCATION_EMOJIS
+
+    # 1. Реестр эмодзи
+    assert get_item_emoji("Ветка") == "🪵"
+    assert get_item_emoji("Факел") == "🔦"
+    assert get_item_emoji("Кора") == "🟫"
+    assert get_item_emoji("Кусок коры") == "🟫"
+    assert get_item_emoji("Спички") == "📦"
+    assert get_item_emoji("НеизвестныйПредмет") == "📦"
+
+    # 2. Дикоросы (ягоды и грибы) имеют маркер 🌿
+    assert get_item_rank_marker("Лесная ягода") == "🌿"
+    assert get_item_rank_marker("Дикий гриб") == "🌿"
+    assert get_item_rank_marker("Ягодный отвар") == "🟢"
+    assert get_item_rank_marker("Мясо на коре") == "🔵"
+
+    # 3. Факел в руке на экране персонажа
+    game = GameState()
+    game.equipment["hand_left"] = "Факел"
+    char_text = game.get_character_text()
+    assert "🔦 Левая рука:\n⚪ Факел\n⚡ AP: +1" in char_text
+    assert "• ⚡ AP: +1" in char_text
+
+    # 4. Локационные эмодзи
+    assert LOCATION_EMOJIS[1] == "🌲"
+    assert LOCATION_EMOJIS[2] == "🏞️"
+    assert LOCATION_EMOJIS[3] == "🏔️"
+    assert LOCATION_EMOJIS[4] == "🏹"
+    assert LOCATION_EMOJIS[5] == "🍄"
+    assert LOCATION_EMOJIS[6] == "⛰️"
+    assert LOCATION_EMOJIS[7] == "🔮"
+
+    # 5. Порядок в костре: action_header строго под нарративом
+    game.campfire_durability = 8
+    game.campfire_max_durability = 10
+    cf_text = get_campfire_text(game, action_header="🪵 Подкинуто: Ветка ×2 (+2 огня)")
+    narrative = "Костёр ярко пылает и озаряет лагерь"
+    assert narrative in cf_text
+    narrative_pos = cf_text.find(narrative)
+    header_pos = cf_text.find("🪵 Подкинуто: Ветка ×2 (+2 огня)")
+    fire_pos = cf_text.find("Огонь: 8/10")
+    assert narrative_pos < header_pos < fire_pos
+
 
 
 

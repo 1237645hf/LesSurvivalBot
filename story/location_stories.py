@@ -62,10 +62,25 @@ def handle_story(data: str, game, uid: int):
     text = None
     kb = None
 
-    if data == "wolf_leave":
+    if data in ("forest_start", "story_start", "wolf_start", "action_1"):
+        game.story_state = "wolf_encounter"
+        game.set_story_flag("l1_started")
+        game.add_log("Ты слышишь рычание в кустах... Это волк!")
+        text = (
+            "Тёмный лес замер. Из густых кустов на тебя смотрят два горящих глаза.\n"
+            "Старый, истощённый волк яростно копает лапами под старым пнём, совсем тебя не замечая.\n"
+            "Факел в твоей руке потрескивает, отбрасывая дрожащие тени на ветви.\n\n"
+            "Твои действия:"
+        )
+        kb = wolf_kb
+
+    elif data == "wolf_leave":
         game.story_state = None
         game.reset_nav()
+        game.set_story_flag("l1_completed")
+        game.set_story_flag("left_wolf")
         game.adjust_narrative_karma("pragmatism", 3)
+        game.add_log("Ты тихо отступил, не связываясь с волком.")
         text = (
             "Ты медленно пятишься назад, стараясь не хрустнуть ни одной веткой.\n"
             "Через несколько шагов рычание стихает за деревьями.\n"
@@ -132,6 +147,8 @@ def handle_story(data: str, game, uid: int):
         game.adjust_narrative_karma("compassion", -3)
         game.story_state = None
         game.reset_nav()
+        game.set_story_flag("l1_completed")
+        game.set_story_flag("left_kitten")
         text = (
             "Ты медленно убираешь руку.\n"
             "Котёнок смотрит тебе вслед, но не мяукает.\n"
@@ -143,6 +160,7 @@ def handle_story(data: str, game, uid: int):
     elif data == "pet_take":
         game.set_story_flag("saved_kitten")
         game.set_story_flag("has_pet")
+        game.set_story_flag("l1_completed")
         game.adjust_narrative_karma("compassion", 2)
         game.story_state = "WAITING_FOR_PET_NAME"
         text = (

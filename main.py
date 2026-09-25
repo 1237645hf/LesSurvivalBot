@@ -80,6 +80,17 @@ def format_resource_log_text(deltas: dict) -> str:
     return ", ".join(parts)
 
 
+LOCATION_EMOJIS = {
+    1: "🌲",
+    2: "🏞️",
+    3: "🏔️",
+    4: "🏹",
+    5: "🍄",
+    6: "⛰️",
+    7: "🔮",
+}
+
+
 # Предметы, для которых при находке назначается случайное количество (1-3)
 _STICK_ITEMS = {"Ветка", "Палка", "Палки"}
 
@@ -430,11 +441,11 @@ def get_campfire_text(game=None, action_header: Optional[str] = None) -> str:
     else:
         narrative = "Костёр потух. Вокруг лишь холодный пепел."
 
-    body = ["🔥 КОСТЁР"]
+    body = ["🔥 КОСТЁР", narrative]
     if action_header:
-        body.append(action_header)
-    body.append(narrative)
-    body.append(f"Огонь: {durability}/{max_d}")
+        body.append(f"{action_header}\nОгонь: {durability}/{max_d}")
+    else:
+        body.append(f"Огонь: {durability}/{max_d}")
 
     content = "\n\n".join(body)
     return f"━━━━━━━━━━━━━━━━━━━\n{content}\n━━━━━━━━━━━━━━━━━━━"
@@ -1098,7 +1109,7 @@ async def process_callback(callback: types.CallbackQuery):
                 game.campfire_durability += fire_added
                 game.nav_stack = ["main", "campfire"]
                 game.add_log(f"🧱 Подкинуто: Кора ×{spent} (+{fire_added} 🔥). Огонь: {game.campfire_durability}/{game.campfire_max_durability}.")
-                action_header = f"✅ Подкинуто: Кора ×{spent} (+{fire_added} 🔥)"
+                action_header = f"🧱 Подкинуто: Кора ×{spent} (+{fire_added} огня)"
                 text = get_campfire_text(game, action_header=action_header)
                 kb = get_campfire_kb(game)
                 save_game(uid, game)
@@ -1124,7 +1135,7 @@ async def process_callback(callback: types.CallbackQuery):
                 game.campfire_durability += to_use
                 game.nav_stack = ["main", "campfire"]
                 game.add_log(f"🪵 Подкинуто: Палки ×{to_use}. Огонь: {game.campfire_durability}/{game.campfire_max_durability}.")
-                action_header = f"✅ Подкинуто: Палки ×{to_use} (+{to_use} 🔥)"
+                action_header = f"🪵 Подкинуто: Ветка ×{to_use} (+{to_use} огня)"
                 text = get_campfire_text(game, action_header=action_header)
                 kb = get_campfire_kb(game)
                 save_game(uid, game)
@@ -1227,8 +1238,24 @@ async def process_callback(callback: types.CallbackQuery):
             else:
                 result = use_consumable(item, game)
                 if result is not None:
-                    text = game.get_ui()
-                    kb = get_main_kb(game)
+                    if game.inventory.get(item, 0) > 0:
+                        text = format_item_card(item)
+                        kb = get_item_card_actions_kb(item, game)
+                        game.nav_stack = list(CANONICAL_STACKS.get("item_card", ["main", "inventory", "inspect", "item_card"]))
+                    else:
+                        items_in_inv = [i for i, c in game.inventory.items() if c > 0]
+                        if items_in_inv:
+                            text = "🔍 Подробный осмотр предметов\n\nВыберите предмет из инвентаря, чтобы изучить его описание, эффекты и свойства:"
+                            kb = get_inspect_menu_kb(game)
+                            game.nav_stack = list(CANONICAL_STACKS.get("inspect", ["main", "inventory", "inspect"]))
+                        else:
+                            text = game.get_inventory_text()
+                            kb = inventory_inline_kb
+                            game.nav_stack = list(CANONICAL_STACKS.get("inventory", ["main", "inventory"]))
+                else:
+                    await callback.answer("Этот предмет нельзя использовать.", show_alert=True)
+                    text = format_item_card(item)
+                    kb = get_item_card_actions_kb(item, game)
 
         elif data == "equip_bottle_flask":
             if game.inventory.get("Бутылка воды", 0) > 0:
@@ -1308,7 +1335,7 @@ async def process_callback(callback: types.CallbackQuery):
                     game.inventory[item] -= drop_count
                     if game.inventory[item] <= 0:
                         del game.inventory[item]
-                    game.add_log(f"Выкинуто: {item} ×{drop_count}")
+                    game.add_log(f"🗑️ Выброшено: {item} ×{drop_count}.")
                     text = f"Удалено: {item} ×{drop_count}.\n\n{game.get_inventory_text()}"
                     kb = get_inventory_kb(game, 0)
 
@@ -1454,9 +1481,26 @@ async def process_callback(callback: types.CallbackQuery):
                 return
 
             deltas = game.consume_action(action_type="search", base_hunger=2, base_thirst=1)
-            res_log = format_resource_log_text(deltas)
-            if res_log:
-                game.add_log(res_log)
+            loc_id = location_id_from_game(game)
+            loc_emoji = LOCATION_EMOJIS.get(loc_id, "🌲")
+
+            parts = []
+            if deltas.get("delta_hunger"):
+                parts.append(f"Сытость {deltas['delta_hunger']}")
+            if deltas.get("delta_thirst"):
+                parts.append(f"Жажда {deltas['delta_thirst']}")
+            hp_delta = deltas.get("delta_hp", 0)
+            if hp_delta:
+                hp_reasons = []
+                if deltas.get("hunger_damage_to_hp"):
+                    hp_reasons.append("голодание")
+                if deltas.get("thirst_damage_to_hp"):
+                    hp_reasons.append("обезвоживание")
+                reason = f" ({', '.join(hp_reasons)})" if hp_reasons else ""
+                parts.append(f"HP {hp_delta}{reason}")
+
+            res_str = ", ".join(parts) if parts else "без изменений"
+            game.add_log(f"{loc_emoji} Исследование: {res_str}")
 
             # Счётчик исследований с факелом (факел только в левой руке)
             torch_equipped = (
@@ -1467,13 +1511,13 @@ async def process_callback(callback: types.CallbackQuery):
                 torch_research_count = getattr(game, "torch_research_count", 0) + 1
                 game.torch_research_count = torch_research_count
 
-                # На 4-м исследовании с факелом — запускаем сюжет L1
-                if torch_research_count >= 4:
-                    game.add_log(f"🔦 {torch_research_count}-е исследование с факелом! Что-то происходит...")
-                    text, kb = handle_story(data, game, uid)
+                # На 4-м исследовании с факелом в Стартовом лесу — запускаем сюжет L1
+                l1_done = game.is_story_flag_set("l1_completed") or game.is_story_flag_set("l1_started")
+                if loc_id == 1 and torch_research_count == 4 and not l1_done:
+                    game.add_log("🔦 Ты замечаешь странные следы и слышишь глухое рычание...")
+                    text, kb = handle_story("forest_start", game, uid)
                 else:
                     # С факелом лут идёт так же, как без него — обычный roll_find
-                    loc_id = location_id_from_game(game)
                     found_list = roll_find(loc_id)
                     msg = apply_finds_to_inventory(game, found_list)
                     game.add_log(f"🔦 {msg}")
@@ -1481,7 +1525,6 @@ async def process_callback(callback: types.CallbackQuery):
                     kb = get_main_kb(game)
             else:
                 # Без факела — обычный roll_find по локации
-                loc_id = location_id_from_game(game)
                 found_list = roll_find(loc_id)
                 msg = apply_finds_to_inventory(game, found_list)
                 game.add_log(msg)
@@ -1610,6 +1653,11 @@ async def process_callback(callback: types.CallbackQuery):
             game.record_route(data)
             await update_or_send_message(chat_id, uid, text, kb)
             save_game(uid, game)
+
+        try:
+            await callback.answer()
+        except Exception:
+            pass
     except Exception as exc:
         logging.exception(f"Ошибка callback {data if 'data' in locals() else 'unknown'} для {uid}: {exc}")
         try:
