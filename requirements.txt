@@ -1,5 +1,9 @@
 aiogram>=3.0.0
+<<<<<<< HEAD
 pymongo[srv]>=4.6.0
+=======
+pymongo>=4.6.0
+>>>>>>> 05469e824cdadc81644c28fb7d1b33bdbf00f5e2
 dnspython>=2.4.0
 pydantic
 python-dotenv
