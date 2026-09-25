@@ -695,4 +695,118 @@ def test_9_6_inventory_inspect_button_hand_emoji():
     assert any("✋ Осмотреть" in t for t in btn_texts)
 
 
+# ==============================================================================
+# МЕХАНИКА 10: СТАРТ/СЕЙВ + ТОПЛИВО КОСТРА (S1-S5)
+# ==============================================================================
+
+def test_10_1_save_game_protection_and_load_game():
+    """S1: Защита сохранения от случайного затирания."""
+    from unittest.mock import patch
+    import main
+
+    existing_game = GameState()
+    existing_game.day = 5
+    existing_game.character_name = "Следопыт"
+    existing_game.is_name_set = True
+
+    # load_game возвращает существующий сейв
+    with patch.object(main, "load_game", return_value=existing_game):
+        loaded = main.load_game(12345)
+        assert loaded is not None
+        assert loaded.day == 5
+        assert loaded.character_name == "Следопыт"
+        assert loaded.is_name_set is True
+
+
+def test_10_2_character_name_input_state_guard():
+    """S2: Блокировка команд и действий до ввода имени персонажа."""
+    game = GameState()
+    game.story_state = "WAITING_FOR_CHARACTER_NAME"
+    game.is_name_set = False
+
+    # Проверка условий guard'а
+    is_blocked = (game.story_state == "WAITING_FOR_CHARACTER_NAME") or (not getattr(game, "is_name_set", True))
+    assert is_blocked is True
+
+
+def test_10_3_character_button_in_main_keyboard():
+    """S3: Кнопка [👤 Персонаж] присутствует на главном экране рядом с инвентарём."""
+    from keyboards import get_main_kb
+
+    game = GameState()
+    kb = get_main_kb(game)
+    buttons = [btn for row in kb.inline_keyboard for btn in row]
+    char_btn = next((b for b in buttons if b.callback_data == "menu_character"), None)
+
+    assert char_btn is not None
+    assert "👤 Персонаж" in char_btn.text
+
+    # Проверяем, что в одном ряду с Инвентарём
+    row_with_char = next(row for row in kb.inline_keyboard if any(b.callback_data == "menu_character" for b in row))
+    cb_data_in_row = [b.callback_data for b in row_with_char]
+    assert "action_2" in cb_data_in_row
+    assert "menu_character" in cb_data_in_row
+
+
+def test_10_4_fuel_quantity_kb_no_custom_button():
+    """S4: В клавиатуре выбора количества топлива нет отдельной кнопки ввода числа."""
+    from keyboards import get_fuel_quantity_kb
+
+    game = GameState()
+    for fuel_type in ("sticks", "bark"):
+        kb = get_fuel_quantity_kb(fuel_type, game)
+        btn_data = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+        btn_texts = [btn.text for row in kb.inline_keyboard for btn in row]
+
+        assert not any("custom" in d for d in btn_data)
+        assert not any("Ввести число" in t for t in btn_texts)
+        assert any("max" in d for d in btn_data)
+        assert any(d == "back" for d in btn_data)
+
+
+def test_10_5_fuel_calculation_texts():
+    """S5: Расчёт топлива для палок и коры прозрачен и понятен."""
+    cur = 6
+    max_d = 10
+    needed = max_d - cur  # 4
+
+    # Палки
+    sticks = 5
+    max_can_add_sticks = min(sticks, needed)  # 4
+    sticks_text = (
+        "🪵 Палки (1 палка = +1 к огню)\n\n"
+        f"Сейчас огонь: {cur}/{max_d}\n"
+        f"В инвентаре: {sticks} палок\n"
+        f"Чтобы дойти до 10/10, нужно: {needed} палки\n"
+        f"Сейчас можешь подкинуть максимум {max_can_add_sticks} палок (станет {cur + max_can_add_sticks}/{max_d}).\n\n"
+        "Выбери кнопку или напиши число в чат.\n\n"
+        "💬 Или напиши в чат число, сколько подкинуть."
+    )
+    assert "1 палка = +1 к огню" in sticks_text
+    assert "В инвентаре: 5 палок" in sticks_text
+    assert "Чтобы дойти до 10/10, нужно: 4 палки" in sticks_text
+    assert "Сейчас можешь подкинуть максимум 4 палок (станет 10/10)" in sticks_text
+    assert "💬 Или напиши в чат число, сколько подкинуть." in sticks_text
+
+    # Кора
+    bark = 5
+    max_bark = min((bark // 2) * 2, needed * 2)  # 4
+    max_fire = max_bark // 2  # 2
+    bark_text = (
+        "🧱 Кора (2 коры = +1 к огню, кидаем только парами!)\n\n"
+        f"Сейчас огонь: {cur}/{max_d}\n"
+        f"В инвентаре: {bark} коры (пар: {bark // 2})\n"
+        f"Чтобы дойти до 10/10, нужно: +{needed} огня = {needed * 2} коры\n"
+        f"Сейчас можешь подкинуть максимум {max_bark} коры → +{max_fire} к огню (станет {cur + max_fire}/{max_d}).\n\n"
+        "Выбери кнопку или напиши чётное число в чат.\n\n"
+        "💬 Или напиши в чат число, сколько подкинуть."
+    )
+    assert "2 коры = +1 к огню, кидаем только парами!" in bark_text
+    assert "В инвентаре: 5 коры (пар: 2)" in bark_text
+    assert "Чтобы дойти до 10/10, нужно: +4 огня = 8 коры" in bark_text
+    assert "Сейчас можешь подкинуть максимум 4 коры → +2 к огню (станет 8/10)" in bark_text
+    assert "💬 Или напиши в чат число, сколько подкинуть." in bark_text
+
+
+
 

@@ -124,14 +124,20 @@ def get_main_kb(game):
         m = int(getattr(game, "campfire_max_durability", 10) or 10)
         row1.append(InlineKeyboardButton(text=f"🔥 Костёр {d}/{m}", callback_data="menu_campfire"))
 
-    # Ряд 2: Инвентарь + Пить (если фляга надета) + Спать
-    row2 = [InlineKeyboardButton(text="🎒 Инвентарь", callback_data="action_2")]
+    # Ряд 2: Инвентарь + Персонаж
+    row2 = [
+        InlineKeyboardButton(text="🎒 Инвентарь", callback_data="action_2"),
+        InlineKeyboardButton(text="👤 Персонаж", callback_data="menu_character"),
+    ]
+
+    # Ряд 3: Пить (если фляга надета) + Спать
+    row3 = []
     if game.equipment.get("flask"):
         water_left = int(getattr(game, "flask_water", 0) or 0)
-        row2.append(InlineKeyboardButton(text=f"💧 Пить ({water_left}/20)", callback_data="action_3"))
-    row2.append(InlineKeyboardButton(text="😴 Спать", callback_data="action_4"))
+        row3.append(InlineKeyboardButton(text=f"💧 Пить ({water_left}/20)", callback_data="action_3"))
+    row3.append(InlineKeyboardButton(text="😴 Спать", callback_data="action_4"))
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[row1, row2])
+    kb = InlineKeyboardMarkup(inline_keyboard=[row1, row2, row3])
     if game.weather in {"rain", "storm"}:
         kb.inline_keyboard.append([
             InlineKeyboardButton(text="🌧️ Выпить дождевой воды", callback_data="action_collect_water")
@@ -167,7 +173,7 @@ def get_campfire_fuel_kb(game):
 
 
 def get_fuel_quantity_kb(fuel_type: str, game=None):
-    """Выбор количества топлива для подкидывания в костёр."""
+    """Выбор количества топлива для подкидывания в костёр (без отдельной кнопки ввода числа)."""
     if fuel_type == "sticks":
         return InlineKeyboardMarkup(inline_keyboard=[
             [
@@ -175,7 +181,6 @@ def get_fuel_quantity_kb(fuel_type: str, game=None):
                 InlineKeyboardButton(text="🪵 До максимума", callback_data="feed_fuel_action:sticks:max"),
             ],
             [
-                InlineKeyboardButton(text="✏️ Ввести число", callback_data="feed_fuel_action:sticks:custom"),
                 InlineKeyboardButton(text="↩️ Назад", callback_data="back"),
             ],
         ])
@@ -186,7 +191,6 @@ def get_fuel_quantity_kb(fuel_type: str, game=None):
                 InlineKeyboardButton(text="🧱 До максимума", callback_data="feed_fuel_action:bark:max"),
             ],
             [
-                InlineKeyboardButton(text="✏️ Ввести число", callback_data="feed_fuel_action:bark:custom"),
                 InlineKeyboardButton(text="↩️ Назад", callback_data="back"),
             ],
         ])

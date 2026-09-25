@@ -440,10 +440,10 @@ async def cmd_start(message: Message):
     except:
         pass
     loaded = load_game(uid)
-    if loaded:
+    if loaded and getattr(loaded, "is_name_set", False):
         text = "Вы пришли в себя посреди леса. Вы ничего не помните... В памяти лишь обрывки прошлого."
         kb = types.InlineKeyboardMarkup(inline_keyboard=[
-            [types.InlineKeyboardButton(text="🔄 Продолжить", callback_data="load_game")],
+            [types.InlineKeyboardButton(text="🔄 Продолжить выживание", callback_data="load_game")],
             [types.InlineKeyboardButton(text="⚠️ Начать сначала", callback_data="confirm_new_game")]
         ])
     else:
@@ -481,6 +481,16 @@ async def cmd_main(message: Message):
     if not game:
         await message.answer("Сначала /start")
         return
+    if game.story_state == "WAITING_FOR_CHARACTER_NAME" or not getattr(game, "is_name_set", False):
+        prompt = (
+            "📛 Сначала введи имя своего персонажа:\n"
+            "• Только буквы, цифры, _\n"
+            "• Пробелы запрещены (используй _ вместо пробела)\n"
+            "• Эмодзи запрещены\n"
+            "• Макс. 20 символов"
+        )
+        await update_or_send_message(chat_id, uid, prompt, None)
+        return
     game.nav_stack = ["main"]
     await update_or_send_message(chat_id, uid, game.get_ui(), get_main_kb(game))
     save_game(uid, game)
@@ -500,6 +510,16 @@ async def cmd_inventory(message: Message):
     if not game:
         await message.answer("Сначала /start")
         return
+    if game.story_state == "WAITING_FOR_CHARACTER_NAME" or not getattr(game, "is_name_set", False):
+        prompt = (
+            "📛 Сначала введи имя своего персонажа:\n"
+            "• Только буквы, цифры, _\n"
+            "• Пробелы запрещены (используй _ вместо пробела)\n"
+            "• Эмодзи запрещены\n"
+            "• Макс. 20 символов"
+        )
+        await update_or_send_message(chat_id, uid, prompt, None)
+        return
     game.push_screen("inventory")
     await update_or_send_message(chat_id, uid, game.get_inventory_text(), inventory_inline_kb)
     save_game(uid, game)
@@ -518,6 +538,16 @@ async def cmd_character(message: Message):
     if not game:
         await message.answer("Сначала /start")
         return
+    if game.story_state == "WAITING_FOR_CHARACTER_NAME" or not getattr(game, "is_name_set", False):
+        prompt = (
+            "📛 Сначала введи имя своего персонажа:\n"
+            "• Только буквы, цифры, _\n"
+            "• Пробелы запрещены (используй _ вместо пробела)\n"
+            "• Эмодзи запрещены\n"
+            "• Макс. 20 символов"
+        )
+        await update_or_send_message(chat_id, uid, prompt, None)
+        return
     game.push_screen("character")
     await update_or_send_message(chat_id, uid, game.get_character_text(), character_inline_kb)
     save_game(uid, game)
@@ -534,6 +564,16 @@ async def cmd_settings(message: Message):
     game = _ensure_game(uid)
     if not game:
         await message.answer("Сначала /start")
+        return
+    if game.story_state == "WAITING_FOR_CHARACTER_NAME" or not getattr(game, "is_name_set", False):
+        prompt = (
+            "📛 Сначала введи имя своего персонажа:\n"
+            "• Только буквы, цифры, _\n"
+            "• Пробелы запрещены (используй _ вместо пробела)\n"
+            "• Эмодзи запрещены\n"
+            "• Макс. 20 символов"
+        )
+        await update_or_send_message(chat_id, uid, prompt, None)
         return
     game.push_screen("settings")
 
@@ -566,6 +606,15 @@ async def process_callback(callback: types.CallbackQuery):
             if game is not None:
                 games[uid] = game
         if data in ("new_game", "start_new_game"):
+            existing = load_game(uid)
+            if existing is not None and getattr(existing, "is_name_set", False):
+                text = "У вас уже есть сохранённая игра. Продолжить выживание или начать сначала?"
+                kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                    [types.InlineKeyboardButton(text="🔄 Продолжить выживание", callback_data="load_game")],
+                    [types.InlineKeyboardButton(text="⚠️ Начать сначала", callback_data="confirm_new_game")]
+                ])
+                await update_or_send_message(chat_id, uid, text, kb)
+                return
             game = Game()
             games[uid] = game
             game.story_state = "WAITING_FOR_CHARACTER_NAME"
@@ -580,9 +629,27 @@ async def process_callback(callback: types.CallbackQuery):
             await update_or_send_message(chat_id, uid, text, None)
             return
         if data == "load_game":
-            game = load_game(uid) or Game()
+            game = load_game(uid)
+            if game is None:
+                game = games.get(uid)
+            if game is None:
+                text = "Сохранение не найдено. Начните новую игру!"
+                kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                    [types.InlineKeyboardButton(text="🚀 Начать выживание", callback_data="start_new_game")]
+                ])
+                await update_or_send_message(chat_id, uid, text, kb)
+                return
+            if game.story_state == "WAITING_FOR_CHARACTER_NAME" or not getattr(game, "is_name_set", False):
+                text = (
+                    "📛 Введи имя своего персонажа:\n"
+                    "• Только буквы, цифры, _\n"
+                    "• Пробелы запрещены (используй _ вместо пробела)\n"
+                    "• Эмодзи запрещены\n"
+                    "• Макс. 20 символов"
+                )
+                await update_or_send_message(chat_id, uid, text, None)
+                return
             games[uid] = game
-            save_game(uid, game)
             text = game.get_ui()
             kb = get_main_kb(game)
             await update_or_send_message(chat_id, uid, text, kb)
@@ -614,7 +681,7 @@ async def process_callback(callback: types.CallbackQuery):
             # Возвращаем игрока в главное меню старта
             text = "Вы отменили перезапуск. Что делаем?"
             kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                [types.InlineKeyboardButton(text="🔄 Продолжить", callback_data="load_game")],
+                [types.InlineKeyboardButton(text="🔄 Продолжить выживание", callback_data="load_game")],
                 [types.InlineKeyboardButton(text="⚠️ Начать сначала", callback_data="confirm_new_game")]
             ])
             await update_or_send_message(chat_id, uid, text, kb)
@@ -631,10 +698,26 @@ async def process_callback(callback: types.CallbackQuery):
             )
             return
 
+        if game.story_state == "WAITING_FOR_CHARACTER_NAME" or not getattr(game, "is_name_set", False):
+            prompt = (
+                "📛 Сначала введи имя своего персонажа:\n"
+                "• Только буквы, цифры, _\n"
+                "• Пробелы запрещены (используй _ вместо пробела)\n"
+                "• Эмодзи запрещены\n"
+                "• Макс. 20 символов"
+            )
+            await update_or_send_message(chat_id, uid, prompt, None)
+            return
+
         text = None
         kb = None
 
-        if data == "locations_menu":
+        if data in ("menu_character", "inv_character", "character_screen"):
+            game.push_screen("character")
+            text = game.get_character_text()
+            kb = character_inline_kb
+
+        elif data == "locations_menu":
             game.push_screen("locations")
             text = "Куда направиться?"
             kb = get_locations_kb(game)
@@ -803,7 +886,20 @@ async def process_callback(callback: types.CallbackQuery):
                     await callback.answer("⚠️ В инвентаре нет палок/веток!", show_alert=True)
                     return
                 game.push_screen("fuel_qty")
-                text = f"🪵 Палки (1 шт = +1 к огню)\nВ наличии: {sticks} шт., нужно до максимума: {needed} шт.\n\nВыберите вариант или введите число в чат:"
+                game.story_state = "WAITING_FOR_FUEL_COUNT"
+                game.story_flags["fuel_item"] = "sticks"
+                cur = game.campfire_durability
+                max_d = game.campfire_max_durability
+                max_can_add = min(sticks, needed)
+                text = (
+                    "🪵 Палки (1 палка = +1 к огню)\n\n"
+                    f"Сейчас огонь: {cur}/{max_d}\n"
+                    f"В инвентаре: {sticks} палок\n"
+                    f"Чтобы дойти до 10/10, нужно: {needed} палки\n"
+                    f"Сейчас можешь подкинуть максимум {max_can_add} палок (станет {cur + max_can_add}/{max_d}).\n\n"
+                    "Выбери кнопку или напиши число в чат.\n\n"
+                    "💬 Или напиши в чат число, сколько подкинуть."
+                )
                 kb = get_fuel_quantity_kb("sticks", game)
             else:
                 bark = inv.get("Кусок коры", 0) + inv.get("Кора", 0)
@@ -811,10 +907,26 @@ async def process_callback(callback: types.CallbackQuery):
                     await callback.answer(f"⚠️ Нужно чётное число коры, минимум 2 (в наличии: {bark} шт.)", show_alert=True)
                     return
                 game.push_screen("fuel_qty")
-                text = f"🧱 Кора (2 шт = +1 к огню, только парами!)\nВ наличии: {bark} шт., нужно до максимума: {needed} огня.\n\nВыберите вариант или введите число в чат:"
+                game.story_state = "WAITING_FOR_FUEL_COUNT"
+                game.story_flags["fuel_item"] = "bark"
+                cur = game.campfire_durability
+                max_d = game.campfire_max_durability
+                max_bark = min((bark // 2) * 2, needed * 2)
+                max_fire = max_bark // 2
+                text = (
+                    "🧱 Кора (2 коры = +1 к огню, кидаем только парами!)\n\n"
+                    f"Сейчас огонь: {cur}/{max_d}\n"
+                    f"В инвентаре: {bark} коры (пар: {bark // 2})\n"
+                    f"Чтобы дойти до 10/10, нужно: +{needed} огня = {needed * 2} коры\n"
+                    f"Сейчас можешь подкинуть максимум {max_bark} коры → +{max_fire} к огню (станет {cur + max_fire}/{max_d}).\n\n"
+                    "Выбери кнопку или напиши чётное число в чат.\n\n"
+                    "💬 Или напиши в чат число, сколько подкинуть."
+                )
                 kb = get_fuel_quantity_kb("bark", game)
 
         elif data.startswith("feed_fuel_action:") or data.startswith("feed_fuel:"):
+            game.story_state = None
+            game.story_flags.pop("fuel_item", None)
             if data.startswith("feed_fuel_action:"):
                 parts = data.split(":", 2)
                 fuel_kind = parts[1]  # sticks or bark
@@ -1109,6 +1221,7 @@ async def process_callback(callback: types.CallbackQuery):
             game.story_state = None
             if "drop_item_name" in game.story_flags:
                 del game.story_flags["drop_item_name"]
+            game.story_flags.pop("fuel_item", None)
             prev = game.pop_screen()
             if prev == "main":
                 text = game.get_ui()
