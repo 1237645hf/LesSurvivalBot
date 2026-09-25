@@ -7,6 +7,7 @@ from modules.items import TINDER_ITEMS
 CRAFT_RECIPES = {
     "Факел": [("Ветка", 2), ("Сушняк", 1)],
     "Костёр": [("Ветка", 5), ("Камень", 4), ("Сушняк", 1)],
+    "Крепкий посох": [("Ветка", 8)],
 }
 
 
@@ -133,6 +134,7 @@ def do_craft(game, recipe_name: str):
 CRAFT_ICONS = {
     "Факел": "🔦",
     "Костёр": "🔥",
+    "Крепкий посох": "🪵",
 }
 
 
@@ -183,7 +185,7 @@ def get_craft_menu_kb(game):
 def handle_craft(data, game, uid):
     text = None
     kb = None
-    if data in ("craft_Факел", "craft_Костёр"):
+    if data.startswith("craft_"):
         recipe = data.removeprefix("craft_")
         ok, msg = do_craft(game, recipe)
         if ok:
@@ -215,6 +217,22 @@ def handle_craft(data, game, uid):
                 kb = get_main_kb(game)
         else:
             game.add_log("В инвентаре нет факела.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Крепкий посох":
+        if game.inventory.get("Крепкий посох", 0) > 0:
+            old_item = game.equipment.get("hand_right")
+            if old_item:
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory["Крепкий посох"] -= 1
+            if game.inventory["Крепкий посох"] <= 0:
+                del game.inventory["Крепкий посох"]
+            game.equipment["hand_right"] = "Крепкий посох"
+            game.add_log("Вы взяли крепкий посох в правую руку (⚔️ Урон 4–6).")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет крепкого посоха.")
             text = game.get_ui()
             kb = get_main_kb(game)
     return text, kb

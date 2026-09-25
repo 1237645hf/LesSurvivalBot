@@ -166,6 +166,8 @@ from crafts import (
 )
 from story.location_stories import (
     handle_story,
+    check_forest_research_story_trigger,
+    is_story_callback,
     handle_location_2_ruchey,
     handle_location_3_slate_hollow,
     handle_location_4_hunters_glade,
@@ -470,6 +472,7 @@ PARENT_SCREEN = {
     "recipe_card": "campfire_recipes",
     # Прочие экраны
     "locations": "main",
+    "wolf_lair": "locations",
     "settings": "main",
 }
 
@@ -487,6 +490,7 @@ CANONICAL_STACKS = {
     "campfire_recipes": ["main", "campfire", "campfire_recipes"],
     "recipe_card": ["main", "campfire", "campfire_recipes", "recipe_card"],
     "locations": ["main", "locations"],
+    "wolf_lair": ["main", "locations", "wolf_lair"],
     "settings": ["main", "settings"],
 }
 
@@ -835,8 +839,14 @@ async def process_callback(callback: types.CallbackQuery):
             game.add_log(f"Новая ловушка установлена в {location_id}-й локации (старая сломана)!")
             text = f"Новая ловушка в {location_id}-й локации!"
             kb = get_main_kb(game)
+        elif data == "location_enter_1":
+            game.current_location = "Лесной старт"
+            game.reset_nav()
+            game.add_log("Ты вернулся в Стартовый лес.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
         elif data == "location_enter_2":
-            game.current_location = "Ручей с Змеями"
+            game.current_location = "Ручей"
             text, kb = handle_location_2_ruchey("river_ferocious", game, uid)
         elif data == "location_enter_3":
             game.current_location = "Скромная Лощина"
@@ -1461,12 +1471,8 @@ async def process_callback(callback: types.CallbackQuery):
                 text = game.get_ui()
                 kb = get_main_kb(game)
 
-        elif data in ("wolf_leave", "wolf_torch", "peek_den", "pet_leave", "pet_take", "story_next"):
-            if game.ap <= 0:
-                text = "Нет сил. Нужно поспать."
-                kb = get_main_kb(game)
-            else:
-                text, kb = handle_story(data, game, uid)
+        elif is_story_callback(data):
+            text, kb = handle_story(data, game, uid)
 
         elif data == "action_1":
             if game.ap <= 0:
@@ -1502,32 +1508,24 @@ async def process_callback(callback: types.CallbackQuery):
             res_str = ", ".join(parts) if parts else "без изменений"
             game.add_log(f"{loc_emoji} Исследование: {res_str}")
 
-            # Счётчик исследований с факелом (факел только в левой руке)
             torch_equipped = (
                 game.equipment.get("hand_left") == "Факел"
                 or game.equipment.get("hand") == "Факел"
             )
-            if torch_equipped:
-                torch_research_count = getattr(game, "torch_research_count", 0) + 1
-                game.torch_research_count = torch_research_count
 
-                # На 4-м исследовании с факелом в Стартовом лесу — запускаем сюжет L1
-                l1_done = game.is_story_flag_set("l1_completed") or game.is_story_flag_set("l1_started")
-                if loc_id == 1 and torch_research_count == 4 and not l1_done:
-                    game.add_log("🔦 Ты замечаешь странные следы и слышишь глухое рычание...")
-                    text, kb = handle_story("forest_start", game, uid)
-                else:
-                    # С факелом лут идёт так же, как без него — обычный roll_find
-                    found_list = roll_find(loc_id)
-                    msg = apply_finds_to_inventory(game, found_list)
-                    game.add_log(f"🔦 {msg}")
-                    text = game.get_ui()
-                    kb = get_main_kb(game)
+            # Проверка сюжетных триггеров через модуль story/location_stories.py
+            story_event, story_log = check_forest_research_story_trigger(game, loc_id, torch_equipped)
+            if story_event:
+                if story_log:
+                    game.add_log(story_log)
+                text, kb = handle_story(story_event, game, uid)
             else:
-                # Без факела — обычный roll_find по локации
                 found_list = roll_find(loc_id)
                 msg = apply_finds_to_inventory(game, found_list)
-                game.add_log(msg)
+                if torch_equipped:
+                    game.add_log(f"🔦 {msg}")
+                else:
+                    game.add_log(msg)
                 text = game.get_ui()
                 kb = get_main_kb(game)
 

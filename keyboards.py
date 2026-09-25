@@ -88,6 +88,8 @@ def get_item_card_actions_kb(item_name: str, game=None):
         keyboard.append([InlineKeyboardButton(text="💧 Сделать глоток (+15 жажды)", callback_data="drink_bottle_single")])
     elif item_name == "Факел":
         keyboard.append([InlineKeyboardButton(text="🔦 Взять в левую руку", callback_data="use_item_Факел")])
+    elif item_name == "Крепкий посох":
+        keyboard.append([InlineKeyboardButton(text="🪵 Взять в правую руку", callback_data="use_item_Крепкий посох")])
     elif is_item_consumable(item_name):
         keyboard.append([InlineKeyboardButton(text="🍽️ Съесть / Применить", callback_data=f"use_consumable_{item_name}")])
 
@@ -155,9 +157,10 @@ def get_main_kb(game):
         kb_rows.append([
             InlineKeyboardButton(text="🌧️ Пить дождь", callback_data="action_collect_water")
         ])
-    kb_rows.append([
-        InlineKeyboardButton(text="🗺️ Локации", callback_data="locations_menu")
-    ])
+    if getattr(game, "locations_unlocked", False):
+        kb_rows.append([
+            InlineKeyboardButton(text="🗺️ Локации", callback_data="locations_menu")
+        ])
     return InlineKeyboardMarkup(inline_keyboard=kb_rows)
 
 
@@ -241,15 +244,41 @@ def get_campfire_recipe_kb(game, recipe_name: str):
     return kb
 
 def get_locations_kb(game):
-    """Временная панель входа; условия доступности подключаются позже."""
+    """Клавиатура перехода по локациям."""
+    if getattr(game, "wolf_lair_active", False):
+        has_staff = game.equipment.get("hand_right") == "Крепкий посох"
+        btn_text = "🐾 Волчье логово" if has_staff else "🐾 Волчье логово (Опасно)"
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=btn_text, callback_data="wolf_lair_enter")],
+            [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
+        ])
+    elif getattr(game, "wolf_lair_defeated", False):
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🌲 Стартовый лес", callback_data="location_enter_1")],
+            [InlineKeyboardButton(text="🏞️ Ручей", callback_data="location_enter_2")],
+            [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
+        ])
+    else:
+        keyboard = []
+        unlocked = getattr(game, "unlocked_locations", ["Лесной старт"]) or ["Лесной старт"]
+        if "Лесной старт" in unlocked:
+            keyboard.append([InlineKeyboardButton(text="🌲 Стартовый лес", callback_data="location_enter_1")])
+        if "Ручей" in unlocked or "Ручей с Змеями" in unlocked:
+            keyboard.append([InlineKeyboardButton(text="🏞️ Ручей", callback_data="location_enter_2")])
+        keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
+        return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_wolf_battle_kb():
+    """Клавиатура пошагового боя со старым волком."""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💧 Ручей", callback_data="location_enter_2")],
-        [InlineKeyboardButton(text="🏔 Лощина", callback_data="location_enter_3")],
-        [InlineKeyboardButton(text="🏹 Просека", callback_data="location_enter_4")],
-        [InlineKeyboardButton(text="🍄 Яр", callback_data="location_enter_5")],
-        [InlineKeyboardButton(text="🦇 Пещера", callback_data="location_enter_6")],
-        [InlineKeyboardButton(text="🔮 Святилище", callback_data="location_enter_7")],
-        [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
+        [
+            InlineKeyboardButton(text="⚔️ Ударить", callback_data="wolf_battle_attack"),
+            InlineKeyboardButton(text="🛡 Защита", callback_data="wolf_battle_defend"),
+        ],
+        [
+            InlineKeyboardButton(text="🏃 Сбежать", callback_data="wolf_battle_flee"),
+        ],
     ])
 
 def get_trap_buttons_kb(game):

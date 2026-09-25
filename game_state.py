@@ -150,6 +150,14 @@ class GameState:
     # Счётчик исследований с факелом (триггер для истории волка)
     torch_research_count: int = 0
 
+    # Прогресс Волчьего логова и открытия локаций
+    locations_unlocked: bool = False
+    wolf_lair_unlocked: bool = False
+    wolf_lair_active: bool = False
+    wolf_lair_defeated: bool = False
+    l1_post_research_count: int = 0
+    wolf_battle: Optional[Dict[str, Any]] = None
+
     # Имя персонажа (устанавливается при старте игры)
     player_name: str = "Выживший"
     character_name: str = "Выживший"
@@ -523,6 +531,14 @@ class GameState:
         self.story_flags[name] = value
         return changed
 
+    def is_story_flag_set(self, name: str) -> bool:
+        """Проверить, установлен ли сюжетный флаг."""
+        return bool(self.story_flags.get(name))
+
+    def has_story_flag(self, name: str) -> bool:
+        """Проверить, установлен ли сюжетный флаг (алиас)."""
+        return bool(self.story_flags.get(name))
+
     def record_route(self, code: str):
         """Добавить выбор в компактный маршрут без повторной записи подряд."""
         if not self.compact_route or self.compact_route[-1] != code:
@@ -573,6 +589,12 @@ class GameState:
             "character_name": str(getattr(self, "character_name", getattr(self, "player_name", "Выживший"))),
             "is_name_set": bool(getattr(self, "is_name_set", False)),
             "equipment_ap_bonus": int(getattr(self, "equipment_ap_bonus", 0)),
+            "locations_unlocked": bool(getattr(self, "locations_unlocked", False)),
+            "wolf_lair_unlocked": bool(getattr(self, "wolf_lair_unlocked", False)),
+            "wolf_lair_active": bool(getattr(self, "wolf_lair_active", False)),
+            "wolf_lair_defeated": bool(getattr(self, "wolf_lair_defeated", False)),
+            "l1_post_research_count": int(getattr(self, "l1_post_research_count", 0)),
+            "wolf_battle": dict(getattr(self, "wolf_battle", {})) if getattr(self, "wolf_battle", None) else None,
         }
 
 
@@ -649,6 +671,12 @@ class GameState:
         if game.campfire_durability <= 0:
             game.campfire_active = False
         game.flask_water = int(getattr(game, "flask_water", 10) or 10)
+        game.locations_unlocked = bool(data.get("locations_unlocked", False))
+        game.wolf_lair_unlocked = bool(data.get("wolf_lair_unlocked", False))
+        game.wolf_lair_active = bool(data.get("wolf_lair_active", False))
+        game.wolf_lair_defeated = bool(data.get("wolf_lair_defeated", False))
+        game.l1_post_research_count = int(data.get("l1_post_research_count", 0))
+        game.wolf_battle = dict(data["wolf_battle"]) if data.get("wolf_battle") else None
         return game
     
     def reset_navigate(self):

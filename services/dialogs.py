@@ -152,6 +152,8 @@ async def handle_waiting_for_pet_name(
     game.equipment["pet"] = text
     game.set_story_flag("saved_kitten")
     game.set_story_flag("has_pet")
+    game.set_story_flag("l1_completed")
+    game.story_flags["l1_completed_day"] = getattr(game, "day", 1)
     game.karma["gentle"] = game.karma.get("gentle", 0) + 5
     game.adjust_narrative_karma("compassion", 2)
     game.story_state = None

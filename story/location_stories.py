@@ -3,8 +3,18 @@ location_stories.py — Локационно-специфичные наррат
 Каждая локация имеет свой уникальный поток событий, ресурсы и опасности.
 """
 
+import random
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from keyboards import get_main_kb, wolf_kb, peek_kb, cat_kb, next_kb
+from keyboards import (
+    get_main_kb,
+    wolf_kb,
+    peek_kb,
+    cat_kb,
+    next_kb,
+    get_locations_kb,
+    get_wolf_battle_kb,
+)
+from modules.items import is_item_consumable, get_item_rank, get_item_type
 
 from game_math import (
     process_damage,
@@ -78,6 +88,7 @@ def handle_story(data: str, game, uid: int):
         game.story_state = None
         game.reset_nav()
         game.set_story_flag("l1_completed")
+        game.story_flags["l1_completed_day"] = getattr(game, "day", 1)
         game.set_story_flag("left_wolf")
         game.adjust_narrative_karma("pragmatism", 3)
         game.add_log("Ты тихо отступил, не связываясь с волком.")
@@ -148,6 +159,7 @@ def handle_story(data: str, game, uid: int):
         game.story_state = None
         game.reset_nav()
         game.set_story_flag("l1_completed")
+        game.story_flags["l1_completed_day"] = getattr(game, "day", 1)
         game.set_story_flag("left_kitten")
         text = (
             "Ты медленно убираешь руку.\n"
@@ -176,6 +188,421 @@ def handle_story(data: str, game, uid: int):
         game.reset_nav()
         text = game.get_ui()
         kb = get_main_kb(game)
+
+    elif (
+        data.startswith("l1_5")
+        or data.startswith("l1_6")
+        or data.startswith("l1_7")
+        or data.startswith("wolf_lair")
+        or data.startswith("wolf_battle")
+        or data in ("location_enter_1", "location_enter_2")
+    ):
+        return handle_l1_wolf_lair(data, game, uid)
+
+    return text, kb
+
+
+def get_wolf_battle_text(game) -> str:
+    """Форматирует интерфейс боевого экрана со старым волком."""
+    battle = getattr(game, "wolf_battle", None) or {}
+    wolf_hp = battle.get("wolf_hp", 50)
+    wolf_max_hp = battle.get("wolf_max_hp", 50)
+    last_log = battle.get("last_log", "Ты переступаешь порог пещеры. Волк припадает на передние лапы и глухо рычит.")
+    return (
+        "🐺 ЛОГОВО СТАРОГО ВОЛКА\n"
+        "━━━━━━━━━━━━━━━━━━━\n"
+        f"❤️ Твоё здоровье: {game.hp}/100 HP\n"
+        f"🐺 Старый волк: {wolf_hp}/{wolf_max_hp} HP\n"
+        "━━━━━━━━━━━━━━━━━━━\n"
+        f"{last_log}\n"
+        "━━━━━━━━━━━━━━━━━━━\n"
+        "Выбери действие:"
+    )
+
+
+def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool) -> tuple[str | None, str | None]:
+    """Проверяет сюжетные триггеры при исследовании локации 1 (Лесной старт).
+    
+    Алгоритм:
+    - L1 (Встреча с волком у пня): при наличии факела на 4-е исследование запускается forest_start.
+    - L1.5 (Волчье логово): запускается не ранее чем через 4 дня после завершения L1 (day >= l1_completed_day + 4)
+      на 3-е исследование леса после этого срока.
+      
+    Возвращает:
+        (callback_name, log_message) или (None, None).
+    """
+    if loc_id != 1:
+        return None, None
+
+    # Триггер 1: Встреча со старым волком у пня (пролог L1)
+    if torch_equipped:
+        torch_count = getattr(game, "torch_research_count", 0) + 1
+        game.torch_research_count = torch_count
+        if torch_count == 4 and not game.is_story_flag_set("l1_started"):
+            return "forest_start", "🔦 Ты замечаешь странные следы и слышишь глухое рычание..."
+
+    # Триггер 2: Обнаружение волчьего логова (L1.5)
+    if (
+        game.is_story_flag_set("l1_completed")
+        and not getattr(game, "wolf_lair_unlocked", False)
+        and not game.is_story_flag_set("l1_5_triggered")
+    ):
+        l1_day = game.story_flags.get("l1_completed_day", 1)
+        if game.day >= l1_day + 4:
+            game.l1_post_research_count = getattr(game, "l1_post_research_count", 0) + 1
+            if game.l1_post_research_count >= 3:
+                game.set_story_flag("l1_5_triggered")
+                return "l1_5_start", None
+
+    return None, None
+
+
+def is_story_callback(data: str) -> bool:
+    """Проверяет, относится ли данный callback к сюжетным веткам L1 / L1.5-L1.7."""
+    return (
+        data in (
+            "forest_start",
+            "story_start",
+            "wolf_start",
+            "wolf_leave",
+            "wolf_torch",
+            "peek_den",
+            "pet_leave",
+            "pet_take",
+            "story_next",
+        )
+        or data.startswith(("l1_5", "l1_6", "l1_7", "wolf_lair", "wolf_battle"))
+    )
+
+
+def handle_l1_wolf_lair(data: str, game, uid: int):
+    """Сценарии L1.5–L1.7: встреча со старым волком в логове, бой, развязка и выход к Ручью."""
+    text = None
+    kb = None
+
+    if data == "l1_5_start":
+        game.story_state = "l1_5"
+        text = (
+            "Сушняка вокруг лагеря почти не осталось, а дичь ушла. "
+            "Продираясь через бурелом на краю леса, ты упираешься в каменистый овраг со входом в неглубокую пещеру.\n\n"
+            "«Дальше пути нет... Только эта расщелина. Если не найду выход — просто замёрзну на старой стоянке»."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l1_5_wolf")]
+        ])
+
+    elif data == "l1_5_wolf":
+        text = (
+            "Из темноты пещеры поднимается волк. Ты узнаёшь его: кости под редкой шкурой, "
+            "мутный глаз и свежая тёмная корка от ожога твоим факелом на морде. "
+            "Зверь глухо клокочет, скалясь обломанными клыками. Он слаб, но загнан в угол и готов драться."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l1_5_behind")]
+        ])
+
+    elif data == "l1_5_behind":
+        text = (
+            "Прямо за его спиной пещера расширяется. "
+            "Оттуда в духоту оврага тянет прохладой и влагой, доносится шум далёкой воды. "
+            "Там выход наружу, но зверь перекрыл тропу."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l1_5_thought")]
+        ])
+
+    elif data == "l1_5_thought":
+        text = (
+            "«С голыми руками на него лезть — самоубийство. Он ранен, но это матёрый хищник. "
+            "Нужно вернуться в лагерь и сделать оружие посерьёзнее обычных веток»."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏃 Тихо уйти в лагерь", callback_data="l1_5_leave")]
+        ])
+
+    elif data == "l1_5_leave":
+        if hasattr(game, "unlock_craft"):
+            game.unlock_craft("Крепкий посох")
+        elif "Крепкий посох" not in getattr(game, "unlocked_crafts", []):
+            game.unlocked_crafts = list(getattr(game, "unlocked_crafts", [])) + ["Крепкий посох"]
+        game.locations_unlocked = True
+        game.wolf_lair_unlocked = True
+        game.wolf_lair_active = True
+        game.story_state = None
+        game.reset_nav()
+        game.add_log("Ты вернулся в лагерь. Открыт крафт: 🪵 Крепкий посох. В меню «Локации» появилось Волчье логово.")
+        text = game.get_ui()
+        kb = get_main_kb(game)
+
+    elif data == "wolf_lair_enter":
+        game.push_screen("wolf_lair")
+        has_staff = game.equipment.get("hand_right") == "Крепкий посох"
+        if not has_staff:
+            text = (
+                "Без надёжного оружия соваться в логово самоубийственно. "
+                "Сначала нужно скрафтить и взять в руку крепкий посох."
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="↩️ Назад", callback_data="back")]
+            ])
+        else:
+            text = (
+                "Сжимая в руке тяжёлый посох, ты стоишь у входа в пещеру. "
+                "Зверь внутри глухо рычит, ожидая твоего шага."
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⚔️ Шагнуть в пещеру", callback_data="wolf_battle_start")],
+                [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
+            ])
+
+    elif data == "wolf_battle_start":
+        game.story_state = "wolf_battle"
+        game.wolf_battle = {
+            "wolf_hp": 50,
+            "wolf_max_hp": 50,
+            "player_dmg_dealt": 0,
+            "wolf_dmg_dealt": 0,
+            "last_log": "Ты переступаешь порог пещеры. Волк припадает на передние лапы и глухо рычит.",
+        }
+        text = get_wolf_battle_text(game)
+        kb = get_wolf_battle_kb()
+
+    elif data == "wolf_battle_attack":
+        if not getattr(game, "wolf_battle", None):
+            game.wolf_battle = {
+                "wolf_hp": 50,
+                "wolf_max_hp": 50,
+                "player_dmg_dealt": 0,
+                "wolf_dmg_dealt": 0,
+                "last_log": "",
+            }
+        p_dmg = random.randint(4, 6)
+        has_torch = (
+            game.equipment.get("hand_left") == "Факел"
+            or game.equipment.get("hand") == "Факел"
+            or game.equipment.get("hand_right") == "Факел"
+        )
+        torch_burn = 1 if has_torch else 0
+        total_p_dmg = p_dmg + torch_burn
+
+        game.wolf_battle["wolf_hp"] = max(0, game.wolf_battle["wolf_hp"] - total_p_dmg)
+        game.wolf_battle["player_dmg_dealt"] += total_p_dmg
+
+        log_lines = [f"💥 Ты бьёшь посохом: −{p_dmg} HP."]
+        if torch_burn:
+            log_lines.append("🔥 Огонь факела обжигает зверя: −1 HP.")
+
+        if game.wolf_battle["wolf_hp"] <= 0:
+            text = (
+                "⚔️ ПОБЕДА!\n"
+                "━━━━━━━━━━━━━━━━━━━\n"
+                f"• Нанесено тобой: {game.wolf_battle['player_dmg_dealt']} ед.\n"
+                f"• Нанёс волк: {game.wolf_battle['wolf_dmg_dealt']} ед.\n"
+                "━━━━━━━━━━━━━━━━━━━\n"
+                "Зверь повержен и больше не может нападать."
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="➡️ Продолжить", callback_data="l1_5_aftermath")]
+            ])
+            return text, kb
+
+        scared = has_torch and (random.random() < 0.35)
+        if scared:
+            log_lines.append("🐺 Волк шарахается от пламени факела и промахивается!")
+        else:
+            w_dmg = random.randint(5, 7)
+            game.hp = max(1, game.hp - w_dmg)
+            game.wolf_battle["wolf_dmg_dealt"] += w_dmg
+            log_lines.append(f"🐺 Волк щёлкает клыками и полосует тебя: −{w_dmg} HP.")
+
+        game.wolf_battle["last_log"] = "\n".join(log_lines)
+        text = get_wolf_battle_text(game)
+        kb = get_wolf_battle_kb()
+
+    elif data == "wolf_battle_defend":
+        if not getattr(game, "wolf_battle", None):
+            game.wolf_battle = {
+                "wolf_hp": 50,
+                "wolf_max_hp": 50,
+                "player_dmg_dealt": 0,
+                "wolf_dmg_dealt": 0,
+                "last_log": "",
+            }
+        has_torch = (
+            game.equipment.get("hand_left") == "Факел"
+            or game.equipment.get("hand") == "Факел"
+            or game.equipment.get("hand_right") == "Факел"
+        )
+        torch_burn = 1 if has_torch else 0
+        if torch_burn:
+            game.wolf_battle["wolf_hp"] = max(0, game.wolf_battle["wolf_hp"] - torch_burn)
+            game.wolf_battle["player_dmg_dealt"] += torch_burn
+            log_lines = ["🛡️ Ты закрываешься посохом. Пламя факела опаляет зверя: −1 HP."]
+        else:
+            log_lines = ["🛡️ Ты уходишь в глухую защиту, выставив перед собой посох."]
+
+        if game.wolf_battle["wolf_hp"] <= 0:
+            text = (
+                "⚔️ ПОБЕДА!\n"
+                "━━━━━━━━━━━━━━━━━━━\n"
+                f"• Нанесено тобой: {game.wolf_battle['player_dmg_dealt']} ед.\n"
+                f"• Нанёс волк: {game.wolf_battle['wolf_dmg_dealt']} ед.\n"
+                "━━━━━━━━━━━━━━━━━━━\n"
+                "Зверь повержен и больше не может нападать."
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="➡️ Продолжить", callback_data="l1_5_aftermath")]
+            ])
+            return text, kb
+
+        scared = has_torch and (random.random() < 0.35)
+        if scared:
+            log_lines.append("🐺 Волк пугается огня и пятится назад: урон 0 HP.")
+        else:
+            w_dmg = random.randint(2, 4)
+            game.hp = max(1, game.hp - w_dmg)
+            game.wolf_battle["wolf_dmg_dealt"] += w_dmg
+            log_lines.append(f"🐺 Волк бьёт по защите, скользнув клыками: −{w_dmg} HP (снижено на 50%).")
+
+        game.wolf_battle["last_log"] = "\n".join(log_lines)
+        text = get_wolf_battle_text(game)
+        kb = get_wolf_battle_kb()
+
+    elif data == "wolf_battle_flee":
+        game.wolf_battle = None
+        game.story_state = None
+        text = (
+            "Ты резко отшатываешься назад, выставив посох перед собой, и сломя голову выбегаешь из пещеры обратно в овраг. "
+            "За спиной раздаётся яростный, но бессильный хрип зверя."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="↩️ В меню локаций", callback_data="locations_menu")]
+        ])
+
+    elif data == "l1_5_aftermath":
+        has_pet = bool(game.equipment.get("pet")) or game.is_story_flag_set("has_pet")
+        text = (
+            "Тяжёлый удар посоха окончательно сбивает старого волка с ног. "
+            "Зверь заваливается на бок и тяжело дышит. Он просто лежит на камнях и ждёт последнего удара."
+        )
+        if has_pet:
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Далее ➔", callback_data="l1_5_kitten_plea")]
+            ])
+        else:
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🤝 Пощадить зверя", callback_data="l1_5_spare")],
+                [InlineKeyboardButton(text="💀 Добить хищника", callback_data="l1_5_kill")],
+            ])
+
+    elif data == "l1_5_kitten_plea":
+        text = (
+            "Из-под твоей куртки робко высовывается усатая мордочка. "
+            "Котёнок замирает, глядя на лежащего волка, затем переводит огромные влажные глаза на тебя "
+            "и несмело касается твоей руки тёплой лапкой. Словно просит не убивать побеждённого."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🤝 Пощадить зверя", callback_data="l1_5_spare")],
+            [InlineKeyboardButton(text="💀 Добить хищника", callback_data="l1_5_kill")],
+        ])
+
+    elif data == "l1_5_spare":
+        consumables = [
+            item for item, count in game.inventory.items()
+            if count > 0 and is_item_consumable(item) and get_item_type(item) in ("food", "berry", "mushroom")
+        ]
+        consumables.sort(key=lambda it: (get_item_rank(it), it))
+        if consumables:
+            food_item = consumables[0]
+            game.inventory[food_item] -= 1
+            if game.inventory[food_item] <= 0:
+                del game.inventory[food_item]
+            text = (
+                "Ты опускаешь посох, делаешь предупреждающий жест и не приближаешься, давая волку пространство.\n"
+                "Свободной рукой ты достаёшь из рюкзака съестное и бросаешь к его лапам.\n"
+                "Волк жадно заглатывает кусок и медленно отползает в темноту глубины норы. Путь открыт.\n"
+                "──────────\n"
+                f"Отдано: {food_item} ×1"
+            )
+        else:
+            text = (
+                "Ты опускаешь посох, делаешь предупреждающий жест и не приближаешься, давая волку пространство.\n"
+                "У тебя нет с собой еды, но зверь видит, что ты не станешь его добивать.\n"
+                "Волк с трудом поднимается и медленно отползает в темноту глубины норы. Путь открыт."
+            )
+        game.set_story_flag("spared_wolf")
+        game.adjust_narrative_karma("compassion", 5)
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➡️ Шагнуть в расщелину", callback_data="l1_6_passage")]
+        ])
+
+    elif data == "l1_5_kill":
+        text = "Ты покидаешь пещеру с уверенностью, что на тебя этой ночью никто не нападёт."
+        game.set_story_flag("killed_wolf")
+        game.adjust_narrative_karma("pragmatism", 5)
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➡️ Шагнуть в расщелину", callback_data="l1_6_passage")]
+        ])
+
+    elif data == "l1_6_passage":
+        text = (
+            "Ты протискиваешься в узкую щель за логовом. Каменные стены скребут по одежде, сверху свисают мокрые корни. "
+            "Воздух впереди теплеет и наполняется шумом воды. Ты делаешь последний рывок вперёд..."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l1_6_exit")]
+        ])
+
+    elif data == "l1_6_exit":
+        has_pet = bool(game.equipment.get("pet")) or game.is_story_flag_set("has_pet")
+        if has_pet:
+            text = (
+                "Каменный коридор обрывается, и яркий свет ослепляет тебя. "
+                "Котёнок выбирается на плечо, щурится на простор и шумно тянет влажным носом незнакомый речной воздух. "
+                "Глухой лес позади — вы вышли к воде."
+            )
+        else:
+            text = (
+                "Каменный коридор обрывается, и яркий свет ослепляет тебя. "
+                "Прищурившись, ты видишь крутой спуск к бурлящей воде. "
+                "Воздух пахнет свежестью и сырым камнем. Глухой лес позади — впереди неизведанная земля."
+            )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l1_7_finish")]
+        ])
+
+    elif data == "l1_7_finish":
+        game.wolf_lair_active = False
+        game.wolf_lair_defeated = True
+        game.locations_unlocked = True
+        game.wolf_battle = None
+        game.unlocked_locations = ["Лесной старт", "Ручей"]
+        game.set_story_flag("l1_7_completed")
+        text = (
+            "Открыта новая глава: Ручей\n\n"
+            "В меню «Локации» открыта новая локация."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕 Осмотреться на новом месте", callback_data="l1_7_inspect")]
+        ])
+
+    elif data == "l1_7_inspect":
+        game.reset_nav()
+        game.current_location = "Ручей"
+        game.story_state = None
+        text, kb = handle_location_2_ruchey("river_ferocious", game, uid)
+
+    elif data == "location_enter_1":
+        game.reset_nav()
+        game.current_location = "Лесной старт"
+        game.add_log("Ты вернулся в Стартовый лес.")
+        text = game.get_ui()
+        kb = get_main_kb(game)
+
+    elif data == "location_enter_2":
+        game.reset_nav()
+        game.current_location = "Ручей"
+        text, kb = handle_location_2_ruchey("river_ferocious", game, uid)
 
     return text, kb
 
