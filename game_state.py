@@ -393,15 +393,16 @@ class GameState:
 
     def _init_default_values(self):
         """Установить дефолтные значения для UI."""
-        # Умные заглушки для UI
-        self.equipment["hands"] = "Руки"  # По умолчанию
-        self.equipment["torso"] = "Куртка"
-        self.equipment["head"] = "Шапка"
-        self.equipment["boots"] = "Ботинки"
+        self.equipment.setdefault("head", None)
+        self.equipment.setdefault("torso", None)
+        self.equipment.setdefault("pants", None)
+        self.equipment.setdefault("boots", None)
+        self.equipment.setdefault("back", None)
         self.equipment.setdefault("pet", None)
         self.equipment.setdefault("hand_right", None)
         self.equipment.setdefault("hand_left", None)
         self.equipment.setdefault("flask", None)
+        self.equipment.setdefault("trinket", None)
     
     def add_log(self, message: str, source: str = "game"):
         """Добавить запись в лог событий (макс. 50 записей) без серверных часов."""
@@ -786,37 +787,112 @@ class GameState:
                 marker = item_emojis.get(item_clean, "📦")
             line = f"• {marker} {item} x{count}{equipped_mark}" if count > 1 else f"• {marker} {item}{equipped_mark}"
             lines.append(line)
-        text = "Инвентарь:\n" + "\n".join(lines) if lines else "Инвентарь пуст"
-        text += "\n━━━━━━━━━━━━━━━━━━━"
-        return text
+        content = "Инвентарь:\n" + "\n".join(lines) if lines else "Инвентарь пуст"
+        return f"━━━━━━━━━━━━━━━━━━━\n{content}\n━━━━━━━━━━━━━━━━━━━"
     
     def get_character_text(self) -> str:
-        """Экран персонажа: имя + экипировка, без ASCII-силуэта."""
-        hero_name = (
-            getattr(self, "player_name", None)
-            or getattr(self, "character_name", None)
-            or "Выживший"
-        )
-        pet_name = self.equipment.get("pet") or getattr(self, "companion_name", None) or "Пусто"
-        slots = {
-            "head": "🧢 Голова",
-            "torso": "👕 Торс",
-            "back": "🎒 Спина",
-            "pants": "👖 Штаны",
-            "boots": "🥾 Ботинки",
-            "hand_right": "🗡️ Правая рука",
-            "hand_left": "🔦 Левая рука",
-            "flask": "🧴 Фляга",
-            "trinket": "💍 Безделушка",
-            "pet": "🐾 Питомец",
+        """Экран персонажа: имя + экипировка по слотам + стартовая одежда + фляга + бонусы."""
+        p_name = getattr(self, "player_name", None)
+        c_name = getattr(self, "character_name", None)
+        if p_name and p_name != "Выживший":
+            hero_name = p_name
+        elif c_name and c_name != "Выживший":
+            hero_name = c_name
+        elif c_name:
+            hero_name = c_name
+        elif p_name:
+            hero_name = p_name
+        else:
+            hero_name = "Выживший"
+
+        # Стартовая одежда (если слот пуст)
+        starting_clothes = {
+            "head": "⚪ Грязная кепка",
+            "torso": "⚪ Потасканная майка",
+            "pants": "⚪ Рваные штаны",
+            "boots": "⚪ Стоптанные ботинки",
         }
-        lines = [f"👤 Герой: {hero_name}", ""]
-        for slot, label in slots.items():
-            if slot == "pet":
-                lines.append(f"{label}: {pet_name}")
+
+        # Питомец: только Пусто или реальное имя (никакого кота по умолчанию)
+        pet_val = self.equipment.get("pet")
+        if not pet_val:
+            c_name = getattr(self, "companion_name", None)
+            has_pet = getattr(self, "has_story_flag", lambda f: False)("has_pet") or getattr(self, "story_flags", {}).get("has_pet")
+            if c_name and c_name != "Кот" and has_pet:
+                pet_val = c_name
+        pet_str = pet_val or "Пусто"
+
+        # Фляга
+        flask_item = self.equipment.get("flask")
+        if flask_item:
+            flask_w = int(getattr(self, "flask_water", 0) or 0)
+            if "Бутылк" in flask_item or flask_item == "flask":
+                flask_str = f"⚪ Бутылка воды ({flask_w}/20)"
             else:
-                lines.append(f"{label}: {self.equipment.get(slot) or 'Пусто'}")
-        return "\n".join(lines)
+                flask_str = f"{flask_item} ({flask_w}/20)"
+        else:
+            flask_str = "Пусто"
+
+        slots_order = [
+            ("head", "🧢 Голова:"),
+            ("torso", "👕 Торс:"),
+            ("pants", "👖 Штаны:"),
+            ("boots", "🥾 Ботинки:"),
+            ("back", "🎒 Спина:"),
+            ("hand_right", "🗡️ Правая рука:"),
+            ("hand_left", "🔦 Левая рука:"),
+            ("flask", "🧴 Фляга:"),
+            ("trinket", "💍 Безделушка:"),
+            ("pet", "🐾 Питомец:"),
+        ]
+
+        blocks = [f"👤 ВЫЖИВШИЙ: {hero_name}"]
+        for slot_key, label in slots_order:
+            if slot_key in starting_clothes:
+                val = self.equipment.get(slot_key) or starting_clothes[slot_key]
+            elif slot_key == "flask":
+                val = flask_str
+            elif slot_key == "pet":
+                val = pet_str
+            else:
+                val = self.equipment.get(slot_key) or "Пусто"
+            blocks.append(f"{label}\n{val}")
+
+        # Общие бонусы снаряжения в порядке хотбара: ❤️ 🍖 💧 ⚡
+        bonus_lines = []
+        bonus_hp = 0
+        bonus_hunger = 0
+        bonus_thirst = 0
+        bonus_ap = 0
+
+        if self.equipment.get("hand_left") == "Факел" or self.equipment.get("hand") == "Факел":
+            bonus_ap += 1
+        bonus_ap += int(getattr(self, "equipment_ap_bonus", 0) or 0)
+
+        for item_data in self.equipment.values():
+            if isinstance(item_data, dict):
+                bonus_hp += int(item_data.get("hp_bonus", item_data.get("hp_modifier", 0)))
+                bonus_hunger += int(item_data.get("hunger_bonus", 0))
+                bonus_thirst += int(item_data.get("thirst_bonus", 0))
+                bonus_ap += int(item_data.get("ap_bonus", item_data.get("ap_modifier", 0)))
+
+        if bonus_hp != 0:
+            bonus_lines.append(f"• ❤️ HP: {bonus_hp:+d}")
+        if bonus_hunger != 0:
+            bonus_lines.append(f"• 🍖 Сытость: {bonus_hunger:+d}")
+        if bonus_thirst != 0:
+            bonus_lines.append(f"• 💧 Жажда: {bonus_thirst:+d}")
+        if bonus_ap != 0:
+            bonus_lines.append(f"• ⚡ AP: {bonus_ap:+d}")
+
+        if not bonus_lines:
+            bonus_block = "📊 ОБЩИЕ БОНУСЫ СНАРЯЖЕНИЯ:\n• Бонусы отсутствуют."
+        else:
+            bonus_block = "📊 ОБЩИЕ БОНУСЫ СНАРЯЖЕНИЯ:\n" + "\n".join(bonus_lines)
+        blocks.append(bonus_block)
+
+        body = "\n\n".join(blocks)
+        return f"━━━━━━━━━━━━━━━━━━━\n{body}\n━━━━━━━━━━━━━━━━━━━"
 
 
 # Алиас для обратной совместимости: Game = GameState

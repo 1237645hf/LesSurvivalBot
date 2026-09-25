@@ -255,8 +255,9 @@ async def handle_waiting_for_fuel_count(
         game.campfire_durability += fire_added
         game.story_state = None
         game.story_flags.pop("fuel_item", None)
+        game.nav_stack = ["main", "campfire"]
         game.add_log(f"🧱 Подкинуто: Кора ×{spent} (+{fire_added} 🔥). Огонь: {game.campfire_durability}/{game.campfire_max_durability}.")
-        result_text = f"🧱 Подкинуто {spent} шт. коры (+{fire_added} к огню). Огонь: {game.campfire_durability}/{game.campfire_max_durability}."
+        action_header = f"✅ Подкинуто: Кора ×{spent} (+{fire_added} 🔥)"
     else:
         sticks_avail = inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)
         if sticks_avail <= 0:
@@ -277,9 +278,12 @@ async def handle_waiting_for_fuel_count(
         game.campfire_durability += to_use
         game.story_state = None
         game.story_flags.pop("fuel_item", None)
+        game.nav_stack = ["main", "campfire"]
         game.add_log(f"🪵 Подкинуто: Палки ×{to_use}. Огонь: {game.campfire_durability}/{game.campfire_max_durability}.")
-        result_text = f"🪵 Добавлено {to_use} палок/веток. Огонь: {game.campfire_durability}/{game.campfire_max_durability}."
+        action_header = f"✅ Подкинуто: Палки ×{to_use} (+{to_use} 🔥)"
 
+    from main import get_campfire_text
+    result_text = get_campfire_text(game, action_header=action_header)
     kb = get_campfire_kb(game)
     msg_id = bot_ctx["last_active_msg_id"].get(uid)
     if msg_id:
@@ -384,6 +388,92 @@ async def handle_waiting_for_drop_quantity(
     return True
 
 
+async def handle_waiting_for_cook_count(
+    uid: int,
+    chat_id: int,
+    text: str,
+    message: types.Message,
+    game: Game,
+    bot_ctx: dict,
+) -> bool:
+    """Обработать ввод количества порций для готовки на костре. Возвращает True если состояние обработано."""
+    if game.story_state != "WAITING_FOR_COOK_COUNT":
+        return False
+    if not text:
+        return True
+
+    await bot_ctx["safe_delete_message"](chat_id, message.message_id)
+
+    from modules.cooking import get_recipe_for_id, get_recipe_max_count, cook_portions, format_recipe_card
+    from keyboards import get_campfire_recipe_view_kb, get_campfire_kb
+
+    recipe_id = game.story_flags.get("cook_recipe_id")
+    if not recipe_id or not get_recipe_for_id(recipe_id):
+        game.story_state = None
+        game.story_flags.pop("cook_recipe_id", None)
+        game.nav_stack = ["main", "campfire"]
+        from main import get_campfire_text
+        text_out = get_campfire_text(game)
+        kb = get_campfire_kb(game)
+        msg_id = bot_ctx["last_active_msg_id"].get(uid)
+        if msg_id:
+            await bot_ctx["safe_edit_message"](chat_id, msg_id, text_out, kb)
+        else:
+            await bot_ctx["update_or_send_message"](chat_id, uid, text_out, kb)
+        save_game(uid, game)
+        return True
+
+    recipe = get_recipe_for_id(recipe_id)
+    max_count = get_recipe_max_count(game, recipe_id)
+
+    async def _reply_error(err_text: str):
+        kb = get_campfire_recipe_view_kb(recipe_id, max_count)
+        prompt = f"⚠️ {err_text}\n\n{format_recipe_card(recipe_id, game)}"
+        msg_id = bot_ctx["last_active_msg_id"].get(uid)
+        if msg_id:
+            await bot_ctx["safe_edit_message"](chat_id, msg_id, prompt, kb)
+        else:
+            await bot_ctx["update_or_send_message"](chat_id, uid, prompt, kb)
+
+    try:
+        qty = int(text.strip())
+        if qty <= 0:
+            await _reply_error("Введите число больше нуля!")
+            return True
+    except ValueError:
+        await _reply_error("Введите корректное положительное число!")
+        return True
+
+    if max_count <= 0:
+        await _reply_error("Недостаточно ингредиентов для приготовления!")
+        return True
+
+    to_cook = min(qty, max_count)
+    cooked, msg = cook_portions(game, recipe_id, to_cook)
+    if cooked <= 0:
+        await _reply_error(msg)
+        return True
+
+    game.story_state = None
+    game.story_flags.pop("cook_recipe_id", None)
+    game.nav_stack = ["main", "campfire"]
+    game.add_log(msg)
+
+    from main import get_campfire_text
+    header = f"✅ {msg}"
+    text_out = get_campfire_text(game, action_header=header)
+    kb = get_campfire_kb(game)
+
+    msg_id = bot_ctx["last_active_msg_id"].get(uid)
+    if msg_id:
+        await bot_ctx["safe_edit_message"](chat_id, msg_id, text_out, kb)
+    else:
+        await bot_ctx["update_or_send_message"](chat_id, uid, text_out, kb)
+
+    save_game(uid, game)
+    return True
+
+
 async def process_text_input(
     uid: int,
     chat_id: int,
@@ -402,6 +492,7 @@ async def process_text_input(
         handle_waiting_for_pet_name,
         handle_waiting_for_fuel_count,
         handle_waiting_for_drop_quantity,
+        handle_waiting_for_cook_count,
     ]
     for handler in handlers:
         try:

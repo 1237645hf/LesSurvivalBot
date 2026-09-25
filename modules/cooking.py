@@ -211,7 +211,46 @@ def can_cook(game: Any, recipe_id: str) -> bool:
     return True
 
 
-def format_recipe_card(recipe_id: str) -> str:
+def get_recipe_max_count(game: Any, recipe_id: str) -> int:
+    """Рассчитывает максимум доступных порций для блюда по минимуму доступных ресурсов."""
+    recipe = get_recipe_for_id(recipe_id)
+    if not recipe:
+        return 0
+
+    inv = getattr(game, "inventory", {}) or {}
+    bark = "Кусок коры"
+    limits = []
+
+    if recipe.get("needs_bark", True):
+        limits.append(inv.get(bark, 0))
+
+    if recipe.get("needs_meat"):
+        limits.append(inv.get("Сырое мясо", 0))
+
+    berries_needed = int(recipe.get("berries_needed", 0))
+    if berries_needed > 0:
+        limits.append(_count_tagged_items(inv, "berry") // berries_needed)
+
+    mushrooms_needed = int(recipe.get("mushrooms_needed", 0))
+    if mushrooms_needed > 0:
+        limits.append(_count_tagged_items(inv, "mushroom") // mushrooms_needed)
+
+    water_needed = int(recipe.get("water_from_flask", 0))
+    if water_needed > 0:
+        flask = int(getattr(game, "flask_water", 0) or 0)
+        has_flask_item = bool(getattr(game, "equipment", {}).get("flask"))
+        flask_water_available = flask if has_flask_item else 0
+        bottles_in_inv = inv.get("Бутылка воды", 0)
+        plain_water = inv.get("Вода", 0)
+        total_water = flask_water_available + bottles_in_inv * 20 + plain_water
+        limits.append(total_water // water_needed)
+
+    if not limits:
+        return 0
+    return max(0, min(limits))
+
+
+def format_recipe_card(recipe_id: str, game: Any = None) -> str:
     """Форматирует информационную карточку рецепта для костра по единой Модели экранов."""
     recipe = get_recipe_for_id(recipe_id)
     if not recipe:
@@ -246,6 +285,10 @@ def format_recipe_card(recipe_id: str) -> str:
         lines.append(f"• {ing}")
     lines.append("")
 
+    max_count = get_recipe_max_count(game, recipe_id) if game is not None else 0
+    lines.append(f"Доступно для готовки: {max_count} шт.")
+    lines.append("")
+
     # Эффекты готового блюда
     effects = res_data.get("effects", {})
     eff_parts = []
@@ -267,7 +310,37 @@ def format_recipe_card(recipe_id: str) -> str:
     if note:
         lines.append(f"Примечание: {note}")
 
-    return "\n".join(lines)
+    lines.append("")
+    lines.append("💬 Или напиши в чат число, сколько приготовить.")
+
+    body = "\n".join(lines)
+    return f"━━━━━━━━━━━━━━━━━━━\n{body}\n━━━━━━━━━━━━━━━━━━━"
+
+
+def cook_portions(game: Any, recipe_id: str, count: int) -> Tuple[int, str]:
+    """Готовит до count порций на костре. Возвращает (успешно_приготовлено, сообщение)."""
+    if count <= 0:
+        return 0, "Количество должно быть больше нуля."
+    recipe = get_recipe_for_id(recipe_id)
+    if not recipe:
+        return 0, f"Рецепт '{recipe_id}' не найден."
+
+    max_c = get_recipe_max_count(game, recipe_id)
+    to_cook = min(count, max_c)
+    if to_cook <= 0:
+        return 0, "Недостаточно ингредиентов для приготовления."
+
+    cooked = 0
+    for _ in range(to_cook):
+        ok, msg = cook_item(game, recipe_id)
+        if not ok:
+            break
+        cooked += 1
+
+    res_name = recipe["result"]
+    if cooked > 0:
+        return cooked, f"Приготовлено: {res_name} ×{cooked}"
+    return 0, "Не удалось приготовить блюдо."
 
 
 def cook_item(game: Any, recipe_id: str) -> Tuple[bool, str]:

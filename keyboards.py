@@ -105,12 +105,16 @@ def get_item_card_actions_kb(item_name: str, game=None):
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
-def get_campfire_recipe_view_kb(recipe_id: str):
-    """Кнопки окна рецепта костра."""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔥 Приготовить блюдо", callback_data=f"cook_exec_{recipe_id}")],
-        [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
-    ])
+def get_campfire_recipe_view_kb(recipe_id: str, max_count: int = 1):
+    """Кнопки окна рецепта костра с выбором порций (Приготовить 1 / Приготовить всё)."""
+    keyboard = []
+    if max_count >= 1:
+        row = [InlineKeyboardButton(text="🍳 Приготовить 1", callback_data=f"cook_qty:{recipe_id}:1")]
+        if max_count > 1:
+            row.append(InlineKeyboardButton(text=f"🍲 Приготовить всё ({max_count})", callback_data=f"cook_qty:{recipe_id}:all"))
+        keyboard.append(row)
+    keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 def get_drop_item_kb(game):
@@ -147,28 +151,24 @@ def get_main_kb(game):
         m = int(getattr(game, "campfire_max_durability", 10) or 10)
         row1.append(InlineKeyboardButton(text=f"🔥 Костёр {d}/{m}", callback_data="menu_campfire"))
 
-    # Ряд 2: Инвентарь + Персонаж
+    # Ряд 2: Инвентарь + Пить (если фляга) + Спать
     row2 = [
         InlineKeyboardButton(text="🎒 Инвентарь", callback_data="action_2"),
-        InlineKeyboardButton(text="👤 Персонаж", callback_data="menu_character"),
     ]
-
-    # Ряд 3: Пить (если фляга надета) + Спать
-    row3 = []
     if game.equipment.get("flask"):
         water_left = int(getattr(game, "flask_water", 0) or 0)
-        row3.append(InlineKeyboardButton(text=f"💧 Пить ({water_left}/20)", callback_data="action_3"))
-    row3.append(InlineKeyboardButton(text="😴 Спать", callback_data="action_4"))
+        row2.append(InlineKeyboardButton(text=f"💧 Пить ({water_left}/20)", callback_data="action_3"))
+    row2.append(InlineKeyboardButton(text="😴 Спать", callback_data="action_4"))
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[row1, row2, row3])
+    kb_rows = [row1, row2]
     if game.weather in {"rain", "storm"}:
-        kb.inline_keyboard.append([
+        kb_rows.append([
             InlineKeyboardButton(text="🌧️ Выпить дождевой воды", callback_data="action_collect_water")
         ])
-    kb.inline_keyboard.append([
+    kb_rows.append([
         InlineKeyboardButton(text="🗺️ Локации", callback_data="locations_menu")
     ])
-    return kb
+    return InlineKeyboardMarkup(inline_keyboard=kb_rows)
 
 
 
@@ -299,7 +299,8 @@ inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="✋ Осмотреть", callback_data="inv_inspect"),
      InlineKeyboardButton(text="🔨 Крафт", callback_data="inv_craft")],
     [InlineKeyboardButton(text="🗑 Выкинуть", callback_data="inv_drop"),
-     InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
+     InlineKeyboardButton(text="👤 Персонаж", callback_data="menu_character")],
+    [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
 ])
 
 

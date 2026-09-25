@@ -525,15 +525,20 @@ def test_7_3_item_and_recipe_cards_formatting():
 # ==============================================================================
 
 def test_8_1_character_screen_format():
-    """Тест 8.1: Экран персонажа содержит '👤 Герой: ...' и экипировку, без ASCII-силуэта."""
+    """Тест 8.1: Экран персонажа содержит '👤 ВЫЖИВШИЙ: ...', стартовую одежду, рамки и без дефолт-кота."""
     game = GameState()
     game.player_name = "Следопыт"
     text = game.get_character_text()
 
-    assert text.startswith("👤 Герой: Следопыт\n\n")
+    assert "👤 ВЫЖИВШИЙ: Следопыт" in text
     assert "```" not in text
     assert "🧢 Голова:" in text
+    assert "⚪ Грязная кепка" in text
     assert "🐾 Питомец:" in text
+    assert "Пусто" in text
+    assert "Кот" not in text
+    assert text.startswith("━━━━━━━━━━━━━━━━━━━\n")
+    assert text.endswith("\n━━━━━━━━━━━━━━━━━━━")
 
 
 
@@ -762,23 +767,24 @@ def test_10_2_character_name_input_state_guard():
     assert is_blocked is True
 
 
-def test_10_3_character_button_in_main_keyboard():
-    """S3: Кнопка [👤 Персонаж] присутствует на главном экране рядом с инвентарём."""
-    from keyboards import get_main_kb
+def test_10_3_character_button_in_inventory_keyboard():
+    """Блок 4: Кнопка [👤 Персонаж] убрана с главного экрана и перенесена в инвентарь."""
+    from keyboards import get_main_kb, inventory_inline_kb
 
     game = GameState()
-    kb = get_main_kb(game)
-    buttons = [btn for row in kb.inline_keyboard for btn in row]
-    char_btn = next((b for b in buttons if b.callback_data == "menu_character"), None)
+    kb_main = get_main_kb(game)
+    buttons_main = [btn for row in kb_main.inline_keyboard for btn in row]
+    char_btn_main = next((b for b in buttons_main if b.callback_data == "menu_character"), None)
 
-    assert char_btn is not None
-    assert "👤 Персонаж" in char_btn.text
+    # На главном экране кнопки персонажа быть НЕ должно
+    assert char_btn_main is None
 
-    # Проверяем, что в одном ряду с Инвентарём
-    row_with_char = next(row for row in kb.inline_keyboard if any(b.callback_data == "menu_character" for b in row))
-    cb_data_in_row = [b.callback_data for b in row_with_char]
-    assert "action_2" in cb_data_in_row
-    assert "menu_character" in cb_data_in_row
+    # В инвентаре кнопка персонажа должна быть во 2-м ряду рядом с «🗑 Выкинуть»
+    kb_inv = inventory_inline_kb
+    row2 = kb_inv.inline_keyboard[1]
+    row2_cbs = [btn.callback_data for btn in row2]
+    assert "inv_drop" in row2_cbs
+    assert "menu_character" in row2_cbs
 
 
 def test_10_4_fuel_quantity_kb_no_custom_button():
@@ -839,6 +845,145 @@ def test_10_5_fuel_calculation_texts():
     assert "Чтобы дойти до 10/10, нужно: +4 огня = 8 коры" in bark_text
     assert "Сейчас можешь подкинуть максимум 4 коры → +2 к огню (станет 8/10)" in bark_text
     assert "💬 Или напиши в чат число, сколько подкинуть." in bark_text
+
+
+# ==============================================================================
+# МЕХАНИКА 11: НАВИГАЦИЯ PARENT_SCREEN, ПОРЦИИ ГОТОВКИ, КАРТОЧКИ И ПЕРСОНАЖ (БЛОКИ 1-6)
+# ==============================================================================
+
+def test_11_1_parent_screen_navigation():
+    """Блок 2: Дерево родителей PARENT_SCREEN и поведение после готовки/топлива."""
+    from main import PARENT_SCREEN, CANONICAL_STACKS
+
+    # Проверка связей родительских экранов
+    assert PARENT_SCREEN["inventory"] == "main"
+    assert PARENT_SCREEN["inspect"] == "inventory"
+    assert PARENT_SCREEN["item_card"] == "inspect"
+    assert PARENT_SCREEN["craft"] == "inventory"
+    assert PARENT_SCREEN["drop"] == "inventory"
+    assert PARENT_SCREEN["character"] == "inventory"
+    assert PARENT_SCREEN["campfire"] == "main"
+    assert PARENT_SCREEN["campfire_fuel"] == "campfire"
+    assert PARENT_SCREEN["fuel_qty"] == "campfire_fuel"
+    assert PARENT_SCREEN["campfire_recipes"] == "campfire"
+    assert PARENT_SCREEN["recipe_card"] == "campfire_recipes"
+
+    # С костра назад ведёт ТОЛЬКО на главный
+    assert PARENT_SCREEN["campfire"] == "main"
+
+    # Проверка канонических цепочек стека
+    assert CANONICAL_STACKS["campfire"] == ["main", "campfire"]
+    assert CANONICAL_STACKS["character"] == ["main", "inventory", "character"]
+    assert CANONICAL_STACKS["recipe_card"] == ["main", "campfire", "campfire_recipes", "recipe_card"]
+
+
+def test_11_2_cooking_portions_and_max_count():
+    """Блок 3: Расчёт max_count, порции готовки и клавиатура с выбором количества."""
+    from modules.cooking import get_recipe_max_count, cook_portions, format_recipe_card
+    from keyboards import get_campfire_recipe_view_kb
+
+    game = GameState()
+    game.campfire_active = True
+    game.campfire_durability = 8
+    game.hp = 100
+    game.hunger = 50
+    game.thirst = 50
+
+    # Рецепт "Жареные грибы": нужно 5 грибов + 1 кора
+    game.inventory = {"Лесной гриб": 12, "Кусок коры": 3}
+    # 12 грибов // 5 = 2 порции; 3 коры // 1 = 3 порции -> min = 2 порции
+    max_c = get_recipe_max_count(game, "cook_roast_mushrooms")
+    assert max_c == 2
+
+    # Проверка карточки рецепта
+    card = format_recipe_card("cook_roast_mushrooms", game)
+    assert "Доступно для готовки: 2 шт." in card
+    assert "💬 Или напиши в чат число, сколько приготовить." in card
+    assert card.startswith("━━━━━━━━━━━━━━━━━━━\n")
+    assert card.endswith("\n━━━━━━━━━━━━━━━━━━━")
+
+    # Проверка клавиатуры карточки рецепта: Приготовить 1 и Приготовить всё (2)
+    kb = get_campfire_recipe_view_kb("cook_roast_mushrooms", max_c)
+    btn_texts = [btn.text for row in kb.inline_keyboard for btn in row]
+    btn_cbs = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+    assert any("Приготовить 1" in t for t in btn_texts)
+    assert any("Приготовить всё (2)" in t for t in btn_texts)
+    assert "cook_qty:cook_roast_mushrooms:1" in btn_cbs
+    assert "cook_qty:cook_roast_mushrooms:all" in btn_cbs
+
+    # Приготовление 2 порций
+    durability_before = game.campfire_durability
+    cooked, msg = cook_portions(game, "cook_roast_mushrooms", 2)
+    assert cooked == 2
+    assert "Жареные грибы ×2" in msg
+    assert game.inventory.get("Жареные грибы") == 2
+    assert game.inventory.get("Лесной гриб") == 2  # 12 - 10 = 2
+    assert game.inventory.get("Кусок коры") == 1   # 3 - 2 = 1
+
+    # Прочность костра, голод и жажда НЕ должны измениться
+    assert game.campfire_durability == durability_before
+    assert game.hunger == 50
+    assert game.thirst == 50
+
+
+def test_11_3_character_screen_no_default_cat_and_frames():
+    """Блок 6: Экран персонажа без дефолт-кота, со стартовой одеждой, флягой и аккуратными рамками."""
+    game = GameState()
+    game.player_name = "Бродяга"
+    game.equipment["flask"] = "Бутылка воды"
+    game.flask_water = 18
+
+    char_text = game.get_character_text()
+
+    # Рамки только сверху и снизу
+    assert char_text.startswith("━━━━━━━━━━━━━━━━━━━\n")
+    assert char_text.endswith("\n━━━━━━━━━━━━━━━━━━━")
+    # Проверка отсутствия промежуточных рамок
+    body = char_text.strip("━\n")
+    assert "━━━" not in body
+
+    # Имя и стартовая одежда
+    assert "👤 ВЫЖИВШИЙ: Бродяга" in char_text
+    assert "🧢 Голова:\n⚪ Грязная кепка" in char_text
+    assert "👕 Торс:\n⚪ Потасканная майка" in char_text
+    assert "👖 Штаны:\n⚪ Рваные штаны" in char_text
+    assert "🥾 Ботинки:\n⚪ Стоптанные ботинки" in char_text
+
+    # Фляга
+    assert "🧴 Фляга:\n⚪ Бутылка воды (18/20)" in char_text
+
+    # Питомец: строго Пусто (никакого кота по умолчанию)
+    assert "🐾 Питомец:\nПусто" in char_text
+    assert "Кот" not in char_text
+
+    # Бонусы снаряжения
+    assert "📊 ОБЩИЕ БОНУСЫ СНАРЯЖЕНИЯ:\n• Бонусы отсутствуют." in char_text
+
+    # Если факел в руке — появляется бонус +1 AP
+    game.equipment["hand_left"] = "Факел"
+    char_text_torch = game.get_character_text()
+    assert "• ⚡ AP: +1" in char_text_torch
+
+
+def test_11_4_item_card_torch_and_frames():
+    """Блок 5: Карточка осмотра факела (без Освещение +30, правильные свойства и рамки)."""
+    from modules.items import format_item_card
+
+    torch_card = format_item_card("Факел")
+
+    # Без выдуманного "Освещение +30"
+    assert "Освещение +30" not in torch_card
+    assert "Освещение" not in torch_card
+
+    # Свойства
+    assert "✨ Свойства: +1 ⚡ AP в руке, сгорает за ночь" in torch_card
+
+    # Риск
+    assert "⚠️ Риск: отсутствует." in torch_card
+
+    # Рамки
+    assert torch_card.startswith("━━━━━━━━━━━━━━━━━━━\n")
+    assert torch_card.endswith("\n━━━━━━━━━━━━━━━━━━━")
 
 
 

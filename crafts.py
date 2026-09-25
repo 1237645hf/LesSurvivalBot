@@ -159,7 +159,8 @@ def get_craft_menu_text(game) -> str:
         lines.append(f"• {icon} {name}: {', '.join(ing_strs)}")
     if not has_any:
         lines.append("Пока нечего крафтить.")
-    return "\n".join(lines)
+    body = "\n".join(lines)
+    return f"━━━━━━━━━━━━━━━━━━━\n{body}\n━━━━━━━━━━━━━━━━━━━"
 
 
 def get_craft_menu_kb(game):

@@ -69,8 +69,8 @@ ITEMS: Dict[str, Dict[str, Any]] = {
         "description": "Осмоленная ветвь, туго обмотанная волокнами и зажжённая от спички. Яркое пламя разгоняет лесной мрак и отпугивает хищников.",
         "type": "tool",
         "rank": 2,
-        "effects": {"light": 30},
-        "note": "Экипируется строго в левую руку. Даёт +1 AP пока в руке. Защищает от ночных опасностей. Сгорает за ночь.",
+        "effects": {},
+        "note": "Экипируется строго в левую руку. Защищает от ночных опасностей.",
         "can_use": True,
         "stackable": True,
     },
@@ -673,18 +673,37 @@ def is_item_consumable(item_name: str) -> bool:
     return False
 
 
+ITEM_EMOJIS: Dict[str, str] = {
+    "Ветка": "🪵", "Палка": "🪵", "Палки": "🪵", "Кусок коры": "🪵", "Спички": "📦",
+    "Факел": "🔦", "Костёр": "🔥", "Охотничья ловушка": "🪤", "Схема": "📜",
+    "Мох": "🌿", "Сухой мох": "🌿", "Сухая трава": "🌿", "Пещерный мох": "🌿",
+    "Горный лишайник": "🌿", "Камень": "🪨", "Заострённый камень": "🪨",
+    "Глина": "🧱", "Слизь": "🧪", "Сланец": "🪨", "Сланцевая пластина": "🛡️",
+    "Сланцевая заготовка": "🪨", "Кость": "🦴", "Кожа": "👞", "Мех": "🧶",
+    "Пустая бутылка": "🧴", "Бутылка воды": "🧴", "Вода": "💧",
+}
+
+
 def format_item_card(item_name: str) -> str:
     """
     Форматирует информационную карточку предмета:
-    - Название без ** и без (Армейское...) в заголовке
-    - Описание без _курсива_, абзацы без слипания
-    - Блоки Эффекты:, Негативный эффект:, Примечание: без markdown-звёздочек
+    1. Заголовок: emoji/иконка (еда — маркер ранга ⚪🟢…; не еда — 🪵🪨 и т.д.).
+    2. ✨ Свойства: … (одна аккуратная строка).
+    3. ⚠️ Риск: … или ⚠️ Риск: отсутствует.
+    4. 📌 … короткое примечание без тавтологии.
+    5. Рамки ━━━━━━━━━━━━━━━━━━━ сверху и снизу.
     """
     data = ITEMS.get(item_name, {})
     if not data:
-        return f"📦 {item_name}\n\nИнформация отсутствует."
+        return f"━━━━━━━━━━━━━━━━━━━\n📦 {item_name}\n\nИнформация отсутствует.\n━━━━━━━━━━━━━━━━━━━"
 
-    lines = [f"📦 {item_name}", ""]
+    item_clean = item_name.replace(" 🔥", "").replace("🔥", "").strip()
+    if is_item_consumable(item_clean):
+        marker = get_item_rank_marker(item_clean)
+    else:
+        marker = ITEM_EMOJIS.get(item_clean, "📦")
+
+    lines = [f"{marker} {item_name}", ""]
 
     # 1. Художественное описание
     desc = data.get("description", "")
@@ -692,31 +711,35 @@ def format_item_card(item_name: str) -> str:
         lines.append(desc)
         lines.append("")
 
-    # 2. Положительные эффекты
-    effects = data.get("effects", {})
-    eff_parts = []
-    if effects.get("hunger"):
-        eff_parts.append(f"🍖 Сытость +{effects['hunger']}")
-    if effects.get("thirst"):
-        eff_parts.append(f"💧 Жажда +{effects['thirst']}")
-    if effects.get("hp"):
-        hp_val = effects["hp"]
-        eff_parts.append(f"❤️ Здоровье {'+' if hp_val > 0 else ''}{hp_val} HP")
-    if effects.get("light"):
-        eff_parts.append(f"💡 Освещение +{effects['light']}")
+    # 2. Свойства
+    if item_clean == "Факел":
+        lines.append("✨ Свойства: +1 ⚡ AP в руке, сгорает за ночь")
+    else:
+        effects = data.get("effects", {})
+        eff_parts = []
+        if effects.get("hunger"):
+            eff_parts.append(f"🍖 Сытость +{effects['hunger']}")
+        if effects.get("thirst"):
+            eff_parts.append(f"💧 Жажда +{effects['thirst']}")
+        if effects.get("hp"):
+            hp_val = effects["hp"]
+            eff_parts.append(f"❤️ Здоровье {'+' if hp_val > 0 else ''}{hp_val} HP")
+        if effects.get("light"):
+            eff_parts.append(f"💡 Освещение +{effects['light']}")
+        lines.append("✨ Свойства: " + (", ".join(eff_parts) if eff_parts else "отсутствуют."))
 
-    lines.append("✨ Эффекты: " + (", ".join(eff_parts) if eff_parts else "Нет прямых эффектов"))
-
-    # 3. Негативные эффекты / риски
+    # 3. Риск
     neg = data.get("negative_effects")
     if neg:
-        lines.append(f"⚠️ Негативный эффект: {neg.get('description', 'Неизвестно')}")
+        lines.append(f"⚠️ Риск: {neg.get('description', 'Неизвестно')}")
     else:
-        lines.append("⚠️ Негативный эффект: Отсутствуют")
+        lines.append("⚠️ Риск: отсутствует.")
 
     # 4. Примечание
     note = data.get("note")
     if note:
-        lines.append(f"📌 Примечание: {note}")
+        clean_note = note.removeprefix("Примечание:").strip()
+        lines.append(f"📌 Примечание: {clean_note}")
 
-    return "\n".join(lines)
+    body = "\n".join(lines)
+    return f"━━━━━━━━━━━━━━━━━━━\n{body}\n━━━━━━━━━━━━━━━━━━━"

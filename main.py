@@ -3,6 +3,7 @@ import logging
 import os
 import time
 import random
+from typing import Optional, Dict, List, Any
 from textwrap import wrap
 from pathlib import Path
 from aiohttp import web, ClientSession
@@ -37,7 +38,14 @@ from modules.traps import (
     traps_unlocked,
 )
 from modules.finds import roll_find, apply_finds_to_inventory, location_id_from_game
-from modules.cooking import COOKING_RECIPES, cook_item, list_recipes, format_recipe_card
+from modules.cooking import (
+    COOKING_RECIPES,
+    cook_item,
+    list_recipes,
+    format_recipe_card,
+    get_recipe_max_count,
+    cook_portions,
+)
 from modules.items import (
     get_item_effects,
     get_item_negative_effects,
@@ -405,8 +413,8 @@ def get_settings_text(game=None):
     )
 
 
-def get_campfire_text(game=None) -> str:
-    """Формирует живое описание костра без бюрократических делений."""
+def get_campfire_text(game=None, action_header: Optional[str] = None) -> str:
+    """Формирует живое описание костра с рамками сверху и снизу."""
     durability = int(getattr(game, "campfire_durability", 0) or 0)
     max_d = int(getattr(game, "campfire_max_durability", 10) or 10)
     ratio = durability / max_d if max_d > 0 else 0
@@ -422,11 +430,54 @@ def get_campfire_text(game=None) -> str:
     else:
         narrative = "Костёр потух. Вокруг лишь холодный пепел."
 
-    return (
-        f"🔥 КОСТЁР\n\n"
-        f"{narrative}\n\n"
-        f"Огонь: {durability}/{max_d}"
-    )
+    body = ["🔥 КОСТЁР"]
+    if action_header:
+        body.append(action_header)
+    body.append(narrative)
+    body.append(f"Огонь: {durability}/{max_d}")
+
+    content = "\n\n".join(body)
+    return f"━━━━━━━━━━━━━━━━━━━\n{content}\n━━━━━━━━━━━━━━━━━━━"
+
+
+# Дерево родителей для гарантированной навигации «↩️ Назад» (Блок 2)
+PARENT_SCREEN = {
+    # Поддерево инвентаря
+    "inventory": "main",
+    "inspect": "inventory",
+    "item_card": "inspect",
+    "craft": "inventory",
+    "recipes": "inventory",
+    "drop": "inventory",
+    "drop_qty": "inventory",
+    "character": "inventory",
+    # Поддерево костра
+    "campfire": "main",
+    "campfire_fuel": "campfire",
+    "fuel_qty": "campfire_fuel",
+    "campfire_recipes": "campfire",
+    "recipe_card": "campfire_recipes",
+    # Прочие экраны
+    "locations": "main",
+    "settings": "main",
+}
+
+CANONICAL_STACKS = {
+    "main": ["main"],
+    "inventory": ["main", "inventory"],
+    "inspect": ["main", "inventory", "inspect"],
+    "item_card": ["main", "inventory", "inspect", "item_card"],
+    "craft": ["main", "inventory", "craft"],
+    "drop": ["main", "inventory", "drop"],
+    "character": ["main", "inventory", "character"],
+    "campfire": ["main", "campfire"],
+    "campfire_fuel": ["main", "campfire", "campfire_fuel"],
+    "fuel_qty": ["main", "campfire", "campfire_fuel", "fuel_qty"],
+    "campfire_recipes": ["main", "campfire", "campfire_recipes"],
+    "recipe_card": ["main", "campfire", "campfire_recipes", "recipe_card"],
+    "locations": ["main", "locations"],
+    "settings": ["main", "settings"],
+}
 
 
 def format_start_character_text(game) -> str:
@@ -538,7 +589,7 @@ async def cmd_inventory(message: Message):
         )
         await update_or_send_message(chat_id, uid, prompt, None)
         return
-    game.push_screen("inventory")
+    game.nav_stack = ["main", "inventory"]
     await update_or_send_message(chat_id, uid, game.get_inventory_text(), inventory_inline_kb)
     save_game(uid, game)
 
@@ -566,7 +617,7 @@ async def cmd_character(message: Message):
         )
         await update_or_send_message(chat_id, uid, prompt, None)
         return
-    game.push_screen("character")
+    game.nav_stack = ["main", "inventory", "character"]
     await update_or_send_message(chat_id, uid, game.get_character_text(), character_inline_kb)
     save_game(uid, game)
 
@@ -803,31 +854,61 @@ async def process_callback(callback: types.CallbackQuery):
             text = game.get_character_text()
             kb = character_inline_kb
 
-        elif data.startswith("cook_exec_") or (data.startswith("cook_") and not data.startswith("cook_recipe_view_")):
-            # Непосредственное приготовление блюда на костре
+        elif data.startswith("cook_qty:"):
+            parts = data.split(":", 2)
+            recipe_id = parts[1]
+            qty_mode = parts[2]
+            if not game.campfire_active or game.campfire_durability <= 0:
+                await callback.answer("🔥 Костёр погас! Разведите его снова.", show_alert=True)
+                return
+            max_c = get_recipe_max_count(game, recipe_id)
+            if max_c <= 0:
+                await callback.answer("⚠️ Недостаточно ингредиентов!", show_alert=True)
+                return
+            to_cook = max_c if qty_mode == "all" else 1
+            cooked, message = cook_portions(game, recipe_id, to_cook)
+            if cooked <= 0:
+                await callback.answer(f"⚠️ {message}", show_alert=True)
+                return
+            game.story_state = None
+            game.story_flags.pop("cook_recipe_id", None)
+            game.add_log(message)
+            game.nav_stack = ["main", "campfire"]
+            save_game(uid, game)
+            header = f"✅ {message}"
+            text = get_campfire_text(game, action_header=header)
+            kb = get_campfire_kb(game)
+            await safe_edit_message(chat_id, callback.message.message_id, text, kb)
+            await callback.answer()
+            return
+        elif data.startswith("cook_exec_") or (data.startswith("cook_") and not data.startswith("cook_recipe_view_") and not data.startswith("cook_qty:")):
             recipe_id = data.removeprefix("cook_exec_")
             if not game.campfire_active or game.campfire_durability <= 0:
                 await callback.answer("🔥 Костёр погас! Разведите его снова.", show_alert=True)
                 return
-            ok, message = cook_item(game, recipe_id)
-            if not ok:
+            cooked, message = cook_portions(game, recipe_id, 1)
+            if cooked <= 0:
                 await callback.answer(f"⚠️ {message}", show_alert=True)
                 return
+            game.story_state = None
+            game.story_flags.pop("cook_recipe_id", None)
             game.add_log(message)
+            game.nav_stack = ["main", "campfire"]
             save_game(uid, game)
-            while len(game.nav_stack) > 1 and game.nav_stack[-1] in ("recipe_card", "campfire_recipes"):
-                game.nav_stack.pop()
-            text = f"{message}\n\n{get_campfire_text(game)}"
+            header = f"✅ {message}"
+            text = get_campfire_text(game, action_header=header)
             kb = get_campfire_kb(game)
             await safe_edit_message(chat_id, callback.message.message_id, text, kb)
             await callback.answer()
             return
         elif data.startswith("cook_recipe_view_"):
-            # Карточка рецепта костра перед готовкой
             recipe_id = data.removeprefix("cook_recipe_view_")
             game.push_screen("recipe_card")
-            text = format_recipe_card(recipe_id)
-            kb = get_campfire_recipe_view_kb(recipe_id)
+            game.story_state = "WAITING_FOR_COOK_COUNT"
+            game.story_flags["cook_recipe_id"] = recipe_id
+            max_count = get_recipe_max_count(game, recipe_id)
+            text = format_recipe_card(recipe_id, game)
+            kb = get_campfire_recipe_view_kb(recipe_id, max_count)
             await safe_edit_message(chat_id, callback.message.message_id, text, kb)
             await callback.answer()
             return
@@ -1015,9 +1096,12 @@ async def process_callback(callback: types.CallbackQuery):
                     to_deduct -= take
                 fire_added = spent // 2
                 game.campfire_durability += fire_added
+                game.nav_stack = ["main", "campfire"]
                 game.add_log(f"🧱 Подкинуто: Кора ×{spent} (+{fire_added} 🔥). Огонь: {game.campfire_durability}/{game.campfire_max_durability}.")
-                text = f"🧱 Подкинуто Кора ×{spent} (+{fire_added} к огню).\n\n{get_campfire_text(game)}"
+                action_header = f"✅ Подкинуто: Кора ×{spent} (+{fire_added} 🔥)"
+                text = get_campfire_text(game, action_header=action_header)
                 kb = get_campfire_kb(game)
+                save_game(uid, game)
             else:
                 sticks_avail = inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)
                 if sticks_avail <= 0:
@@ -1038,9 +1122,12 @@ async def process_callback(callback: types.CallbackQuery):
                         del inv[k]
                     to_deduct -= take
                 game.campfire_durability += to_use
+                game.nav_stack = ["main", "campfire"]
                 game.add_log(f"🪵 Подкинуто: Палки ×{to_use}. Огонь: {game.campfire_durability}/{game.campfire_max_durability}.")
-                text = f"🪵 Подкинуто Палки ×{to_use}.\n\n{get_campfire_text(game)}"
+                action_header = f"✅ Подкинуто: Палки ×{to_use} (+{to_use} 🔥)"
+                text = get_campfire_text(game, action_header=action_header)
                 kb = get_campfire_kb(game)
+                save_game(uid, game)
 
         elif data == "campfire_recipes":
             game.push_screen("campfire_recipes")
@@ -1229,42 +1316,40 @@ async def process_callback(callback: types.CallbackQuery):
             game.story_state = None
             if "drop_item_name" in game.story_flags:
                 del game.story_flags["drop_item_name"]
-            prev = game.pop_screen()
-            if prev == "drop_qty":
-                prev = game.pop_screen()
-            if prev == "drop":
-                if any(count > 0 for count in game.inventory.values()):
-                    text = "Выберите предмет для удаления:"
-                    kb = get_drop_item_kb(game)
-                else:
-                    text = game.get_inventory_text()
-                    kb = get_inventory_kb(game, 0)
-            elif prev == "inventory":
-                text = game.get_inventory_text()
-                kb = get_inventory_kb(game, 0)
+            game.nav_stack = ["main", "inventory", "drop"]
+            if any(count > 0 for count in game.inventory.values()):
+                text = "Выберите предмет для удаления:"
+                kb = get_drop_item_kb(game)
             else:
-                text = game.get_ui()
-                kb = get_main_kb(game)
+                text = game.get_inventory_text()
+                kb = inventory_inline_kb
 
         elif data == "back":
             game.story_state = None
             if "drop_item_name" in game.story_flags:
                 del game.story_flags["drop_item_name"]
             game.story_flags.pop("fuel_item", None)
-            prev = game.pop_screen()
-            if prev == "main":
+            game.story_flags.pop("cook_recipe_id", None)
+
+            current = game.nav_stack[-1] if game.nav_stack else "main"
+            target = PARENT_SCREEN.get(current, "main")
+
+            # Выставляем канонический стек для target экрана
+            game.nav_stack = list(CANONICAL_STACKS.get(target, ["main"]))
+
+            if target == "main":
                 text = game.get_ui()
                 kb = get_main_kb(game)
-            elif prev == "inventory":
+            elif target == "inventory":
                 text = game.get_inventory_text()
                 kb = inventory_inline_kb
-            elif prev == "character":
+            elif target == "character":
                 text = game.get_character_text()
                 kb = character_inline_kb
-            elif prev in ("craft", "recipes"):
+            elif target in ("craft", "recipes"):
                 text = get_craft_menu_text(game)
                 kb = get_craft_menu_kb(game)
-            elif prev == "inspect":
+            elif target == "inspect":
                 items_in_inv = [item for item, c in game.inventory.items() if c > 0]
                 if items_in_inv:
                     text = "🔍 Подробный осмотр предметов\n\nВыберите предмет из инвентаря, чтобы изучить его описание, эффекты и свойства:"
@@ -1272,20 +1357,17 @@ async def process_callback(callback: types.CallbackQuery):
                 else:
                     text = game.get_inventory_text()
                     kb = inventory_inline_kb
-            elif prev == "drop":
+            elif target == "drop":
                 if any(count > 0 for count in game.inventory.values()):
                     text = "Выберите предмет для удаления:"
                     kb = get_drop_item_kb(game)
                 else:
                     text = game.get_inventory_text()
                     kb = inventory_inline_kb
-            elif prev in ("drop_qty", "use"):
-                text = game.get_inventory_text()
-                kb = inventory_inline_kb
-            elif prev == "campfire":
+            elif target == "campfire":
                 text = get_campfire_text(game)
                 kb = get_campfire_kb(game)
-            elif prev == "campfire_recipes":
+            elif target == "campfire_recipes":
                 from modules.cooking import COOKING_RECIPES, can_cook
                 available_count = sum(1 for r_id in COOKING_RECIPES if can_cook(game, r_id))
                 if available_count > 0:
@@ -1293,15 +1375,15 @@ async def process_callback(callback: types.CallbackQuery):
                 else:
                     text = "📜 Рецепты костра\n\nСейчас у вас недостаточно ингредиентов ни для одного блюда.\nНайдите ягоды, грибы, мясо, воду или кусок коры."
                 kb = get_campfire_recipes_kb(game)
-            elif prev in ("campfire_fuel", "fuel_qty"):
+            elif target == "campfire_fuel":
                 cur_d = getattr(game, "campfire_durability", 0)
                 max_d = getattr(game, "campfire_max_durability", 10)
                 text = f"🔥 КОСТЁР ({cur_d}/{max_d})\nВыберите топливо для поддержания огня:"
                 kb = get_campfire_fuel_kb(game)
-            elif prev == "locations":
+            elif target == "locations":
                 text = "Куда направиться?"
                 kb = get_locations_kb(game)
-            elif prev == "settings":
+            elif target == "settings":
                 text = get_settings_text(game)
                 kb = get_settings_kb(game)
             else:
