@@ -1527,7 +1527,7 @@ async def process_callback(callback: types.CallbackQuery):
                     game.add_log(story_log)
                 text, kb = handle_story(story_event, game, uid)
             else:
-                found_list = roll_find(loc_id)
+                found_list = roll_find(loc_id, game.inventory)
                 msg = apply_finds_to_inventory(game, found_list)
                 if torch_equipped:
                     game.add_log(f"🔦 {msg}")
