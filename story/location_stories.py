@@ -178,6 +178,7 @@ def handle_story(data: str, game, uid: int):
         game.set_story_flag("saved_kitten")
         game.set_story_flag("has_pet")
         game.set_story_flag("l1_completed")
+        game.story_flags["l1_completed_day"] = getattr(game, "day", 1)
         game.adjust_narrative_karma("compassion", 2)
         game.story_state = "WAITING_FOR_PET_NAME"
         text = (
@@ -225,7 +226,11 @@ def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool)
     if torch_equipped:
         torch_count = getattr(game, "torch_research_count", 0) + 1
         game.torch_research_count = torch_count
-        if torch_count == 4 and not game.is_story_flag_set("l1_started"):
+        if (
+            getattr(game, "day", 1) >= 3
+            and torch_count >= 4
+            and not game.is_story_flag_set("l1_started")
+        ):
             return "forest_start", "🔦 Ты замечаешь странные следы и слышишь глухое рычание..."
 
     # Триггер 2: Обнаружение волчьего логова (L1.5)

@@ -676,6 +676,7 @@ class GameState:
         game.wolf_lair_active = bool(data.get("wolf_lair_active", False))
         game.wolf_lair_defeated = bool(data.get("wolf_lair_defeated", False))
         game.l1_post_research_count = int(data.get("l1_post_research_count", 0))
+        game.torch_research_count = int(data.get("torch_research_count", 0))
         game.wolf_battle = dict(data["wolf_battle"]) if data.get("wolf_battle") else None
         return game
     
