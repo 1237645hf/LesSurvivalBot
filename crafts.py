@@ -8,6 +8,10 @@ CRAFT_RECIPES = {
     "Факел": [("Ветка", 2), ("Сушняк", 1)],
     "Костёр": [("Ветка", 5), ("Камень", 4), ("Сушняк", 1)],
     "Крепкий посох": [("Ветка", 8)],
+    "Сланцевая маска": [("Сланцевая пластина", 2), ("Кусок коры", 2), ("Мох", 2)],
+    "Сланцевый панцирь": [("Сланцевая пластина", 8), ("Кусок коры", 5), ("Мох", 4), ("Ветка", 4)],
+    "Сланцевые поножи": [("Сланцевая пластина", 6), ("Кусок коры", 3), ("Мох", 4)],
+    "Сланцевые ботинки": [("Сланцевая пластина", 2), ("Мох", 3), ("Кусок коры", 2)],
 }
 
 
@@ -29,8 +33,12 @@ count_sushnyak = count_tinder
 
 
 def _check_ingredient(game, name: str, need: int) -> bool:
-    if name in ("Сушняк", "Трут"):
+    if name in ("Сушняк", "Трут", "Мох"):
         return count_tinder(game) >= need
+    if name in ("Кусок коры", "Кора"):
+        return (game.inventory.get("Кусок коры", 0) + game.inventory.get("Кора", 0)) >= need
+    if name in ("Ветка", "Палка", "Палки"):
+        return (game.inventory.get("Ветка", 0) + game.inventory.get("Палка", 0) + game.inventory.get("Палки", 0)) >= need
     return game.inventory.get(name, 0) >= need
 
 
@@ -84,10 +92,18 @@ def do_craft(game, recipe_name: str):
     if not can_craft(game, recipe_name):
         missing = []
         for n, q in ingredients:
-            if n in ("Сушняк", "Трут"):
+            if n in ("Сушняк", "Трут", "Мох"):
                 have = count_tinder(game)
                 if have < q:
-                    missing.append(f"Сушняк (мох/трава) {have}/{q}")
+                    missing.append(f"Мох/сушняк {have}/{q}")
+            elif n in ("Кусок коры", "Кора"):
+                have = game.inventory.get("Кусок коры", 0) + game.inventory.get("Кора", 0)
+                if have < q:
+                    missing.append(f"Кора {have}/{q}")
+            elif n in ("Ветка", "Палка", "Палки"):
+                have = game.inventory.get("Ветка", 0) + game.inventory.get("Палка", 0) + game.inventory.get("Палки", 0)
+                if have < q:
+                    missing.append(f"Ветки {have}/{q}")
             else:
                 have = game.inventory.get(n, 0)
                 if have < q:
@@ -96,12 +112,40 @@ def do_craft(game, recipe_name: str):
 
     # Списание ресурсов
     for n, q in ingredients:
-        if n in ("Сушняк", "Трут"):
-            tinder_name = get_available_tinder(game)
-            if tinder_name:
-                game.inventory[tinder_name] -= q
-                if game.inventory[tinder_name] <= 0:
-                    del game.inventory[tinder_name]
+        rem = q
+        if n in ("Сушняк", "Трут", "Мох"):
+            for t_name in TINDER_ITEMS:
+                if rem <= 0:
+                    break
+                have = game.inventory.get(t_name, 0)
+                if have > 0:
+                    take = min(have, rem)
+                    game.inventory[t_name] -= take
+                    rem -= take
+                    if game.inventory[t_name] <= 0:
+                        del game.inventory[t_name]
+        elif n in ("Кусок коры", "Кора"):
+            for b_name in ("Кусок коры", "Кора"):
+                if rem <= 0:
+                    break
+                have = game.inventory.get(b_name, 0)
+                if have > 0:
+                    take = min(have, rem)
+                    game.inventory[b_name] -= take
+                    rem -= take
+                    if game.inventory[b_name] <= 0:
+                        del game.inventory[b_name]
+        elif n in ("Ветка", "Палка", "Палки"):
+            for s_name in ("Ветка", "Палка", "Палки"):
+                if rem <= 0:
+                    break
+                have = game.inventory.get(s_name, 0)
+                if have > 0:
+                    take = min(have, rem)
+                    game.inventory[s_name] -= take
+                    rem -= take
+                    if game.inventory[s_name] <= 0:
+                        del game.inventory[s_name]
         else:
             game.inventory[n] -= q
             if game.inventory[n] <= 0:
@@ -135,6 +179,10 @@ CRAFT_ICONS = {
     "Факел": "🔦",
     "Костёр": "🔥",
     "Крепкий посох": "🪵",
+    "Сланцевая маска": "🎭",
+    "Сланцевый панцирь": "🦺",
+    "Сланцевые поножи": "👖",
+    "Сланцевые ботинки": "🥾",
 }
 
 
@@ -151,9 +199,15 @@ def get_craft_menu_text(game) -> str:
         ingredients = CRAFT_RECIPES[name]
         ing_strs = []
         for n, q in ingredients:
-            if n in ("Сушняк", "Трут"):
+            if n in ("Сушняк", "Трут", "Мох"):
                 have = count_tinder(game)
                 display_n = "Мох"
+            elif n in ("Кусок коры", "Кора"):
+                have = game.inventory.get("Кусок коры", 0) + game.inventory.get("Кора", 0)
+                display_n = "Кусок коры"
+            elif n in ("Ветка", "Палка", "Палки"):
+                have = game.inventory.get("Ветка", 0) + game.inventory.get("Палка", 0) + game.inventory.get("Палки", 0)
+                display_n = "Ветка"
             else:
                 have = game.inventory.get(n, 0)
                 display_n = n
@@ -249,6 +303,86 @@ def handle_craft(data, game, uid):
             kb = get_main_kb(game)
         else:
             game.add_log("В инвентаре нет рюкзака с красной заплаткой.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Сланцевая маска":
+        if game.inventory.get("Сланцевая маска", 0) > 0:
+            old_item = game.equipment.get("head")
+            if old_item and old_item not in ("⚪ Грязная кепка", "Грязная кепка", "Пусто"):
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory["Сланцевая маска"] -= 1
+            if game.inventory["Сланцевая маска"] <= 0:
+                del game.inventory["Сланцевая маска"]
+            game.equipment["head"] = "Сланцевая маска"
+            game.add_log("Вы надели сланцевую маску.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет сланцевой маски.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Сланцевый панцирь":
+        if game.inventory.get("Сланцевый панцирь", 0) > 0:
+            old_item = game.equipment.get("torso")
+            if old_item and old_item not in ("⚪ Потасканная куртка", "Потасканная куртка", "Пусто"):
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory["Сланцевый панцирь"] -= 1
+            if game.inventory["Сланцевый панцирь"] <= 0:
+                del game.inventory["Сланцевый панцирь"]
+            game.equipment["torso"] = "Сланцевый панцирь"
+            game.add_log("Вы надели сланцевый панцирь.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет сланцевого панциря.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Сланцевые поножи":
+        if game.inventory.get("Сланцевые поножи", 0) > 0:
+            old_item = game.equipment.get("pants")
+            if old_item and old_item not in ("⚪ Рваные штаны", "Рваные штаны", "Пусто"):
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory["Сланцевые поножи"] -= 1
+            if game.inventory["Сланцевые поножи"] <= 0:
+                del game.inventory["Сланцевые поножи"]
+            game.equipment["pants"] = "Сланцевые поножи"
+            game.add_log("Вы надели сланцевые поножи.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет сланцевых поножей.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Сланцевые ботинки":
+        if game.inventory.get("Сланцевые ботинки", 0) > 0:
+            old_item = game.equipment.get("boots")
+            if old_item and old_item not in ("⚪ Стоптанные ботинки", "Стоптанные ботинки", "Пусто"):
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory["Сланцевые ботинки"] -= 1
+            if game.inventory["Сланцевые ботинки"] <= 0:
+                del game.inventory["Сланцевые ботинки"]
+            game.equipment["boots"] = "Сланцевые ботинки"
+            game.add_log("Вы надели сланцевые ботинки.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет сланцевых ботинок.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Отремонтированные ботинки":
+        if game.inventory.get("Отремонтированные ботинки", 0) > 0:
+            old_item = game.equipment.get("boots")
+            if old_item and old_item not in ("⚪ Стоптанные ботинки", "Стоптанные ботинки", "Пусто"):
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory["Отремонтированные ботинки"] -= 1
+            if game.inventory["Отремонтированные ботинки"] <= 0:
+                del game.inventory["Отремонтированные ботинки"]
+            game.equipment["boots"] = "Отремонтированные ботинки"
+            game.add_log("Вы надели отремонтированные ботинки.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет отремонтированных ботинок.")
             text = game.get_ui()
             kb = get_main_kb(game)
     return text, kb

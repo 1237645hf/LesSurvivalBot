@@ -92,6 +92,16 @@ def get_item_card_actions_kb(item_name: str, game=None):
         keyboard.append([InlineKeyboardButton(text="🪵 Взять в правую руку", callback_data="use_item_Крепкий посох")])
     elif item_name == "Рюкзак с красной заплаткой":
         keyboard.append([InlineKeyboardButton(text="🎒 Надеть на спину", callback_data="use_item_Рюкзак с красной заплаткой")])
+    elif item_name == "Сланцевая маска":
+        keyboard.append([InlineKeyboardButton(text="🎭 Надеть маску", callback_data="use_item_Сланцевая маска")])
+    elif item_name == "Сланцевый панцирь":
+        keyboard.append([InlineKeyboardButton(text="🦺 Надеть панцирь", callback_data="use_item_Сланцевый панцирь")])
+    elif item_name == "Сланцевые поножи":
+        keyboard.append([InlineKeyboardButton(text="👖 Надеть поножи", callback_data="use_item_Сланцевые поножи")])
+    elif item_name == "Сланцевые ботинки":
+        keyboard.append([InlineKeyboardButton(text="🥾 Надеть ботинки", callback_data="use_item_Сланцевые ботинки")])
+    elif item_name == "Отремонтированные ботинки":
+        keyboard.append([InlineKeyboardButton(text="🥾 Надеть ботинки", callback_data="use_item_Отремонтированные ботинки")])
     elif is_item_consumable(item_name):
         keyboard.append([InlineKeyboardButton(text="🍽️ Съесть / Применить", callback_data=f"use_consumable_{item_name}")])
 
@@ -255,11 +265,15 @@ def get_locations_kb(game):
             [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
         ])
     elif getattr(game, "wolf_lair_defeated", False):
-        return InlineKeyboardMarkup(inline_keyboard=[
+        keyboard = [
             [InlineKeyboardButton(text="🌲 Стартовый лес", callback_data="location_enter_1")],
             [InlineKeyboardButton(text="🏞️ Ручей", callback_data="location_enter_2")],
-            [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
-        ])
+        ]
+        unlocked = getattr(game, "unlocked_locations", []) or []
+        if "Скромная Лощина" in unlocked:
+            keyboard.append([InlineKeyboardButton(text="⛰️ Скромная Лощина", callback_data="location_enter_3")])
+        keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
+        return InlineKeyboardMarkup(inline_keyboard=keyboard)
     else:
         keyboard = []
         unlocked = getattr(game, "unlocked_locations", ["Лесной старт"]) or ["Лесной старт"]
@@ -267,6 +281,8 @@ def get_locations_kb(game):
             keyboard.append([InlineKeyboardButton(text="🌲 Стартовый лес", callback_data="location_enter_1")])
         if "Ручей" in unlocked or "Ручей с Змеями" in unlocked:
             keyboard.append([InlineKeyboardButton(text="🏞️ Ручей", callback_data="location_enter_2")])
+        if "Скромная Лощина" in unlocked:
+            keyboard.append([InlineKeyboardButton(text="⛰️ Скромная Лощина", callback_data="location_enter_3")])
         keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
         return InlineKeyboardMarkup(inline_keyboard=keyboard)
 

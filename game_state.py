@@ -157,6 +157,8 @@ class GameState:
     wolf_lair_defeated: bool = False
     l1_post_research_count: int = 0
     wolf_battle: Optional[Dict[str, Any]] = None
+    l2_puzzle_attempt: int = 0
+    l2_puzzle_step: int = 1
 
     # Имя персонажа (устанавливается при старте игры)
     player_name: str = "Выживший"
@@ -595,6 +597,8 @@ class GameState:
             "wolf_lair_defeated": bool(getattr(self, "wolf_lair_defeated", False)),
             "l1_post_research_count": int(getattr(self, "l1_post_research_count", 0)),
             "wolf_battle": dict(getattr(self, "wolf_battle", {})) if getattr(self, "wolf_battle", None) else None,
+            "l2_puzzle_attempt": int(getattr(self, "l2_puzzle_attempt", 0)),
+            "l2_puzzle_step": int(getattr(self, "l2_puzzle_step", 1)),
         }
 
 
@@ -911,6 +915,16 @@ class GameState:
             bonus_lines.append(f"• 💧 Жажда: {bonus_thirst:+d}")
         if bonus_ap != 0:
             bonus_lines.append(f"• ⚡ AP: {bonus_ap:+d}")
+
+        slate_items = {
+            "head": "Сланцевая маска",
+            "torso": "Сланцевый панцирь",
+            "pants": "Сланцевые поножи",
+            "boots": "Сланцевые ботинки",
+        }
+        slate_count = sum(1 for slot, name in slate_items.items() if self.equipment.get(slot) == name)
+        if slate_count > 0 or getattr(self, "is_story_flag_set", lambda f: False)("l2_thorns_seen"):
+            bonus_lines.append(f"• 🛡 Защита от шипов: {slate_count}/4")
 
         if not bonus_lines:
             bonus_block = "📊 ОБЩИЕ БОНУСЫ СНАРЯЖЕНИЯ:\n• Бонусы отсутствуют."

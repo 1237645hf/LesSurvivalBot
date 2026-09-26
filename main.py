@@ -851,7 +851,7 @@ async def process_callback(callback: types.CallbackQuery):
             kb = get_main_kb(game)
         elif data == "location_enter_2":
             game.current_location = "Ручей"
-            text, kb = handle_location_2_ruchey("river_ferocious", game, uid)
+            text, kb = handle_location_2_ruchey("location_enter_2", game, uid)
         elif data == "location_enter_3":
             game.current_location = "Скромная Лощина"
             text, kb = handle_location_3_slate_hollow("slate_hollow_start", game, uid)
@@ -1442,7 +1442,7 @@ async def process_callback(callback: types.CallbackQuery):
                 text = game.get_inventory_text()
                 kb = inventory_inline_kb
 
-        elif data.startswith("river_") or data.startswith("snake_") or data.startswith("story_"):
+        elif data.startswith("river_") or data.startswith("snake_") or data.startswith("story_") or data.startswith("l2_"):
             text, kb = handle_location_2_ruchey(data, game, uid)
             if text is None:
                 text = game.get_ui()

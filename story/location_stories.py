@@ -73,7 +73,10 @@ def handle_location_1_forest_start(data: str, game, uid: int):
 
 
 def handle_story(data: str, game, uid: int):
-    """Обработать общую стартовую сцену волка и котёнка."""
+    """Обработать общую стартовую сцену волка и котёнка или передать в ветку L2."""
+    if data.startswith("l2_"):
+        return handle_location_2_ruchey(data, game, uid)
+
     text = None
     kb = None
 
@@ -250,7 +253,7 @@ def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool)
 
 
 def is_story_callback(data: str) -> bool:
-    """Проверяет, относится ли данный callback к сюжетным веткам L1 / L1.5-L1.7."""
+    """Проверяет, относится ли данный callback к сюжетным веткам L1 / L1.5-L1.7 / L2."""
     return (
         data in (
             "forest_start",
@@ -263,7 +266,7 @@ def is_story_callback(data: str) -> bool:
             "pet_take",
             "story_next",
         )
-        or data.startswith(("l1_5", "l1_6", "l1_7", "wolf_lair", "wolf_battle"))
+        or data.startswith(("l1_5", "l1_6", "l1_7", "wolf_lair", "wolf_battle", "l2_"))
     )
 
 
@@ -464,7 +467,7 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
         game.reset_nav()
         game.current_location = "Ручей"
         game.story_state = None
-        text, kb = handle_location_2_ruchey("river_ferocious", game, uid)
+        text, kb = handle_location_2_ruchey("location_enter_2", game, uid)
 
     elif data == "location_enter_1":
         game.reset_nav()
@@ -476,184 +479,656 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
     elif data == "location_enter_2":
         game.reset_nav()
         game.current_location = "Ручей"
-        text, kb = handle_location_2_ruchey("river_ferocious", game, uid)
+        text, kb = handle_location_2_ruchey("location_enter_2", game, uid)
 
     return text, kb
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# ЛОКАЦИЯ 2: РУЧЕЙ С ЗМЕЯМИ
+# ЛОКАЦИЯ 2: РУЧЕЙ (ПЛОТИНА И ПЕРЕПРАВА В СКРОМНУЮ ЛОЩИНУ)
 # ──────────────────────────────────────────────────────────────────────────────
 
-def handle_location_2_ruchey(data, game, uid):
-    """Обработать события на локации 'Ручей с Змеями'."""
+L2_PUZZLE_BANK = [
+    # Заход 0: Гидрологический запуск
+    [
+        {
+            "num_str": "«Вопрос номер один»",
+            "text": "Основной водосброс заблокирован. Для уравнивания давления в нижнем бьефе требуется открыть перепускной клапан. Какой сектор задвижки задействовать?",
+            "options": [
+                ("Левый вспомогательный", True),
+                ("Центральный аварийный", False),
+                ("Правый донный", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер два»",
+            "text": "Манометр маслостанции турбины показывает падение давления до 0.4 МПа. Выберите режим циркуляции насоса.",
+            "options": [
+                ("Продувка магистрали", False),
+                ("Форсированная подкачка", True),
+                ("Сброс в дренаж", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер три»",
+            "text": "Частота генератора нестабильна: 42 Гц вместо номинала. Какое воздействие подать на направляющий аппарат?",
+            "options": [
+                ("Увеличить угол раскрытия лопаток", True),
+                ("Заблокировать ротор тормозом", False),
+                ("Перевести в режим холостого хода", False),
+            ],
+        },
+    ],
+    # Заход 1: Электродинамика реле
+    [
+        {
+            "num_str": "«Вопрос номер один»",
+            "text": "Напряжение на вспомогательной шине 110 В. Для взвода соленоида моста требуется подключить балластное сопротивление. Какую группу резисторов замкнуть?",
+            "options": [
+                ("Группа Р-1 (низкоомная)", True),
+                ("Группа Р-3 (высокоомная)", False),
+                ("Прямое шунтирование", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер два»",
+            "text": "Срабатывает дифференциальная защита трансформатора Т-2. Укажите алгоритм локализации утечки.",
+            "options": [
+                ("Отключить вторичные цепи учёта", False),
+                ("Размыкание вводного разъединителя", True),
+                ("Замыкание заземляющего ножа", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер три»",
+            "text": "Стрелка фазометра отклоняется в зону опережения. Какой компенсатор ввести в контур?",
+            "options": [
+                ("Индуктивный дроссель ДР-4", True),
+                ("Блок конденсаторов К-10", False),
+                ("Реостат возбуждения", False),
+            ],
+        },
+    ],
+    # Заход 2: Механика редуктора
+    [
+        {
+            "num_str": "«Вопрос номер один»",
+            "text": "Зубчатая передача подъёмного механизма застопорена стопорным пальцем. В каком порядке снять фиксацию?",
+            "options": [
+                ("Ослабить контргайку, вытянуть палец", True),
+                ("Выбить палец молотом", False),
+                ("Подать обратный ход лебёдки", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер два»",
+            "text": "Направляющие тросы моста имеют натяжение 12 тонн на левом пилоне и 4 тонны на правом. Куда перераспределить балласт?",
+            "options": [
+                ("В левый кессон", False),
+                ("В правый уравновешивающий кессон", True),
+                ("Слить балласт полностью", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер три»",
+            "text": "Тормозные колодки барабана заклинило нагаром. Какое усилие приложить к ручному дублёру?",
+            "options": [
+                ("Вращение по часовой стрелке с выжимом рычага", True),
+                ("Рывок против часовой стрелки", False),
+                ("Резкий удар по фиксатору", False),
+            ],
+        },
+    ],
+    # Заход 3: Пневматика и вакуум
+    [
+        {
+            "num_str": "«Вопрос номер один»",
+            "text": "Пневмомагистраль затвора заполнена конденсатом. Какую дренажную точку открыть первой?",
+            "options": [
+                ("Нижний ресиверный кран №1", True),
+                ("Верхний вантузный клапан", False),
+                ("Манометрический штуцер", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер два»",
+            "text": "Давление в пневмоцилиндрах опускания моста 6 атмосфер, требуется 8. Какой компрессор запустить?",
+            "options": [
+                ("Аварийный двухступенчатый К-2", True),
+                ("Вентилятор продувки", False),
+                ("Вакуумный насос ВВН", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер три»",
+            "text": "Поршень дошёл до упора, но концевой микропереключатель не замкнулся. Что проверить?",
+            "options": [
+                ("Положение штока и планки концевика", True),
+                ("Цепь освещения шахты", False),
+                ("Уровень охлаждающей жидкости", False),
+            ],
+        },
+    ],
+    # Заход 4: Баланс водохранилища
+    [
+        {
+            "num_str": "«Вопрос номер один»",
+            "text": "Уровень воды в верхнем бьефе приближается к гребню плотины. Какую шандору приподнять для безопасного сброса?",
+            "options": [
+                ("Первую донную шандору", True),
+                ("Верхнюю ледозащитную стенку", False),
+                ("Глухой шандорный щит", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер два»",
+            "text": "Образовался донный водоворот у водозаборных решёток. Какое действие стабилизирует поток?",
+            "options": [
+                ("Притопить плавучий волнолом", True),
+                ("Полное закрытие водоприёмника", False),
+                ("Форсированный сброс через водослив", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер три»",
+            "text": "Датчик вибрации плотины фиксирует кавитацию. Какую меру предпринять?",
+            "options": [
+                ("Подать аэрацию в подзатворное пространство", True),
+                ("Ускорить поток воды вдвое", False),
+                ("Заблокировать доступ воздуха", False),
+            ],
+        },
+    ],
+    # Заход 5: Аварийная автоматика
+    [
+        {
+            "num_str": "«Вопрос номер один»",
+            "text": "Код ошибки на индикаторе: 0xEE (залипание пускателя привода моста). Какой контакт разомкнуть вручную?",
+            "options": [
+                ("Силовой контактор КМ-1", True),
+                ("Сигнальную лампу Л-2", False),
+                ("Шунтовую перемычку питания", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер два»",
+            "text": "Сработал термодатчик обмотки главного привода (95°C). Какую систему охлаждения активировать?",
+            "options": [
+                ("Принудительный обдув шахты", True),
+                ("Заливку машинным маслом", False),
+                ("Отключение датчика", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер три»",
+            "text": "Цепь концевых датчиков разомкнута. Какая петля безопасности требует проверки?",
+            "options": [
+                ("Шлейф контроля провисания тросов", True),
+                ("Датчик присутствия оператора", False),
+                ("Линия громкой связи", False),
+            ],
+        },
+    ],
+    # Заход 6: Смазка и гидропривод
+    [
+        {
+            "num_str": "«Вопрос номер один»",
+            "text": "Вязкость масла в гидроцилиндрах повышена из-за холода. Какой режим прогрева включить?",
+            "options": [
+                ("Маломощный ТЭН масляного бака", True),
+                ("Прямой запуск под максимальной нагрузкой", False),
+                ("Разбавление речной водой", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер два»",
+            "text": "Гидрозамок правого цилиндра заблокирован в закрытом положении. Как стравить противодавление?",
+            "options": [
+                ("Игловой дроссель обратной линии", True),
+                ("Ударом по корпусу гидрозамка", False),
+                ("Перекрытием напорной трубы", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер три»",
+            "text": "Уровень рабочей жидкости в баке на нижней отметке. До какого сектора допустимо движение моста?",
+            "options": [
+                ("До промежуточного горизонтального упора", True),
+                ("До крайнего нижнего положения на скорости", False),
+                ("Движение категорически запрещено без долива", False),
+            ],
+        },
+    ],
+    # Заход 7: Синхронизация опор
+    [
+        {
+            "num_str": "«Вопрос номер один»",
+            "text": "Левый пролёт моста опережает правый на 15 градусов. Каким вентилем притормозить левую сторону?",
+            "options": [
+                ("Дросселем расхода левой магистрали", True),
+                ("Общим краном перекрытия", False),
+                ("Сбросным клапаном гидробака", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер два»",
+            "text": "Возник перекос направляющих балок на опоре №3. Какой гидродомкрат синхронизировать?",
+            "options": [
+                ("Нивелировочный домкрат Д-3", True),
+                ("Тяговый трос лебёдки", False),
+                ("Амортизатор отбоя", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер три»",
+            "text": "Угол наклона моста достиг критических 4 градусов к горизонту. Как выровнять платформу?",
+            "options": [
+                ("Включить следящий гидрораспределитель", True),
+                ("Отпустить все тормоза", False),
+                ("Застопорить правый трос клином", False),
+            ],
+        },
+    ],
+    # Заход 8: Защита от перегрузки
+    [
+        {
+            "num_str": "«Вопрос номер один»",
+            "text": "Токовое реле фиксирует перегрузку тягового двигателя на 25%. Какую ступень передачи выбрать?",
+            "options": [
+                ("Пониженную тяговую ступень (1:40)", True),
+                ("Прямую передачу (1:1)", False),
+                ("Ускоренную ступень (2:1)", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер два»",
+            "text": "Противовес застрял в шахте направляющих. Какой трос дать под натяг?",
+            "options": [
+                ("Вспомогательный канат раскачки", True),
+                ("Основной несущий кабель", False),
+                ("Трос заземления", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер три»",
+            "text": "Амперметр показывает бросок тока при трогании моста. Какую пусковую цепь замкнуть?",
+            "options": [
+                ("Ступень пусковых реостатов", True),
+                ("Предохранительную плавкую вставку", False),
+                ("Аварийный выключатель", False),
+            ],
+        },
+    ],
+    # Заход 9: Финальный посадочный цикл
+    [
+        {
+            "num_str": "«Вопрос номер один»",
+            "text": "Мост подошёл к посадочным тумбам противоположного берега на расстояние 0.5 метра. Какой режим опускания активировать?",
+            "options": [
+                ("Доводка на микроскорости (демпферный режим)", True),
+                ("Свободное гравитационное падение", False),
+                ("Реверс на полную мощность", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер два»",
+            "text": "Ригельные замки противоположного берега не вошли в пазы. Какое смещение скорректировать?",
+            "options": [
+                ("Продольную осевую юстировку платформы", True),
+                ("Вертикальный прижимной натяг", False),
+                ("Поворот вокруг центральной оси", False),
+            ],
+        },
+        {
+            "num_str": "«Вопрос номер три»",
+            "text": "Фиксаторы посадки защёлкнулись. Какую команду передать на электромагнитные стопоры?",
+            "options": [
+                ("Блокировка ригелей в положении ЗАМКНУТО", True),
+                ("Обесточить без фиксации", False),
+                ("Разжать захваты", False),
+            ],
+        },
+    ],
+]
+
+
+def get_l2_slate_armor_count(game) -> int:
+    """Количество надетых сланцевых элементов брони (от 0 до 4)."""
+    slate_items = {
+        "head": "Сланцевая маска",
+        "torso": "Сланцевый панцирь",
+        "pants": "Сланцевые поножи",
+        "boots": "Сланцевые ботинки",
+    }
+    return sum(1 for slot, name in slate_items.items() if game.equipment.get(slot) == name)
+
+
+def get_l2_thorn_damage(slate_count: int) -> int:
+    """Урон от терновника: 4/4=26, 3/4=51, 2/4=76, 1/4 и 0/4=101."""
+    if slate_count >= 4:
+        return 26
+    elif slate_count == 3:
+        return 51
+    elif slate_count == 2:
+        return 76
+    else:
+        return 101
+
+
+def handle_location_2_ruchey(data: str, game, uid: int):
+    """Сюжетная линия Локации 2: Ручей, заросли терновника, плотина и переправа."""
     text = None
     kb = None
-    
-    if data == "river_ferocious":
-        text = (
-            "Ручей бурлит. Вода холодная, чистая, но в ней плещется что-то чешуйчатое.\n"
-            "Ты наклоняешься к воде, зачерпываешь ведром — а оттуда с шипом вылетает змея!\n"
-            "Где-то в кустах ещё одна змея поворачивается и смотрит на тебя.\n"
-            "Ты задерживаешь дыхание — вода живёт своей жизнью. Что будешь делать?"
+
+    # Открытие рецептов сланцевой брони при посещении Локации 2
+    for rec in ("Сланцевая маска", "Сланцевый панцирь", "Сланцевые поножи", "Сланцевые ботинки"):
+        if rec not in getattr(game, "unlocked_crafts", []):
+            game.unlocked_crafts.append(rec)
+
+    # 1. Вход на локацию
+    if data in ("location_enter_2", "river_ferocious", "l2_enter", "l2_thorns_approach"):
+        # Если мост уже активирован — спокойный вид переправы
+        if game.is_story_flag_set("l2_completed"):
+            text = (
+                "Ты стоишь у бетонной плотины. Массивный мост надёжно опущен через бурлящий ручей "
+                "и заблокирован в ригельных замках.\n\n"
+                "Шум чистой горной воды эхом отдаётся в ущелье. Путь в Скромную Лощину открыт."
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⛰️ Шагнуть в Скромную Лощину", callback_data="location_enter_3")],
+                [InlineKeyboardButton(text="🌲 В Стартовый лес", callback_data="location_enter_1")],
+                [InlineKeyboardButton(text="↩️ В лагерь", callback_data="back")],
+            ])
+            return text, kb
+
+        # Если терновник уже проломан — игрок сразу у плотины
+        if game.is_story_flag_set("l2_thorns_cleared"):
+            if game.is_story_flag_set("l2_fuse_inserted"):
+                return handle_location_2_ruchey("l2_puzzle_start", game, uid)
+            elif game.is_story_flag_set("l2_panel_blown"):
+                return handle_location_2_ruchey("l2_fusebox_inspect", game, uid)
+            else:
+                return handle_location_2_ruchey("l2_dam_entrance", game, uid)
+
+        # Стена терновника
+        game.set_story_flag("l2_thorns_seen", True)
+        slate_count = get_l2_slate_armor_count(game)
+        thorn_damage = get_l2_thorn_damage(slate_count)
+
+        desc = (
+            "Ручей бурлит и шумит. На противоположной стороне сквозь водяную пыль "
+            "проступают серые контуры старой бетонной плотины — единственный путь на тот берег.\n\n"
+            "Но весь подход к зданию водосброса намертво заблокирован непроходимой стеной дикого терновника. "
+            "Узловатые плети толщиной в руку усеяны острыми, как стальные гвозди, шипами.\n\n"
+            f"• 🛡 Защита сланцевой бронёй: {slate_count}/4 ед.\n"
+            f"• ⚠️ Ожидаемый урон от шипов: {thorn_damage} HP."
         )
-        game.karma["clever"] = game.karma.get("clever", 0) + 2
-        game.karma["mysterious"] = game.karma.get("mysterious", 0) + 1
-        game.story_state = "river_encounter"
-        kb = wolf_kb
-        
-    elif data == "snake_flee":
-        game.adjust_narrative_karma("pragmatism", 2)
-        game.set_story_flag("snake_interaction")
-        game.set_story_flag("bag_obtained")
+
+        buttons = []
+        if game.hp > thorn_damage:
+            buttons.append([InlineKeyboardButton(text="🪨 Проломиться", callback_data="l2_thorns_break")])
+        else:
+            desc += (
+                f"\n\n⛔ Попытка проломиться сейчас будет смертельной! "
+                f"Твоё здоровье ({game.hp} HP) не выдержит этих шипов (требуется более {thorn_damage} HP). "
+                f"Скрафти недостающую сланцевую броню или восстанови силы."
+            )
+
+        buttons.append([InlineKeyboardButton(text="ℹ️ О зарослях", callback_data="l2_thorns_info")])
+        buttons.append([InlineKeyboardButton(text="↩️ В лагерь", callback_data="back")])
+
+        text = desc
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    # 2. Инфо-окно о зарослях
+    elif data == "l2_thorns_info":
+        slate_count = get_l2_slate_armor_count(game)
+        thorn_damage = get_l2_thorn_damage(slate_count)
         text = (
-            "Ты резко отпрыгиваешь, вода шлёпается в лужу.\n"
-            "Змея, недовольная неудачным прыжком, скрывается в камышах.\n"
-            "Ты достал ведро воды, но не без труда — вода была мутной, тёплой, живой.\n\n"
-            "Собрано воды: " + str(game.inventory.get("Вода", 0) + 2)
+            "ℹ️ СТЕНА ТЕРНОВНИКА\n\n"
+            "Дикие заросли сплелись в плотный колючий вал. Без каменной защиты шипы вспарывают одежду "
+            "и глубоко рассекают плоть.\n\n"
+            "Защитные свойства полного сланцевого комплекта:\n"
+            "• 4/4 предмета (Маска, Панцирь, Поножи, Ботинки): 26 HP урона.\n"
+            "• 3/4 предмета: 51 HP урона.\n"
+            "• 2/4 предмета: 76 HP урона.\n"
+            "• 1/4 или 0/4 предметов: 101 HP урона (верная гибель!).\n\n"
+            "Сланцевые пластины можно найти по берегам ручья, а кору, мох и ветки — в лесу."
         )
-        game.inventory["Вода"] = game.inventory.get("Вода", 0) + 2
-        game.add_log("Нашёл воду в змеином ручье.")
-        game.story_state = "river_collect"
-        kb = get_main_kb(game)
-        
-    elif data == "snake_stab":
+        buttons = []
+        if game.hp > thorn_damage:
+            buttons.append([InlineKeyboardButton(text="🪨 Проломиться", callback_data="l2_thorns_break")])
+        buttons.append([InlineKeyboardButton(text="↩️ Назад", callback_data="l2_thorns_approach")])
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    # 3. Прорыв сквозь терновник
+    elif data == "l2_thorns_break":
+        slate_count = get_l2_slate_armor_count(game)
+        thorn_damage = get_l2_thorn_damage(slate_count)
+
+        if game.hp <= thorn_damage:
+            return handle_location_2_ruchey("l2_thorns_approach", game, uid)
+
+        game.hp -= thorn_damage
+
+        mask_broke = False
+        if game.equipment.get("head") == "Сланцевая маска":
+            game.equipment["head"] = "Пусто"
+            mask_broke = True
+
+        boots_broke = False
+        if game.equipment.get("boots") == "Сланцевые ботинки":
+            game.equipment["boots"] = "Отремонтированные ботинки"
+            boots_broke = True
+
+        game.set_story_flag("l2_thorns_cleared", True)
+
+        break_lines = [
+            "Стиснув зубы, ты с разбегу бросаешься в колючую стену!",
+            "Сучья яростно трещат, шипы с противным скрежетом полосуют сланцевые пластины..."
+        ]
+
+        if mask_broke:
+            break_lines.append("• Раздаётся треск: Сланцевая маска раскалывается от удара и осыпается осколками!")
+        if boots_broke:
+            break_lines.append("• Узловатые корни срывают каменные щитки со сланцевых ботинок, превращая их в Отремонтированные ботинки!")
+        if slate_count < 4:
+            break_lines.append("• Открытые участки тела покрываются глубокими ноющими царапинами.")
+
+        break_lines.append(
+            f"\nТы получаешь {thorn_damage} ед. урона (осталось {game.hp} HP) и вываливаешься на бетонную площадку плотины.\n"
+            "За тобой осталась отчётливая широкая полоса проломанных ветвей — тропинка свободна, "
+            "больше прорываться через колючки не придётся!"
+        )
+
+        text = "\n".join(break_lines)
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🚪 Войти в здание водосброса", callback_data="l2_dam_entrance")]
+        ])
+
+    # 4. Вход в здание водосброса
+    elif data in ("l2_dam_entrance", "l2_dam_inside"):
         text = (
-            "Змея не заметила твоего движения и устроила тебе сюрприз — укус в щиколотку!\n"
-            "Она впрыскивает яд, прохладный, сладковатый, как амброзия.\n"
-            "Ты падаешь в воду, охлаждая кожу, и чувствуешь, как жжение распространяется.\n"
-            "Но вода спасает — она гасит огонь в крови.\n\n"
-            "Жажда снизилась, но есть лёгкое отравление..."
+            "Тяжёлая железная дверь водосброса со скрипом поддаётся.\n\n"
+            "Внутри царит сырой полумрак, гулко капает вода, пахнет тиной и машинным маслом. "
+            "Следы запустения копились десятилетиями. Но прямо перед тобой на массивном металлическом пульте "
+            "тускло помигивает красная лампочка.\n\n"
+            "«Откуда здесь ток?.. Наверное, я этого не узнаю никогда...»"
         )
-        # Урон 15 с учётом физиологии
-        new_hp, damage_log = process_damage(game, raw_damage=15)
-        game.hp = new_hp
-        
-        # Списание из Голода (базовая стоимость 10)
-        hunger_cost = get_base_resource_cost(game, base_cost=10)
-        game.hunger = max(1, game.hunger - hunger_cost)
-        
-        game.karma["brutal"] = game.karma.get("brutal", 0) + 1
-        game.karma["gentle"] = game.karma.get("gentle", 0) - 1
-        game.story_state = "snake_poisoned"
-        kb = get_main_kb(game)
-        
-    elif data == "river_calm":
-        game.adjust_narrative_karma("compassion", 1)
-        game.adjust_narrative_karma("pragmatism", 2)
-        game.set_story_flag("snake_interaction")
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🕹 Подойти к пульту", callback_data="l2_panel_inspect")],
+            [InlineKeyboardButton(text="↩️ В лагерь", callback_data="back")],
+        ])
+
+    # 5. Попытка включения и Взрыв щитка
+    elif data == "l2_panel_inspect":
+        game.set_story_flag("l2_panel_blown", True)
+
+        has_pet = (
+            getattr(game, "companion_name", None)
+            or getattr(game, "story_flags", {}).get("has_pet")
+            or (game.equipment.get("pet") and game.equipment.get("pet") != "Пусто")
+        )
+
+        pet_txt = ""
+        if has_pet:
+            # Защита от гибели
+            game.hp = max(1, game.hp - 2)
+            pet_txt = "\n\n🐾 Перепуганный котёнок в панике царапает твои рёбра (−2 HP), истошно шипит и растворяется в темноте зала!"
+
         text = (
-            "Тишина. Вода плещется ровно, как будто это сердце леса.\n"
-            "Ты медленно опускаешь ведро — вода холодная, прозрачная, без запаха.\n"
-            "Змеи ушли, довольные своей добычей (или твоей добычей).\n\n"
-            "Идеальная вода для жизни."
+            "Ты подходишь к пульту и решительно тянешь карболитовый рычаг на себя.\n\n"
+            "БА-БАХ!\n\n"
+            "Оглушительный взрыв силового шкафа сотрясает здание! Сноп ослепительных искр и клуб едкого дыма "
+            "ударяют в потолок. Взрывной волной тебя отбрасывает на спину на мокрый бетонный пол.\n"
+            "От удара из кармана рюкзака со звоном выпадает Плоская металлическая коробочка."
+            f"{pet_txt}"
         )
-        game.inventory["Вода"] = game.inventory.get("Вода", 0) + 3
-        game.karma["gentle"] = game.karma.get("gentle", 0) + 2
-        game.story_state = "river_collected"
-        kb = get_main_kb(game)
-        
-    elif data == "river_cool":
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📦 Осмотреть искрящийся шкаф", callback_data="l2_fusebox_inspect")]
+        ])
+
+    # 6. Искрящийся шкаф
+    elif data == "l2_fusebox_inspect":
+        has_pet = (
+            getattr(game, "companion_name", None)
+            or getattr(game, "story_flags", {}).get("has_pet")
+            or (game.equipment.get("pet") and game.equipment.get("pet") != "Пусто")
+        )
+
+        pet_glove_txt = ""
+        buttons = []
+
+        if has_pet:
+            pet_glove_txt = (
+                "\n\nИз-под перевёрнутого стеллажа блестят два круглых кошачьих глаза. "
+                "Котёнок осторожно подталкивает лапкой к твоим ногам старую истлевшую диэлектрическую перчатку."
+            )
+            buttons.append([InlineKeyboardButton(text="🧤 Вставить через перчатку", callback_data="l2_fuse_safe")])
+
+        buttons.append([InlineKeyboardButton(text="✋ Вставить голыми руками", callback_data="l2_fuse_shock")])
+        buttons.append([InlineKeyboardButton(text="↩️ В лагерь", callback_data="back")])
+
         text = (
-            "Вода обволакивает тебя, как ледяной поцелуй.\n"
-            "Тебе становится прохладно, но приятно — жажда отступает, голова проясняется.\n"
-            "Змеи прячутся в тени, наблюдая за тобой из-под кустов.\n\n"
-            "Освежающая ванна в диком ручье."
+            "Поднявшись на ноги, ты поднимаешь металлическую коробочку и подходишь к распахнутому, яростно искрящему щитку.\n"
+            "Гнездо сгоревшего предохранителя в точности совпадает с её габаритами.\n\n"
+            "«Ты уже знаешь, что сюда вставишь»."
+            f"{pet_glove_txt}"
         )
-        # Жажда восстанавливается с учётом коэффициента
-        thirst_restore = 25 * get_resource_multiplier(game, "thirst")
-        game.thirst = min(100, game.thirst + thirst_restore)
-        game.karma["mysterious"] = game.karma.get("mysterious", 0) + 1
-        game.story_state = "river_cooldown"
-        kb = get_main_kb(game)
-        
-    elif data == "river_deep":
-        game.adjust_narrative_karma("observation", 3)
-        game.set_story_flag("snake_interaction")
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    # 7. Установка коробочки: безопасно или голыми руками
+    elif data in ("l2_fuse_safe", "l2_fuse_shock"):
+        game.inventory.pop("Плоская металлическая коробочка", None)
+        game.set_story_flag("l2_fuse_inserted", True)
+
+        if data == "l2_fuse_shock":
+            # Защита от смерти: HP не опускается ниже 1, без неё удар током был бы смертелен
+            game.hp = max(1, game.hp - 10)
+            shock_text = (
+                "Ты берёшь коробочку пальцами и с силой вжимаешь её в искрящий разъём!\n\n"
+                "Яркая дуга с треском бьёт в пальцы! Мощный разряд тока прошибает всё тело (−10 HP)!\n"
+                "Тебя отшвыривает назад, в воздухе пахнет палёной кожей, но коробочка с шипением намертво приварилась к клеммам."
+            )
+        else:
+            shock_text = (
+                "Натянув толстую резиновую перчатку, ты аккуратно вставляешь металлическую коробочку в силовой слот.\n\n"
+                "Вспыхивает дуговой разряд! Перчатка обугливается, спасая тебя от удара током.\n"
+                "Коробочка со щелчком встаёт в паз и намертво приваривается к клеммам."
+            )
+
         text = (
-            "Ты делаешь шаг вглубь — вода по колено, чистая, как слёза.\n"
-            "Оттуда, из самого дна, на тебя смотрят два жёлтых глаза.\n"
-            "Змея-глаз, змея-хозяин этого ручья?\n"
-            "Она поднимается, создавая рябь, и ты понимаешь: здесь живёт что-то древнее."
+            f"{shock_text}\n\n"
+            "В глубине машинного зала оживают мощные контакторы. Загудел трансформатор.\n"
+            "Над пультом наливается тусклым зелёным свечением старый выпуклый экран."
         )
-        game.karma["mysterious"] = game.karma.get("mysterious", 0) + 3
-        game.add_log("Встреча с древним существом ручья.")
-        game.story_state = "river_ancient"
-        kb = wolf_kb
-        
-    elif data == "river_end":
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📟 Взглянуть на экран", callback_data="l2_puzzle_start")]
+        ])
+
+    # 8. Заросшее табло и загадки
+    elif data == "l2_puzzle_start":
+        attempt = getattr(game, "l2_puzzle_attempt", 0) % 10
+        step = getattr(game, "l2_puzzle_step", 1)
+        if step not in (1, 2, 3):
+            step = 1
+            game.l2_puzzle_step = 1
+
+        q_data = L2_PUZZLE_BANK[attempt][step - 1]
+
         text = (
-            "Ты выходишь на берег, подсушивая одежду.\n"
-            "Вода теперь в инвентаре — она спасёт тебя, если жара станет невыносимой.\n"
-            "Змеиный ручей позади, но его память останется с тобой."
+            "📟 ТЕРМИНАЛ УПРАВЛЕНИЯ ПЛОТИНОЙ\n\n"
+            "Экран покрыт жирным слоем вековой пыли, в пазы корпуса врос зелёный мох, а по углам колышется паутина.\n"
+            "Сквозь стекло мерцают строгие зелёные строки символов.\n\n"
+            "Надпись на табло:\n"
+            f"{q_data['num_str']}\n"
+            f"{q_data['text']}"
         )
-        game.story_state = None
-        if hasattr(game, "reset_nav"):
-            game.reset_nav()
-        kb = get_main_kb(game)
-    
-    elif data == "river_brave":
+
+        buttons = []
+        for idx, (opt_text, is_corr) in enumerate(q_data["options"]):
+            buttons.append([InlineKeyboardButton(text=opt_text, callback_data=f"l2_p_ans:{attempt}:{step}:{idx}")])
+        buttons.append([InlineKeyboardButton(text="↩️ В лагерь", callback_data="back")])
+
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    # 9. Обработка ответа на загадку
+    elif data.startswith("l2_p_ans:"):
+        parts = data.split(":")
+        attempt = int(parts[1])
+        step = int(parts[2])
+        idx = int(parts[3])
+
+        is_correct = L2_PUZZLE_BANK[attempt][step - 1]["options"][idx][1]
+
+        if is_correct:
+            if step == 1:
+                game.l2_puzzle_step = 2
+                return handle_location_2_ruchey("l2_puzzle_start", game, uid)
+            elif step == 2:
+                game.l2_puzzle_step = 3
+                return handle_location_2_ruchey("l2_puzzle_start", game, uid)
+            else:
+                return handle_location_2_ruchey("l2_bridge_activated", game, uid)
+        else:
+            # Ошибка: ледяная струя под давлением срывает заглушку
+            game.hp = max(1, game.hp - 5)
+            game.ap = 0
+            game.l2_puzzle_attempt = (attempt + 1) % 10
+            game.l2_puzzle_step = 1
+
+            text = (
+                "⚠️ ОШИБКА АВТОМАТИКИ!\n\n"
+                "Где-то под полом раздаётся глухой гидравлический удар...\n"
+                "Ледяная струя воды под чудовищным давлением со свистом срывает старую заглушку трубы и сбивает тебя с ног!\n\n"
+                "Сильный ушиб отбросил тебя на метр (−5 HP), а ледяная вода промочила одежду до последней нитки.\n"
+                "Дрожа от пронизывающего холода, ты понимаешь: сегодня ты больше не в силах продолжать...\n\n"
+                "(⚡ AP истощено до 0. Отдохни в лагере и наберись сил перед новой попыткой)."
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏕 В лагерь", callback_data="back")]
+            ])
+
+    # 10. Финал переправы: мост опущен
+    elif data == "l2_bridge_activated":
+        game.inventory.pop("Записка с наброском местности", None)
+        unlocked = getattr(game, "unlocked_locations", []) or []
+        if "Скромная Лощина" not in unlocked:
+            unlocked.append("Скромная Лощина")
+            game.unlocked_locations = unlocked
+        game.set_story_flag("l2_completed", True)
+
         text = (
-            "Ты решаешься на смелый поступок — бежишь к воде, несмотря на опасность.\n"
-            "Змеи шипят, но не атакуют. Ты быстро наполняешь ведро и отступаешь.\n"
-            "Твой героизм замечен — даже древний ручей уважает смелость.\n\n"
-            "Вода горячая на ощупь, как будто от огня, но очень чистая."
+            "Раздаётся оглушительный лязг многотонных противовесов. "
+            "Многолетняя ржавчина осыпается бурыми хлопьями, когда тяжёлые шестерни приходят в движение.\n\n"
+            "Массивная плита технологического моста водосброса со скрипом опускается через бурлящий ручей, "
+            "намертво блокируясь в противоположных замках.\n\n"
+            "Переправа готова. Бурные потоки ручья пенятся глубоко внизу, а впереди открывается проход к Скромной Лощине."
         )
-        game.inventory["Вода"] = game.inventory.get("Вода", 0) + 4
-        game.karma["heroic"] = game.karma.get("heroic", 0) + 3
-        game.karma["reckless"] = game.karma.get("reckless", 0) + 1
-        game.story_state = "river_brave_end"
-        kb = get_main_kb(game)
-    
-    elif data == "river_talk":
-        game.adjust_narrative_karma("compassion", 2)
-        game.set_story_flag("snake_interaction")
-        text = (
-            "Ты начинаешь говорить со змеями — рассказываешь им о себе, о лесе, о жизни.\n"
-            "Чудо: они слушают. Не атакуют, просто слушают.\n"
-            "После твоих слов они медленно расступаются, открывая путь к чистой воде.\n\n"
-            "Ты понимаешь: в этом лесу всё живое, всё имеет дух."
-        )
-        game.inventory["Вода"] = game.inventory.get("Вода", 0) + 3
-        game.karma["gentle"] = game.karma.get("gentle", 0) + 2
-        game.karma["clever"] = game.karma.get("clever", 0) + 1
-        game.karma["mysterious"] = game.karma.get("mysterious", 0) + 2
-        game.story_state = "river_talked"
-        kb = get_main_kb(game)
-    
-    elif data == "river_dance":
-        text = (
-            "Ты начинаешь танцевать у берега, подражая движениям змей.\n"
-            "Хаотично, но с искренностью. Вода брызжет, звёзды отражаются в ней.\n"
-            "Змеи притихли. Может быть, они восхищены? Или пугаются безумца?\n"
-            "Неважно — ты собираешь воду, смеясь, как давно не смеялся.\n\n"
-            "Этот момент безумия дарует тебе внутренний мир."
-        )
-        game.inventory["Вода"] = game.inventory.get("Вода", 0) + 2
-        game.karma["reckless"] = game.karma.get("reckless", 0) + 2
-        game.karma["mysterious"] = game.karma.get("mysterious", 0) + 1
-        
-        # Голод с учётом коэффициента
-        hunger_mult = get_resource_multiplier(game, "hunger")
-        game.hunger = max(1, game.hunger - 10 * hunger_mult)
-        
-        game.story_state = "river_danced"
-        kb = get_main_kb(game)
-    
-    elif data == "river_sacrifice":
-        text = (
-            "Ты жертвуешь часть своей еды змеям — знак мира.\n"
-            "Они рассматривают дар с интересом, затем поглощают его.\n"
-            "И вдруг атмосфера меняется. Ручей становится спокойным, гостеприимным.\n\n"
-            "Жертва принесена, перемирие заключено."
-        )
-        game.inventory["Еда"] = max(0, game.inventory.get("Еда", 0) - 1)
-        game.inventory["Вода"] = game.inventory.get("Вода", 0) + 3
-        game.karma["gentle"] = game.karma.get("gentle", 0) + 3
-        game.karma["heroic"] = game.karma.get("heroic", 0) + 1
-        game.story_state = "river_sacrificed"
-        kb = get_main_kb(game)
-        
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⛰️ Шагнуть в Скромную Лощину", callback_data="location_enter_3")]
+        ])
+
     return text, kb
 
 
