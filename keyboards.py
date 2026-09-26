@@ -90,6 +90,8 @@ def get_item_card_actions_kb(item_name: str, game=None):
         keyboard.append([InlineKeyboardButton(text="🔦 Взять в левую руку", callback_data="use_item_Факел")])
     elif item_name == "Крепкий посох":
         keyboard.append([InlineKeyboardButton(text="🪵 Взять в правую руку", callback_data="use_item_Крепкий посох")])
+    elif item_name == "Рюкзак с красной заплаткой":
+        keyboard.append([InlineKeyboardButton(text="🎒 Надеть на спину", callback_data="use_item_Рюкзак с красной заплаткой")])
     elif is_item_consumable(item_name):
         keyboard.append([InlineKeyboardButton(text="🍽️ Съесть / Применить", callback_data=f"use_consumable_{item_name}")])
 

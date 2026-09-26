@@ -235,4 +235,20 @@ def handle_craft(data, game, uid):
             game.add_log("В инвентаре нет крепкого посоха.")
             text = game.get_ui()
             kb = get_main_kb(game)
+    elif data == "use_item_Рюкзак с красной заплаткой":
+        if game.inventory.get("Рюкзак с красной заплаткой", 0) > 0:
+            old_item = game.equipment.get("back")
+            if old_item:
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory["Рюкзак с красной заплаткой"] -= 1
+            if game.inventory["Рюкзак с красной заплаткой"] <= 0:
+                del game.inventory["Рюкзак с красной заплаткой"]
+            game.equipment["back"] = "Рюкзак с красной заплаткой"
+            game.add_log("Вы надели рюкзак с красной заплаткой на спину.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет рюкзака с красной заплаткой.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
     return text, kb

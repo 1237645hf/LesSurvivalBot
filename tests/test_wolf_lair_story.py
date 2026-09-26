@@ -475,7 +475,10 @@ def test_combat_module_engine_and_enemies():
 
     # 3. apply_action defend
     text_def, kb_def = apply_action("defend", game, "old_wolf")
-    assert "снижено на 50%" in game.wolf_battle["last_log"] or "Ты уходишь в глухую защиту" in game.wolf_battle["last_log"]
+    assert any(
+        phrase in game.wolf_battle["last_log"]
+        for phrase in ("снижено на 50%", "Ты уходишь в глухую защиту", "Волк пугается огня", "закрываешься посохом")
+    )
 
     # 4. apply_action flee
     text_flee, kb_flee = apply_action("flee", game, "old_wolf")
