@@ -1493,7 +1493,7 @@ async def process_callback(callback: types.CallbackQuery):
                     save_game(uid, game)
                 return
 
-            deltas = game.consume_action(action_type="search", base_hunger=2, base_thirst=1)
+            deltas = game.consume_action(action_type="search", base_hunger=2, base_thirst=4)
             loc_id = location_id_from_game(game)
             loc_emoji = LOCATION_EMOJIS.get(loc_id, "🌲")
 

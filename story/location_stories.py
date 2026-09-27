@@ -309,7 +309,7 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
     elif data == "l1_5_thought":
         text = (
             "«С голыми руками на него лезть — самоубийство. Он ранен, но это матёрый хищник. "
-            "Нужно вернуться в лагерь и сделать оружие посерьёзнее обычных веток»."
+            "Нужно вернуться в лагерь и сделать оружие посерьёзнее твоих кулаков»."
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🏃 Тихо уйти в лагерь", callback_data="l1_5_leave")]
@@ -335,7 +335,7 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
         if not has_staff:
             text = (
                 "Без надёжного оружия соваться в логово самоубийственно. "
-                "Сначала нужно скрафтить и взять в руку крепкий посох."
+                "Сначала нужно скрафтить и взять в руку хоть что-то."
             )
             kb = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="↩️ Назад", callback_data="back")]
@@ -360,7 +360,7 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
         has_pet = bool(game.equipment.get("pet")) or game.is_story_flag_set("has_pet")
         text = (
             "Тяжёлый удар посоха окончательно сбивает старого волка с ног. "
-            "Зверь заваливается на бок и тяжело дышит. Он просто лежит на камнях и ждёт последнего удара."
+            "Зверь заваливается на бок и тяжело дышит. Он просто лежит на камнях и ждёт твоих действий."
         )
         if has_pet:
             kb = InlineKeyboardMarkup(inline_keyboard=[

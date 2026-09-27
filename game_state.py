@@ -832,7 +832,7 @@ class GameState:
         if flask_item:
             flask_w = int(getattr(self, "flask_water", 0) or 0)
             if "Бутылк" in flask_item or flask_item == "flask":
-                flask_str = f"⚪ Бутылка воды ({flask_w}/20)"
+                flask_str = f"🧴 Бутылка воды ({flask_w}/20)"
             else:
                 flask_str = f"{flask_item} ({flask_w}/20)"
         else:
@@ -870,7 +870,7 @@ class GameState:
             ("hand_left", left_label),
             ("flask", "🧴 Фляга:"),
             ("trinket", "💍 Безделушка:"),
-            ("pet", "🐾 Питомец:"),
+            ("pet", "🐾 Котёнок:"),
         ]
 
         blocks = [f"👤 ВЫЖИВШИЙ: {hero_name}"]

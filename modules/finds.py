@@ -278,9 +278,9 @@ def roll_find(location_id: int, inventory: Optional[Dict[str, int]] = None) -> L
         else:
             raw_drops.append(item_b)
 
-    # Бросок C (~30% шанс на палки, 1..3 шт.)
-    if random.randint(1, 100) <= 30:
-        count = random.choice([1, 2, 3])
+    # Бросок C (~40% шанс на палки, 1..4 шт.)
+    if random.randint(1, 100) <= 40:
+        count = random.choice([1, 2, 3, 4])
         raw_drops.extend(["Ветка"] * count)
 
     # Бонусный бросок

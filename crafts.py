@@ -61,17 +61,29 @@ def has_torch(game) -> bool:
     )
 
 
+def has_campfire(game) -> bool:
+    """Проверка, есть ли уже скрафченный костёр в инвентаре или горит на стоянке."""
+    return (
+        game.inventory.get("Костёр", 0) > 0
+        or bool(getattr(game, "campfire_active", False))
+    )
+
+
 def can_craft(game, recipe_name: str) -> bool:
     ingredients = CRAFT_RECIPES.get(recipe_name, [])
     if not ingredients:
         return False
     if recipe_name == "Факел" and has_torch(game):
         return False
+    if recipe_name == "Костёр" and has_campfire(game):
+        return False
     return all(_check_ingredient(game, n, q) for n, q in ingredients)
 
 
 def craft_mark(game, recipe_name: str) -> str:
     if recipe_name == "Факел" and has_torch(game):
+        return "❌ (уже есть)"
+    if recipe_name == "Костёр" and has_campfire(game):
         return "❌ (уже есть)"
     ingredients = CRAFT_RECIPES.get(recipe_name, [])
     ok, total = _count_ready(game, ingredients)
@@ -89,6 +101,8 @@ def do_craft(game, recipe_name: str):
         return False, "Неизвестный рецепт."
     if recipe_name == "Факел" and has_torch(game):
         return False, "У вас уже есть факел! Нельзя иметь больше одного факела одновременно."
+    if recipe_name == "Костёр" and has_campfire(game):
+        return False, "У вас уже есть костёр! Нельзя создать второй."
     if not can_craft(game, recipe_name):
         missing = []
         for n, q in ingredients:
@@ -194,6 +208,10 @@ def get_craft_menu_text(game) -> str:
     for name in unlocked:
         if name not in CRAFT_RECIPES:
             continue
+        if name == "Факел" and has_torch(game):
+            continue
+        if name == "Костёр" and has_campfire(game):
+            continue
         has_any = True
         icon = CRAFT_ICONS.get(name, "📦")
         ingredients = CRAFT_RECIPES[name]
@@ -226,6 +244,10 @@ def get_craft_menu_kb(game):
     keyboard = []
     for name in unlocked:
         if name not in CRAFT_RECIPES:
+            continue
+        if name == "Факел" and has_torch(game):
+            continue
+        if name == "Костёр" and has_campfire(game):
             continue
         icon = CRAFT_ICONS.get(name, "📦")
         mark = craft_mark(game, name)

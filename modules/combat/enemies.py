@@ -11,7 +11,7 @@ ENEMIES: Dict[str, Dict[str, Any]] = {
         "title": "🐺 ЛОГОВО СТАРОГО ВОЛКА",
         "max_hp": 50,
         "attack_min": 5,
-        "attack_max": 7,
+        "attack_max": 8,
         "defended_min": 2,
         "defended_max": 4,
         "start_log": "Ты переступаешь порог пещеры. Волк припадает на передние лапы и глухо рычит.",

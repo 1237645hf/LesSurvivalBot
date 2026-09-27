@@ -534,9 +534,9 @@ def test_8_1_character_screen_format():
     assert "```" not in text
     assert "🧢 Голова:" in text
     assert "⚪ Грязная кепка" in text
-    assert "🐾 Питомец:" in text
+    assert "🐾 Котёнок:" in text
     assert "Пусто" in text
-    assert "Кот" not in text
+    assert "\nКот" not in text
     assert text.startswith("━━━━━━━━━━━━━━━━━━━\n")
     assert text.endswith("\n━━━━━━━━━━━━━━━━━━━")
 
@@ -577,7 +577,7 @@ def test_8_3_format_game_text_no_truncation_for_character_screen():
     assert formatted == char_text
     assert "…" not in formatted
     assert "🧢 Голова:" in formatted
-    assert "🐾 Питомец:" in formatted
+    assert "🐾 Котёнок:" in formatted
 
 
 def test_8_4_sticks_drop_one_to_three():
@@ -950,11 +950,11 @@ def test_11_3_character_screen_no_default_cat_and_frames():
     assert "🥾 Ботинки:\n⚪ Стоптанные ботинки" in char_text
 
     # Фляга
-    assert "🧴 Фляга:\n⚪ Бутылка воды (18/20)" in char_text
+    assert "🧴 Фляга:\n🧴 Бутылка воды (18/20)" in char_text
 
     # Питомец: строго Пусто (никакого кота по умолчанию)
-    assert "🐾 Питомец:\nПусто" in char_text
-    assert "Кот" not in char_text
+    assert "🐾 Котёнок:\nПусто" in char_text
+    assert "\nКот" not in char_text
 
     # Бонусы снаряжения
     assert "📊 ОБЩИЕ БОНУСЫ СНАРЯЖЕНИЯ:\n• Бонусы отсутствуют." in char_text
