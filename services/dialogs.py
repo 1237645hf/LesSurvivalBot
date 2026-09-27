@@ -150,13 +150,16 @@ async def handle_waiting_for_pet_name(
 
     game.companion_name = text
     game.equipment["pet"] = text
+    if not game.is_story_flag_set("saved_kitten"):
+        game.adjust_narrative_karma("compassion", 2)
     game.set_story_flag("saved_kitten")
     game.set_story_flag("has_pet")
     game.set_story_flag("l1_completed")
-    game.story_flags["l1_completed_day"] = getattr(game, "day", 1)
+    if "l1_completed_day" not in game.story_flags:
+        game.story_flags["l1_completed_day"] = getattr(game, "day", 1)
     game.karma["gentle"] = game.karma.get("gentle", 0) + 5
-    game.adjust_narrative_karma("compassion", 2)
     game.story_state = None
+    game.active_story_callback = None
     game.add_log(f"У вас появился питомец: {text} (+5 кармы)")
 
     final_text = (

@@ -189,12 +189,21 @@ def handle_story(data: str, game, uid: int):
         )
         kb = get_main_kb(game)
 
-    elif data == "pet_take":
-        game.set_story_flag("saved_kitten")
-        game.set_story_flag("has_pet")
-        game.set_story_flag("l1_completed")
-        game.story_flags["l1_completed_day"] = getattr(game, "day", 1)
-        game.adjust_narrative_karma("compassion", 2)
+    elif data in ("pet_take", "waiting_pet_name"):
+        has_named_pet = game.is_story_flag_set("has_pet") and bool(
+            game.equipment.get("pet") or (getattr(game, "companion_name", "") not in (None, "", "Кот", "Котёнок"))
+        )
+        if has_named_pet:
+            game.active_story_callback = None
+            game.story_state = None
+            return game.get_ui(), get_main_kb(game)
+
+        if not game.is_story_flag_set("saved_kitten"):
+            game.set_story_flag("saved_kitten")
+            game.set_story_flag("has_pet")
+            game.set_story_flag("l1_completed")
+            game.story_flags["l1_completed_day"] = getattr(game, "day", 1)
+            game.adjust_narrative_karma("compassion", 2)
         game.story_state = "WAITING_FOR_PET_NAME"
         text = (
             "Ты осторожно опускаешь обе ладони в яму.\n"
@@ -220,10 +229,13 @@ def handle_story(data: str, game, uid: int):
     ):
         return handle_l1_wolf_lair(data, game, uid)
 
-    if kb == get_main_kb(game) or data in ("wolf_leave", "pet_leave", "pet_take", "story_next", "back") or getattr(game, "hp", 100) <= 0:
+    if kb == get_main_kb(game) or data in ("wolf_leave", "pet_leave", "story_next", "back") or getattr(game, "hp", 100) <= 0:
         game.active_story_callback = None
     elif text is not None:
-        game.active_story_callback = data
+        if data in ("pet_take", "waiting_pet_name"):
+            game.active_story_callback = "waiting_pet_name"
+        else:
+            game.active_story_callback = data
 
     return text, kb
 
@@ -270,7 +282,7 @@ def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool)
 
 
 def is_story_callback(data: str) -> bool:
-    """Проверяет, относится ли данный callback к сюжетным веткам L1 / L1.5-L1.7 / L2."""
+    """Проверяет, относится ли данный callback к сюжетным веткам L1-L7."""
     return (
         data in (
             "forest_start",
@@ -281,9 +293,18 @@ def is_story_callback(data: str) -> bool:
             "peek_den",
             "pet_leave",
             "pet_take",
+            "waiting_pet_name",
             "story_next",
         )
-        or data.startswith(("l1_5", "l1_6", "l1_7", "wolf_lair", "wolf_battle", "l2_"))
+        or data.startswith((
+            "l1_5", "l1_6", "l1_7", "wolf_lair", "wolf_battle",
+            "l2_", "ruchey_",
+            "slate_", "rest_", "examine_", "location_enter_3",
+            "hunters_", "glade_", "location_enter_4",
+            "slug_", "pit_", "location_enter_5",
+            "furry_", "warm_", "cave_", "location_enter_6",
+            "sanctuary_", "location_enter_7",
+        ))
     )
 
 
@@ -374,8 +395,13 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
         return apply_action(data, game, "old_wolf")
 
     elif data == "wolf_battle_screen":
-        if getattr(game, "wolf_battle", None):
+        if getattr(game, "wolf_battle", None) and game.wolf_battle.get("wolf_hp", 0) > 0 and getattr(game, "hp", 100) > 0:
             return get_wolf_battle_text(game, "old_wolf"), get_wolf_battle_kb()
+        if game.is_story_flag_set("wolf_lair_defeated") or not getattr(game, "wolf_battle", None):
+            if not game.is_story_flag_set("wolf_spared") and not game.is_story_flag_set("wolf_killed"):
+                return handle_l1_wolf_lair("l1_5_aftermath", game, uid)
+            game.active_story_callback = None
+            return game.get_ui(), get_main_kb(game)
         return start_battle(game, "old_wolf")
 
     elif data == "l1_5_aftermath":
@@ -1187,7 +1213,7 @@ def handle_location_3_slate_hollow(data, game, uid):
     text = None
     kb = None
     
-    if data == "slate_hollow_start":
+    if data in ("slate_hollow_start", "location_enter_3"):
         text = (
             "Ты перешагиваешь порог Скромной Лощины. Воздух здесь плотный, прохладный,\n"
             "запах влажного камня и древней глины. Стены выложены из тёмного сланца,\n"
@@ -1241,6 +1267,11 @@ def handle_location_3_slate_hollow(data, game, uid):
             game.reset_nav()
         kb = get_main_kb(game)
     
+    if kb == get_main_kb(game) or data in ("slate_end", "back") or getattr(game, "hp", 100) <= 0:
+        game.active_story_callback = None
+    elif text is not None:
+        game.active_story_callback = data
+
     return text, kb
 
 
@@ -1253,7 +1284,7 @@ def handle_location_4_hunters_glade(data, game, uid):
     text = None
     kb = None
     
-    if data == "hunters_glade_start":
+    if data in ("hunters_glade_start", "location_enter_4"):
         text = (
             "Просека охотников раскинулась перед тобой как гигантский стол.\n"
             "На земле — следы, множество следов. Волков. Оленей. Людей, которые пришли и ушли давно.\n"
@@ -1331,6 +1362,11 @@ def handle_location_4_hunters_glade(data, game, uid):
         game.story_state = "hunters_fired"
         kb = get_main_kb(game)
 
+    if kb == get_main_kb(game) or data in ("hunters_fired", "back") or getattr(game, "hp", 100) <= 0:
+        game.active_story_callback = None
+    elif text is not None:
+        game.active_story_callback = data
+
     return text, kb
 
 
@@ -1343,7 +1379,7 @@ def handle_location_5_slug_pit(data, game, uid):
     text = None
     kb = None
     
-    if data == "slug_pit_start":
+    if data in ("slug_pit_start", "location_enter_5"):
         text = (
             "Яр Слизней — это не место для слабых духом.\n"
             "Земля здесь влажная, липкая, покрыта слизью от огромных существ.\n"
@@ -1413,6 +1449,11 @@ def handle_location_5_slug_pit(data, game, uid):
         game.story_state = "slug_deep_seen"
         kb = get_main_kb(game)
 
+    if kb == get_main_kb(game) or data in ("slug_deep", "back") or getattr(game, "hp", 100) <= 0:
+        game.active_story_callback = None
+    elif text is not None:
+        game.active_story_callback = data
+
     return text, kb
 
 
@@ -1425,7 +1466,7 @@ def handle_location_6_furry_cave(data, game, uid):
     text = None
     kb = None
     
-    if data == "furry_cave_start":
+    if data in ("furry_cave_start", "location_enter_6"):
         text = (
             "Ты входишь в Мохнатую Пещеру. Воздух здесь тёплый, пахнет дымом, мехом\n"
             "и древними кострами. Стены покрыты слоями налёта, а пол — мягким мхом.\n\n"
@@ -1480,7 +1521,12 @@ def handle_location_6_furry_cave(data, game, uid):
         if hasattr(game, "reset_nav"):
             game.reset_nav()
         kb = get_main_kb(game)
-    
+
+    if kb == get_main_kb(game) or data in ("furry_end", "back") or getattr(game, "hp", 100) <= 0:
+        game.active_story_callback = None
+    elif text is not None:
+        game.active_story_callback = data
+
     return text, kb
 
 
@@ -1499,9 +1545,8 @@ def handle_location_7_sanctuary_peak(data, game, uid):
         game.story_state = "completed"
         text = f"{ENDING_TITLES[ending_code]}\n\n{ending_text(ending_code)}"
         kb = get_main_kb(game)
-        return text, kb
 
-    if data == "sanctuary_peak_start":
+    elif data in ("sanctuary_peak_start", "location_enter_7"):
         text = (
             "Ты достиг вершины. Выше уже ничего нет — только небо и звёзды.\n"
             "Здесь, на самой вершине, лежат камни, расположенные в странную мандалу.\n"
@@ -1511,7 +1556,6 @@ def handle_location_7_sanctuary_peak(data, game, uid):
         )
         game.story_state = "sanctuary_choice"
         kb = get_main_kb(game)
-        return text, kb
     
     elif data == "sanctuary_heroic":
         text = (
@@ -1522,7 +1566,6 @@ def handle_location_7_sanctuary_peak(data, game, uid):
         )
         game.story_state = "sanctuary_heroic_end"
         kb = get_main_kb(game)
-        return text, kb
     
     elif data == "sanctuary_gentle":
         text = (
@@ -1534,7 +1577,6 @@ def handle_location_7_sanctuary_peak(data, game, uid):
         )
         game.story_state = "sanctuary_gentle_end"
         kb = get_main_kb(game)
-        return text, kb
     
     elif data == "sanctuary_mysterious":
         text = (
@@ -1546,8 +1588,12 @@ def handle_location_7_sanctuary_peak(data, game, uid):
         )
         game.story_state = "sanctuary_mysterious_end"
         kb = get_main_kb(game)
-        return text, kb
-    
+
+    if kb == get_main_kb(game) or data in ("sanctuary_resolve", "back") or getattr(game, "hp", 100) <= 0:
+        game.active_story_callback = None
+    elif text is not None:
+        game.active_story_callback = data
+
     return text, kb
 
 # Канонические финалы и их резолвер.

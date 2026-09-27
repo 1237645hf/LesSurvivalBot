@@ -777,10 +777,26 @@ async def process_callback(callback: types.CallbackQuery):
                 await update_or_send_message(chat_id, uid, text, kb)
                 return
 
+            if getattr(game, "story_state", None) == "WAITING_FOR_PET_NAME" or getattr(game, "active_story_callback", None) in ("pet_take", "waiting_pet_name"):
+                has_named_pet = game.is_story_flag_set("has_pet") and bool(
+                    game.equipment.get("pet") or (getattr(game, "companion_name", "") not in (None, "", "Кот", "Котёнок"))
+                )
+                if has_named_pet:
+                    game.active_story_callback = None
+                    game.story_state = None
+                    save_game(uid, game)
+                else:
+                    res_text, res_kb = handle_story("waiting_pet_name", game, uid)
+                    if res_text is not None:
+                        save_game(uid, game)
+                        await update_or_send_message(chat_id, uid, res_text, res_kb)
+                        return
+
             if getattr(game, "active_story_callback", None):
                 cb = game.active_story_callback
                 res_text, res_kb = handle_story(cb, game, uid)
-                if res_text is not None and res_kb is not None:
+                if res_text is not None:
+                    save_game(uid, game)
                     await update_or_send_message(chat_id, uid, res_text, res_kb)
                     return
 

@@ -150,3 +150,141 @@ def test_death_text_and_kb_format():
     kb = get_death_kb()
     assert kb.inline_keyboard[0][0].text == "🔄 Начать заново"
     assert kb.inline_keyboard[0][0].callback_data == "start_new_game_confirmed"
+
+
+def test_l2_mid_screen_resume():
+    """Тест 9: Промежуточный экран L2 сохраняет active_story_callback, а выход очищает его."""
+    game = GameState()
+    game.hp = 100
+    text, kb = handle_story("l2_dam_entrance", game, 101)
+    assert text is not None
+    assert game.active_story_callback == "l2_dam_entrance"
+
+    # Восстановление того же экрана
+    res_text, res_kb = handle_story(game.active_story_callback, game, 101)
+    assert res_text == text
+
+    # Выход в лагерь очищает active_story_callback
+    out_text, out_kb = handle_story("ruchey_leave", game, 101)
+    assert game.active_story_callback is None
+
+
+def test_l3_to_l7_active_story_callback_lifecycle():
+    """Тест 10: Локации L3-L7 корректно устанавливают и сбрасывают active_story_callback."""
+    game = GameState()
+    game.hp = 100
+
+    # L3: Скромная Лощина по умолчанию возвращает main_kb -> callback сброшен
+    handle_story("slate_hollow_start", game, 101)
+    assert game.active_story_callback is None
+
+    # L7: Вершина Святилища
+    # Штатный конец (sanctuary_resolve) завершает арку и сбрасывает callback
+    text7, kb7 = handle_story("sanctuary_resolve", game, 101)
+    assert game.active_story_callback is None
+    assert game.story_state == "completed"
+
+    # Эмуляция сюжетного экрана с кнопками выбора в L3:
+    # если kb != get_main_kb(game), active_story_callback фиксирует data экрана
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from keyboards import get_main_kb
+    from unittest.mock import patch
+
+    real_main_kb = get_main_kb(game)
+    story_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Осмотреть", callback_data="slate_examine")]])
+    with patch("story.location_stories.get_main_kb", side_effect=[story_kb, real_main_kb]):
+        text3, kb3 = handle_story("slate_hollow_start", game, 101)
+        assert game.active_story_callback == "slate_hollow_start"
+
+
+def test_kitten_naming_resume_no_duplicate_karma():
+    """Тест 11: pet_take выставляет waiting_pet_name, а continue/повтор не дублирует карму."""
+    game = GameState()
+    game.narrative_karma["compassion"] = 0
+    assert not game.is_story_flag_set("saved_kitten")
+
+    # 1. Первый показ экрана котёнка (pet_take)
+    text, kb = handle_story("pet_take", game, 101)
+    assert game.story_state == "WAITING_FOR_PET_NAME"
+    assert game.active_story_callback == "waiting_pet_name"
+    assert game.narrative_karma.get("compassion", 0) == 2
+    assert game.is_story_flag_set("saved_kitten")
+    assert "Как ты его назовёшь?" in text
+    assert kb is None
+
+    # 2. Симуляция continue / рендера экрана по сохранённому callback "waiting_pet_name"
+    text2, kb2 = handle_story("waiting_pet_name", game, 101)
+    assert "Как ты его назовёшь?" in text2
+    assert kb2 is None
+    assert game.active_story_callback == "waiting_pet_name"
+    # Карма не должна увеличиться второй раз!
+    assert game.narrative_karma.get("compassion", 0) == 2
+
+
+@pytest.mark.anyio
+async def test_kitten_naming_submit_and_idempotency():
+    """Тест 13: Ввод имени очищает callback и state, а повторный вход при наличии питомца уходит в main."""
+    from services.dialogs import handle_waiting_for_pet_name
+    from unittest.mock import AsyncMock, MagicMock
+    from keyboards import get_main_kb
+
+    game = GameState()
+    game.story_state = "WAITING_FOR_PET_NAME"
+    game.active_story_callback = "waiting_pet_name"
+    game.set_story_flag("saved_kitten")
+    game.set_story_flag("has_pet")
+
+    fake_msg = MagicMock()
+    fake_msg.message_id = 999
+
+    bot_ctx = {
+        "last_active_msg_id": {},
+        "safe_delete_message": AsyncMock(),
+        "safe_edit_message": AsyncMock(),
+        "update_or_send_message": AsyncMock(),
+        "format_game_text": lambda t, g: t,
+    }
+
+    # 1. Ввод валидного имени котёнка
+    handled = await handle_waiting_for_pet_name(
+        uid=101,
+        chat_id=101,
+        text="Барсик",
+        message=fake_msg,
+        game=game,
+        bot_ctx=bot_ctx,
+    )
+    assert handled is True
+    assert game.companion_name == "Барсик"
+    assert game.equipment.get("pet") == "Барсик"
+    assert game.story_state is None
+    assert game.active_story_callback is None
+
+    # 2. Повторная попытка pet_take / resume при уже существующем питомце с именем
+    text_repeat, kb_repeat = handle_story("pet_take", game, 101)
+    assert kb_repeat == get_main_kb(game)
+    assert game.companion_name == "Барсик"
+    assert game.active_story_callback is None
+    assert game.story_state is None
+
+    # 3. Повторный вызов waiting_pet_name при уже существующем питомце
+    text_resume, kb_resume = handle_story("waiting_pet_name", game, 101)
+    assert kb_resume == get_main_kb(game)
+    assert game.companion_name == "Барсик"
+    assert game.active_story_callback is None
+
+
+def test_wolf_battle_screen_no_restart_after_defeat():
+    """Тест 12: wolf_battle_screen не перезапускает бой, если волк уже повержен."""
+    game = GameState()
+    game.hp = 80
+    game.set_story_flag("wolf_lair_defeated")
+    game.wolf_battle = None
+
+    # Вызываем wolf_battle_screen после завершения боя
+    text, kb = handle_story("wolf_battle_screen", game, 101)
+    # Бой не должен перезапуститься
+    assert game.wolf_battle is None
+    # Должен перенаправить на l1_5_aftermath
+    assert "Тяжёлый удар посоха окончательно сбивает старого волка" in text
+
