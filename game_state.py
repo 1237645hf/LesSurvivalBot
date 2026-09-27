@@ -60,6 +60,7 @@ class GameState:
     
     # Состояние сюжета
     story_state: Optional[str] = None
+    active_story_callback: Optional[str] = None
     
     # Охотничьи ловушки (ключ: location_id 3-7, значение: dict с is_active)
     traps: Dict[int, Dict] = field(default_factory=dict)
@@ -293,7 +294,7 @@ class GameState:
 
         overflow_hp_damage = result["hunger_damage_to_hp"] + result["thirst_damage_to_hp"]
         if overflow_hp_damage > 0:
-            self.hp = max(1, old_hp - overflow_hp_damage)
+            self.hp = max(0, old_hp - overflow_hp_damage)
 
         result["success"] = True
         result["delta_ap"] = self.ap - old_ap
@@ -379,7 +380,7 @@ class GameState:
 
             overflow_hp_damage = result["hunger_damage_to_hp"] + result["thirst_damage_to_hp"]
             if overflow_hp_damage > 0:
-                self.hp = max(1, old_hp - overflow_hp_damage)
+                self.hp = max(0, old_hp - overflow_hp_damage)
 
             self.add_log("🔥 Костёр с трудом разведён трением (−2 ⚡ AP, −7 сытости, −18 жажды).")
 
@@ -599,6 +600,7 @@ class GameState:
             "wolf_battle": dict(getattr(self, "wolf_battle", {})) if getattr(self, "wolf_battle", None) else None,
             "l2_puzzle_attempt": int(getattr(self, "l2_puzzle_attempt", 0)),
             "l2_puzzle_step": int(getattr(self, "l2_puzzle_step", 1)),
+            "active_story_callback": getattr(self, "active_story_callback", None),
         }
 
 
@@ -682,6 +684,7 @@ class GameState:
         game.l1_post_research_count = int(data.get("l1_post_research_count", 0))
         game.torch_research_count = int(data.get("torch_research_count", 0))
         game.wolf_battle = dict(data["wolf_battle"]) if data.get("wolf_battle") else None
+        game.active_story_callback = data.get("active_story_callback")
         return game
     
     def reset_navigate(self):
@@ -934,6 +937,20 @@ class GameState:
 
         body = "\n\n".join(blocks)
         return f"━━━━━━━━━━━━━━━━━━━\n{body}\n━━━━━━━━━━━━━━━━━━━"
+
+    def get_death_text(self, reason: str = "") -> str:
+        return get_death_text(self, reason)
+
+
+def get_death_text(game=None, reason: str = "") -> str:
+    """Единый экран гибели персонажа."""
+    hero = getattr(game, "character_name", "Выживший") if game else "Выживший"
+    day = getattr(game, "day", 1) if game else 1
+    parts = ["💀 **Ты погиб.**"]
+    if reason:
+        parts.append(reason)
+    parts.append(f"Выживание {hero} подошло к концу на {day}-й день.\nЛес оказался сильнее.")
+    return "\n\n".join(parts)
 
 
 # Алиас для обратной совместимости: Game = GameState

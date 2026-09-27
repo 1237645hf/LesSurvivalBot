@@ -13,7 +13,9 @@ from keyboards import (
     next_kb,
     get_locations_kb,
     get_wolf_battle_kb,
+    get_death_kb,
 )
+from game_state import get_death_text
 from modules.items import is_item_consumable, get_item_rank, get_item_type
 from modules.combat import (
     start_battle,
@@ -73,9 +75,19 @@ def handle_location_1_forest_start(data: str, game, uid: int):
 
 
 def handle_story(data: str, game, uid: int):
-    """Обработать общую стартовую сцену волка и котёнка или передать в ветку L2."""
-    if data.startswith("l2_"):
+    """Обработать сюжетную сцену волка и котёнка или передать в ветку других локаций."""
+    if data.startswith("l2_") or data.startswith("ruchey_") or data == "location_enter_2":
         return handle_location_2_ruchey(data, game, uid)
+    if data.startswith("slate_") or data.startswith("rest_") or data.startswith("examine_") or data == "location_enter_3":
+        return handle_location_3_slate_hollow(data, game, uid)
+    if data.startswith("hunters_") or data.startswith("glade_") or data == "location_enter_4":
+        return handle_location_4_hunters_glade(data, game, uid)
+    if data.startswith("slug_") or data.startswith("pit_") or data == "location_enter_5":
+        return handle_location_5_slug_pit(data, game, uid)
+    if data.startswith("furry_") or data.startswith("warm_") or data.startswith("cave_") or data == "location_enter_6":
+        return handle_location_6_furry_cave(data, game, uid)
+    if data.startswith("sanctuary_") or data == "location_enter_7":
+        return handle_location_7_sanctuary_peak(data, game, uid)
 
     text = None
     kb = None
@@ -207,6 +219,11 @@ def handle_story(data: str, game, uid: int):
         or data in ("location_enter_1", "location_enter_2")
     ):
         return handle_l1_wolf_lair(data, game, uid)
+
+    if kb == get_main_kb(game) or data in ("wolf_leave", "pet_leave", "pet_take", "story_next", "back") or getattr(game, "hp", 100) <= 0:
+        game.active_story_callback = None
+    elif text is not None:
+        game.active_story_callback = data
 
     return text, kb
 
@@ -356,6 +373,11 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
     elif data in ("wolf_battle_attack", "wolf_battle_defend", "wolf_battle_flee"):
         return apply_action(data, game, "old_wolf")
 
+    elif data == "wolf_battle_screen":
+        if getattr(game, "wolf_battle", None):
+            return get_wolf_battle_text(game, "old_wolf"), get_wolf_battle_kb()
+        return start_battle(game, "old_wolf")
+
     elif data == "l1_5_aftermath":
         has_pet = bool(game.equipment.get("pet")) or game.is_story_flag_set("has_pet")
         text = (
@@ -480,6 +502,14 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
         game.reset_nav()
         game.current_location = "Ручей"
         text, kb = handle_location_2_ruchey("location_enter_2", game, uid)
+
+    if kb == get_main_kb(game) or data in ("l1_5_leave", "l1_7_finish", "location_enter_1", "back") or getattr(game, "hp", 100) <= 0:
+        game.active_story_callback = None
+    elif text is not None:
+        if getattr(game, "wolf_battle", None) and getattr(game, "hp", 100) > 0 and game.wolf_battle.get("wolf_hp", 0) > 0:
+            game.active_story_callback = "wolf_battle_screen"
+        else:
+            game.active_story_callback = data
 
     return text, kb
 
@@ -972,8 +1002,11 @@ def handle_location_2_ruchey(data: str, game, uid: int):
 
         pet_txt = ""
         if has_pet:
-            # Защита от гибели
-            game.hp = max(1, game.hp - 2)
+            game.hp = max(0, game.hp - 2)
+            if game.hp <= 0:
+                game.hp = 0
+                game.active_story_callback = None
+                return get_death_text(game, "🐾 В панике перепуганный котёнок нанёс смертельные раны."), get_death_kb()
             pet_txt = "\n\n🐾 Перепуганный котёнок в панике царапает твои рёбра (−2 HP), истошно шипит и растворяется в темноте зала!"
 
         text = (
@@ -1023,8 +1056,11 @@ def handle_location_2_ruchey(data: str, game, uid: int):
         game.set_story_flag("l2_fuse_inserted", True)
 
         if data == "l2_fuse_shock":
-            # Защита от смерти: HP не опускается ниже 1, без неё удар током был бы смертелен
-            game.hp = max(1, game.hp - 10)
+            game.hp = max(0, game.hp - 10)
+            if game.hp <= 0:
+                game.hp = 0
+                game.active_story_callback = None
+                return get_death_text(game, "⚡ Мощный электрический разряд пробил сердце."), get_death_kb()
             shock_text = (
                 "Ты берёшь коробочку пальцами и с силой вжимаешь её в искрящий разъём!\n\n"
                 "Яркая дуга с треском бьёт в пальцы! Мощный разряд тока прошибает всё тело (−10 HP)!\n"
@@ -1092,10 +1128,15 @@ def handle_location_2_ruchey(data: str, game, uid: int):
                 return handle_location_2_ruchey("l2_bridge_activated", game, uid)
         else:
             # Ошибка: ледяная струя под давлением срывает заглушку
-            game.hp = max(1, game.hp - 5)
+            game.hp = max(0, game.hp - 5)
             game.ap = 0
             game.l2_puzzle_attempt = (attempt + 1) % 10
             game.l2_puzzle_step = 1
+
+            if game.hp <= 0:
+                game.hp = 0
+                game.active_story_callback = None
+                return get_death_text(game, "🌊 Ледяной гидравлический удар сбил тебя с ног и унёс жизнь."), get_death_kb()
 
             text = (
                 "⚠️ ОШИБКА АВТОМАТИКИ!\n\n"
@@ -1128,6 +1169,11 @@ def handle_location_2_ruchey(data: str, game, uid: int):
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="⛰️ Шагнуть в Скромную Лощину", callback_data="location_enter_3")]
         ])
+
+    if kb == get_main_kb(game) or data in ("ruchey_leave", "l2_camp", "back") or getattr(game, "hp", 100) <= 0:
+        game.active_story_callback = None
+    elif text is not None:
+        game.active_story_callback = data
 
     return text, kb
 

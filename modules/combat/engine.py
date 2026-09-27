@@ -45,6 +45,7 @@ def start_battle(game, enemy_id: str = "old_wolf") -> Tuple[str, InlineKeyboardM
         "wolf_dmg_dealt": 0,
         "last_log": enemy.get("start_log", ""),
     }
+    game.active_story_callback = "wolf_battle_screen"
     text = get_battle_text(game, enemy_id)
     kb = get_wolf_battle_kb()
     return text, kb
@@ -83,6 +84,7 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
 
         # Проверка победы игрока
         if battle["wolf_hp"] <= 0:
+            game.active_story_callback = enemy.get("victory_callback", "l1_5_aftermath")
             text = (
                 "⚔️ ПОБЕДА!\n"
                 "━━━━━━━━━━━━━━━━━━━\n"
@@ -102,10 +104,21 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
             log_lines.append("🐺 Волк шарахается от пламени факела и промахивается!")
         else:
             w_dmg = random.randint(enemy.get("attack_min", 5), enemy.get("attack_max", 7))
-            game.hp = max(1, game.hp - w_dmg)
+            game.hp = max(0, game.hp - w_dmg)
             battle["wolf_dmg_dealt"] += w_dmg
             log_lines.append(f"🐺 Волк щёлкает клыками и полосует тебя: −{w_dmg} HP.")
 
+            if game.hp <= 0:
+                game.hp = 0
+                game.active_story_callback = None
+                game.wolf_battle = None
+                from keyboards import get_death_kb
+                from game_state import get_death_text
+                text = get_death_text(game, f"🐺 Старый волк нанёс смертельный удар (−{w_dmg} HP).")
+                kb = get_death_kb()
+                return text, kb
+
+        game.active_story_callback = "wolf_battle_screen"
         battle["last_log"] = "\n".join(log_lines)
         text = get_battle_text(game, enemy_id)
         kb = get_wolf_battle_kb()
@@ -122,6 +135,7 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
 
         # Проверка победы игрока (если волк сгорел от факела на защите)
         if battle["wolf_hp"] <= 0:
+            game.active_story_callback = enemy.get("victory_callback", "l1_5_aftermath")
             text = (
                 "⚔️ ПОБЕДА!\n"
                 "━━━━━━━━━━━━━━━━━━━\n"
@@ -141,10 +155,21 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
             log_lines.append("🐺 Волк пугается огня и пятится назад: урон 0 HP.")
         else:
             w_dmg = random.randint(enemy.get("defended_min", 2), enemy.get("defended_max", 4))
-            game.hp = max(1, game.hp - w_dmg)
+            game.hp = max(0, game.hp - w_dmg)
             battle["wolf_dmg_dealt"] += w_dmg
             log_lines.append(f"🐺 Волк бьёт по защите, скользнув клыками: −{w_dmg} HP (снижено на 50%).")
 
+            if game.hp <= 0:
+                game.hp = 0
+                game.active_story_callback = None
+                game.wolf_battle = None
+                from keyboards import get_death_kb
+                from game_state import get_death_text
+                text = get_death_text(game, f"🐺 Волк пробил твою защиту смертельным ударом (−{w_dmg} HP).")
+                kb = get_death_kb()
+                return text, kb
+
+        game.active_story_callback = "wolf_battle_screen"
         battle["last_log"] = "\n".join(log_lines)
         text = get_battle_text(game, enemy_id)
         kb = get_wolf_battle_kb()
@@ -153,6 +178,7 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
     elif clean_action == "flee":
         game.wolf_battle = None
         game.story_state = None
+        game.active_story_callback = None
         game.nav_stack = ["main", "locations"]
         text = enemy.get("flee_text", (
             "Ты резко отшатываешься назад, выставив посох перед собой, и сломя голову выбегаешь из пещеры обратно в овраг. "

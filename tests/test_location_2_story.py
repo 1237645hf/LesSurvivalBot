@@ -209,16 +209,24 @@ def test_fusebox_insertion_safe_vs_shock():
     assert game_safe.is_story_flag_set("l2_fuse_inserted") is True
     assert kb_res.inline_keyboard[0][0].callback_data == "l2_puzzle_start"
 
-    # Вариант Б: Без котёнка (или выбор голыми руками) -> удар током (−10 HP) с защитой от смерти
-    game_shock = GameState()
-    game_shock.hp = 8  # Меньше 10
-    game_shock.inventory["Плоская металлическая коробочка"] = 1
+    # Вариант Б: Без котёнка (или выбор голыми руками) -> удар током (−10 HP)
+    # 1. При достаточном HP (например 25) выживает с 15 HP
+    game_shock_survive = GameState()
+    game_shock_survive.hp = 25
+    game_shock_survive.inventory["Плоская металлическая коробочка"] = 1
+    text_survive, kb_survive = handle_location_2_ruchey("l2_fuse_shock", game_shock_survive, 101)
+    assert game_shock_survive.hp == 15
+    assert "Плоская металлическая коробочка" not in game_shock_survive.inventory
+    assert game_shock_survive.is_story_flag_set("l2_fuse_inserted") is True
 
-    text_shock, kb_shock = handle_location_2_ruchey("l2_fuse_shock", game_shock, 101)
-    # Защита от смерти: HP не упало ниже 1
-    assert game_shock.hp == 1
-    assert "Плоская металлическая коробочка" not in game_shock.inventory
-    assert game_shock.is_story_flag_set("l2_fuse_inserted") is True
+    # 2. При HP <= 10 (например 8) наступает честная гибель (0 HP)
+    game_shock_fatal = GameState()
+    game_shock_fatal.hp = 8
+    game_shock_fatal.inventory["Плоская металлическая коробочка"] = 1
+    text_shock, kb_shock = handle_location_2_ruchey("l2_fuse_shock", game_shock_fatal, 101)
+    assert game_shock_fatal.hp == 0
+    assert "Ты погиб" in text_shock
+    assert kb_shock.inline_keyboard[0][0].callback_data == "start_new_game_confirmed"
 
 
 def test_puzzle_bank_integrity_and_no_hints_in_buttons():

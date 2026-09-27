@@ -20,7 +20,7 @@ from game_math import (
     get_thirst_base_cost,
     calculate_ap_by_hp,
 )
-from game_state import GameState, Game
+from game_state import GameState, Game, get_death_text
 from modules.hints import get_active_hints
 from modules.traps import (
     HUNTABLE_ANIMALS,
@@ -154,6 +154,7 @@ from keyboards import (
     get_start_resume_kb,
     get_confirm_new_game_kb,
     get_start_new_game_kb,
+    get_death_kb,
 )
 from crafts import (
     handle_craft,
@@ -313,7 +314,7 @@ def use_consumable(item, game):
                 if "thirst" in neg_effects:
                     game.thirst = max(0, game.thirst + neg_effects["thirst"])
                 if "hp" in neg_effects:
-                    game.hp = max(1, game.hp + neg_effects["hp"])
+                    game.hp = max(0, game.hp + neg_effects["hp"])
                 msg = neg.get("log_message") or neg.get("description")
                 restore_parts.append(f"⚠️ {msg}")
 
@@ -569,6 +570,12 @@ async def cmd_main(message: Message):
     if not game:
         await message.answer("Сначала /start")
         return
+    if getattr(game, "hp", 100) <= 0:
+        game.hp = 0
+        game.active_story_callback = None
+        save_game(uid, game)
+        await update_or_send_message(chat_id, uid, get_death_text(game), get_death_kb())
+        return
     if game.story_state == "WAITING_FOR_CHARACTER_NAME" or not getattr(game, "is_name_set", False):
         prompt = (
             "📛 Сначала введи имя своего персонажа:\n"
@@ -579,6 +586,7 @@ async def cmd_main(message: Message):
         )
         await update_or_send_message(chat_id, uid, prompt, None)
         return
+    game.active_story_callback = None
     game.nav_stack = ["main"]
     await update_or_send_message(chat_id, uid, game.get_ui(), get_main_kb(game))
     save_game(uid, game)
@@ -597,6 +605,12 @@ async def cmd_inventory(message: Message):
     game = _ensure_game(uid)
     if not game:
         await message.answer("Сначала /start")
+        return
+    if getattr(game, "hp", 100) <= 0:
+        game.hp = 0
+        game.active_story_callback = None
+        save_game(uid, game)
+        await update_or_send_message(chat_id, uid, get_death_text(game), get_death_kb())
         return
     if game.story_state == "WAITING_FOR_CHARACTER_NAME" or not getattr(game, "is_name_set", False):
         prompt = (
@@ -626,6 +640,12 @@ async def cmd_character(message: Message):
     if not game:
         await message.answer("Сначала /start")
         return
+    if getattr(game, "hp", 100) <= 0:
+        game.hp = 0
+        game.active_story_callback = None
+        save_game(uid, game)
+        await update_or_send_message(chat_id, uid, get_death_text(game), get_death_kb())
+        return
     if game.story_state == "WAITING_FOR_CHARACTER_NAME" or not getattr(game, "is_name_set", False):
         prompt = (
             "📛 Сначала введи имя своего персонажа:\n"
@@ -652,6 +672,12 @@ async def cmd_settings(message: Message):
     game = _ensure_game(uid)
     if not game:
         await message.answer("Сначала /start")
+        return
+    if getattr(game, "hp", 100) <= 0:
+        game.hp = 0
+        game.active_story_callback = None
+        save_game(uid, game)
+        await update_or_send_message(chat_id, uid, get_death_text(game), get_death_kb())
         return
     if game.story_state == "WAITING_FOR_CHARACTER_NAME" or not getattr(game, "is_name_set", False):
         prompt = (
@@ -741,6 +767,23 @@ async def process_callback(callback: types.CallbackQuery):
                 await update_or_send_message(chat_id, uid, text, None)
                 return
             games[uid] = game
+
+            if getattr(game, "hp", 100) <= 0:
+                game.hp = 0
+                game.active_story_callback = None
+                save_game(uid, game)
+                text = get_death_text(game)
+                kb = get_death_kb()
+                await update_or_send_message(chat_id, uid, text, kb)
+                return
+
+            if getattr(game, "active_story_callback", None):
+                cb = game.active_story_callback
+                res_text, res_kb = handle_story(cb, game, uid)
+                if res_text is not None and res_kb is not None:
+                    await update_or_send_message(chat_id, uid, res_text, res_kb)
+                    return
+
             text = game.get_ui()
             kb = get_main_kb(game)
             await update_or_send_message(chat_id, uid, text, kb)
@@ -806,6 +849,15 @@ async def process_callback(callback: types.CallbackQuery):
                 "• Макс. 20 символов"
             )
             await update_or_send_message(chat_id, uid, prompt, None)
+            return
+
+        if getattr(game, "hp", 100) <= 0:
+            game.hp = 0
+            game.active_story_callback = None
+            save_game(uid, game)
+            text = get_death_text(game)
+            kb = get_death_kb()
+            await update_or_send_message(chat_id, uid, text, kb)
             return
 
         text = None
@@ -1367,6 +1419,7 @@ async def process_callback(callback: types.CallbackQuery):
 
         elif data == "back":
             game.story_state = None
+            game.active_story_callback = None
             if "drop_item_name" in game.story_flags:
                 del game.story_flags["drop_item_name"]
             game.story_flags.pop("fuel_item", None)
@@ -1515,6 +1568,15 @@ async def process_callback(callback: types.CallbackQuery):
             res_str = ", ".join(parts) if parts else "без изменений"
             game.add_log(f"{loc_emoji} Исследование: {res_str}")
 
+            if game.hp <= 0:
+                game.hp = 0
+                game.active_story_callback = None
+                text = get_death_text(game, "💀 Ты умер от голода и истощения.")
+                kb = get_death_kb()
+                await update_or_send_message(chat_id, uid, text, kb)
+                save_game(uid, game)
+                return
+
             torch_equipped = (
                 game.equipment.get("hand_left") == "Факел"
                 or game.equipment.get("hand") == "Факел"
@@ -1540,6 +1602,14 @@ async def process_callback(callback: types.CallbackQuery):
 
         elif data in ("action_sleep", "action_4"):
             game.sleep_and_turn_day()
+            if game.hp <= 0:
+                game.hp = 0
+                game.active_story_callback = None
+                text = get_death_text(game, "💀 Ты не проснулся от истощения.")
+                kb = get_death_kb()
+                await update_or_send_message(chat_id, uid, text, kb)
+                save_game(uid, game)
+                return
             trap_msgs = []
             # Утро: 40% ломка / 60% успех + лут по таблице локации (еда.txt)
             for event in process_trap_rollover(game):
@@ -1640,6 +1710,7 @@ async def process_callback(callback: types.CallbackQuery):
             kb = get_main_kb(game)
         
         elif data == "menu_main":
+            game.active_story_callback = None
             text = game.get_ui()
             kb = get_main_kb(game)
 

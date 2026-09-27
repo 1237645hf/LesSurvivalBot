@@ -35,6 +35,13 @@ def get_start_new_game_kb() -> InlineKeyboardMarkup:
     ])
 
 
+def get_death_kb() -> InlineKeyboardMarkup:
+    """Клавиатура экрана смерти: рестарт игры."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Начать заново", callback_data="start_new_game_confirmed")],
+    ])
+
+
 
 from modules.items import is_item_consumable, get_item_rank, get_item_rank_marker, get_item_emoji
 

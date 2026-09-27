@@ -2,47 +2,26 @@
 game_math.py — Унифицированная математика урона и списания ресурсов.
 
 Логика строго детерминирована (без random), с акцентом на физику выживания:
-- Снижение урона при низком HP
-- Предохранитель HP (не ниже 1)
-- Перенапряжение при HP < 30% (урон конвертируется в ресурсы)
+- Зависимость расхода ресурсов (голод/жажда) от уровня HP
+- Зависимость доступных очков действий (AP) от уровня HP
+- Прямой расчёт урона по HP без пола 1 и без перенапряжения
 """
 
 import math
 
 
 def process_damage(game_state, raw_damage: int) -> tuple[int, str]:
-    """Обработка урона и перенапряжения с предохранителем `max(1, ...)`."""
+    """Обработка урона персонажу (без пола 1 и без перенапряжения)."""
     hp = getattr(game_state, "hp", 100)
-    max_hp_damage = hp - 1
-    effective_damage = min(raw_damage, max_hp_damage)
-    
-    # Здоровье не падает ниже 1
-    new_hp = max(1, hp - effective_damage)
-    log_parts = []
-    
-    if new_hp < 30 and effective_damage > 10:
-        absorbed = raw_damage - effective_damage
-        resource_cost = min(15, max(1, math.ceil(absorbed / 10)))
-        
-        hunger = getattr(game_state, "hunger", 50)
-        thirst = getattr(game_state, "thirst", 75)
-        
-        if hunger >= thirst:
-            game_state.hunger = max(1, hunger - resource_cost)
-            log_parts.append(f"Перенапряжение: Голод упал на {resource_cost}.")
-        else:
-            game_state.thirst = max(1, thirst - resource_cost)
-            log_parts.append(f"Перенапряжение: Жажда упала на {resource_cost}.")
-        
-        game_state.hp = new_hp
-    else:
-        game_state.hp = new_hp
-    
-    if new_hp < hp:
-        log_parts.append(f"Ты получил {effective_damage} урона.")
-    
-    log_text = "\n".join(log_parts) if log_parts else "Урон поглощён."
-    return new_hp, log_text
+    effective_damage = max(0, int(raw_damage))
+    new_hp = max(0, hp - effective_damage)
+    game_state.hp = new_hp
+
+    if new_hp <= 0:
+        return 0, f"Ты получил {effective_damage} урона. Здоровье упало до 0."
+    if effective_damage > 0:
+        return new_hp, f"Ты получил {effective_damage} урона."
+    return new_hp, "Урон поглощён."
 
 
 def get_resource_multiplier(game_state: object, resource_type: str) -> float:
