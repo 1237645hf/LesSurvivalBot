@@ -16,6 +16,7 @@ CRAFT_RECIPES = {
     "Сланцевый слиток": [("Сланец", 2), ("Глина", 2)],
     "Сланцевая тарелка": [("Сланцевый слиток", 1)],
     "Охотничья ловушка": [("Ветка", 4), ("Кусок коры", 2), ("Кожа", 1), ("Кость", 1)],
+    "Окованный посох": [("Крепкий посох", 1), ("Сланцевый слиток", 1), ("Кусок коры", 2)],
 }
 
 CRAFT_YIELDS = {
@@ -224,6 +225,7 @@ CRAFT_ICONS = {
     "Сланцевый слиток": "🧱",
     "Сланцевая тарелка": "🍽️",
     "Охотничья ловушка": "🪤",
+    "Окованный посох": "🦯",
 }
 
 
@@ -448,6 +450,38 @@ def handle_craft(data, game, uid):
             kb = get_trap_buttons_kb(game)
         else:
             game.add_log("В инвентаре нет готовой охотничьей ловушки.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Окованный посох":
+        if game.inventory.get("Окованный посох", 0) > 0:
+            old_item = game.equipment.get("hand_right")
+            if old_item:
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory["Окованный посох"] -= 1
+            if game.inventory["Окованный посох"] <= 0:
+                del game.inventory["Окованный посох"]
+            game.equipment["hand_right"] = "Окованный посох"
+            game.add_log("Вы взяли окованный посох в правую руку (⚔️ Урон 8–10).")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет окованного посоха.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Клык волка":
+        if game.inventory.get("Клык волка", 0) > 0:
+            old_item = game.equipment.get("trinket")
+            if old_item:
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory["Клык волка"] -= 1
+            if game.inventory["Клык волка"] <= 0:
+                del game.inventory["Клык волка"]
+            game.equipment["trinket"] = "Клык волка"
+            game.add_log("Вы надели амулет «Клык волка» (+3 к урону в бою).")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет клыка волка.")
             text = game.get_ui()
             kb = get_main_kb(game)
     return text, kb

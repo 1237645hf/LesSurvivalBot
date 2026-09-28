@@ -1732,7 +1732,7 @@ async def process_callback(callback: types.CallbackQuery):
                 text = game.get_ui()
                 kb = get_main_kb(game)
         
-        elif data.startswith("slate_") or data.startswith("rest_") or data.startswith("examine"):
+        elif data.startswith("slate_") or data.startswith("rest_") or data.startswith("examine") or data.startswith("l3_") or data.startswith("boar_"):
             text, kb = handle_location_3_slate_hollow(data, game, uid)
             if text is None:
                 text = game.get_ui()

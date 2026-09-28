@@ -109,6 +109,10 @@ def get_item_card_actions_kb(item_name: str, game=None):
         keyboard.append([InlineKeyboardButton(text="🥾 Надеть ботинки", callback_data="use_item_Сланцевые ботинки")])
     elif item_name == "Отремонтированные ботинки":
         keyboard.append([InlineKeyboardButton(text="🥾 Надеть ботинки", callback_data="use_item_Отремонтированные ботинки")])
+    elif item_name == "Окованный посох":
+        keyboard.append([InlineKeyboardButton(text="🦯 Взять в правую руку", callback_data="use_item_Окованный посох")])
+    elif item_name == "Клык волка":
+        keyboard.append([InlineKeyboardButton(text="📿 Надеть амулет", callback_data="use_item_Клык волка")])
     elif item_name == "Охотничья ловушка":
         keyboard.append([InlineKeyboardButton(text="🪤 Установить ловушку", callback_data="use_item_Охотничья ловушка")])
     elif is_item_consumable(item_name):
@@ -309,6 +313,10 @@ def get_locations_kb(game):
         unlocked = getattr(game, "unlocked_locations", []) or []
         if "Скромная Лощина" in unlocked:
             keyboard.append([InlineKeyboardButton(text="⛰️ Скромная Лощина", callback_data="location_enter_3")])
+        if "Солонец (Секач)" in unlocked and not game.is_story_flag_set("l3_ridge_completed"):
+            keyboard.append([InlineKeyboardButton(text="🐗 Солонец (Секач)", callback_data="location_enter_boar")])
+        if "Просека охотников" in unlocked:
+            keyboard.append([InlineKeyboardButton(text="🏹 Просека охотников", callback_data="location_enter_4")])
         keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
         return InlineKeyboardMarkup(inline_keyboard=keyboard)
     else:
@@ -320,6 +328,10 @@ def get_locations_kb(game):
             keyboard.append([InlineKeyboardButton(text="🏞️ Ручей", callback_data="location_enter_2")])
         if "Скромная Лощина" in unlocked:
             keyboard.append([InlineKeyboardButton(text="⛰️ Скромная Лощина", callback_data="location_enter_3")])
+        if "Солонец (Секач)" in unlocked and not game.is_story_flag_set("l3_ridge_completed"):
+            keyboard.append([InlineKeyboardButton(text="🐗 Солонец (Секач)", callback_data="location_enter_boar")])
+        if "Просека охотников" in unlocked:
+            keyboard.append([InlineKeyboardButton(text="🏹 Просека охотников", callback_data="location_enter_4")])
         keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
         return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -335,6 +347,21 @@ def get_wolf_battle_kb():
             InlineKeyboardButton(text="🏃 Сбежать", callback_data="wolf_battle_flee"),
         ],
     ])
+
+
+def get_boar_battle_kb(is_stunned: bool = False, is_charging: bool = False):
+    """Клавиатура пошагового боя с Секачом: только Атака, Уворот и Отступить."""
+    kb = []
+    if is_stunned:
+        kb.append([InlineKeyboardButton(text="💥 Крит (×2)", callback_data="boar_battle_crit")])
+    else:
+        kb.append([
+            InlineKeyboardButton(text="⚔️ Атака", callback_data="boar_battle_attack"),
+            InlineKeyboardButton(text="⚡ Уворот", callback_data="boar_battle_dodge"),
+        ])
+    kb.append([InlineKeyboardButton(text="🏃 Отступить", callback_data="boar_battle_flee")])
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
 
 def get_trap_buttons_kb(game):
     """Кнопки ловушек для каждой локации (1-7)."""

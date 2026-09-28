@@ -7,6 +7,7 @@ from modules.combat.engine import (
     start_battle,
     apply_action,
     get_battle_text,
+    get_battle_kb,
 )
 
 # Алиас для обратной совместимости
@@ -18,5 +19,6 @@ __all__ = [
     "start_battle",
     "apply_action",
     "get_battle_text",
+    "get_battle_kb",
     "get_wolf_battle_text",
 ]

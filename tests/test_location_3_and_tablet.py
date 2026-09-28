@@ -181,3 +181,179 @@ def test_stone_tablet_pagination_and_storage():
 
     updated_notes = get_tablet_notes()
     assert any(n.get("text") == "Новая метка на плите" for n in updated_notes)
+
+
+def test_slate_armor_hp_defense_and_full_set():
+    """Тест параметров сланцевого сета: +50 HP суммарно, 12 брони, распознавание полного сета."""
+    game = GameState()
+    assert game.max_hp == 100
+    assert game.armor_defense == 0
+    assert game.is_full_slate_set_equipped() is False
+
+    # Надеваем части сета
+    game.equipment["head"] = "Сланцевая маска"
+    assert game.max_hp == 108
+    assert game.armor_defense == 2
+    assert game.is_full_slate_set_equipped() is False
+
+    game.equipment["torso"] = "Сланцевый панцирь"
+    assert game.max_hp == 133
+    assert game.armor_defense == 7
+    assert game.is_full_slate_set_equipped() is False
+
+    game.equipment["legs"] = "Сланцевые поножи"
+    assert game.max_hp == 145
+    assert game.armor_defense == 10
+    assert game.is_full_slate_set_equipped() is False
+
+    game.equipment["boots"] = "Сланцевые ботинки"
+    assert game.max_hp == 150
+    assert game.armor_defense == 12
+    assert game.is_full_slate_set_equipped() is True
+
+
+def test_ridge_without_armor_damage_and_retreat():
+    """Тест попытки пройти гребень без сланцевой брони: получение урона и отступление в лагерь."""
+    game = GameState()
+    game.hp = 100
+
+    # L3.7: отдых у печи перед подъёмом
+    text, kb = handle_location_3_slate_hollow("l3_7_morning", game, 101)
+    assert "Перед подъёмом" in text
+
+    # L3.8: без сета брони доступны атака (срыв), обход и возврат в лагерь
+    text, kb = handle_location_3_slate_hollow("l3_8_ridge", game, 101)
+    cbs = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+    assert "l3_9a_charge" in cbs
+    assert "l3_9b_ridge" in cbs
+    assert "back" in cbs
+    assert "l3_10_armored" not in cbs
+
+    # Таран секача без брони наносит 30 урона
+    handle_location_3_slate_hollow("l3_9a_charge", game, 101)
+    assert game.hp == 70
+
+    # Падение с карниза наносит 25 урона
+    handle_location_3_slate_hollow("l3_9b_ridge", game, 101)
+    assert game.hp == 45
+
+    # Возврат в лагерь открывает крафты сланцевого сета, окованного посоха и локацию Солонец (Секач)
+    text, kb = handle_location_3_slate_hollow("l3_9_camp", game, 101)
+    assert "Сланцевый панцирь" in game.unlocked_crafts
+    assert "Окованный посох" in game.unlocked_crafts
+    assert "Солонец (Секач)" in game.unlocked_locations
+
+
+def test_ridge_with_armor_and_peaceful_cache():
+    """Тест прохождения гребня в сланцевой броне мирным путём (карниз / схрон) с паритетом лута."""
+    game = GameState()
+    game.equipment = {
+        "head": "Сланцевая маска",
+        "torso": "Сланцевый панцирь",
+        "legs": "Сланцевые поножи",
+        "boots": "Сланцевые ботинки",
+    }
+    assert game.is_full_slate_set_equipped() is True
+
+    # На гребне в полной броне открывается доступ к прямому столкновению
+    text, kb = handle_location_3_slate_hollow("l3_8_ridge", game, 101)
+    cbs = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+    assert "l3_10_armored" in cbs
+
+    # Экран l3_10_armored
+    text, kb = handle_location_3_slate_hollow("l3_10_armored", game, 101)
+    cbs = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+    assert "l3_11a_start" in cbs
+    assert "l3_11b_cliff" in cbs
+
+    # Обход по карнизу в броне -> урон -5 HP, переход в схрон
+    hp_before = game.hp
+    text, kb = handle_location_3_slate_hollow("l3_11b_cliff", game, 101)
+    assert game.is_story_flag_set("boar_bypassed") is True
+    assert game.hp == hp_before - 5
+
+    # Схрон l3_12_cache: ещё -5 HP при срыве и одна кнопка взять припасы
+    text, kb = handle_location_3_slate_hollow("l3_12_cache", game, 101)
+    assert "тайная ниша" in text
+    assert [btn.callback_data for row in kb.inline_keyboard for btn in row] == ["l3_12_taken"]
+    assert game.hp == hp_before - 10
+
+    # Забираем припасы и оставляем взамен ягоды (l3_12_taken -> l3_13_kind)
+    handle_location_3_slate_hollow("l3_12_taken", game, 101)
+    game.inventory["Ягоды"] = 2
+    text, kb = handle_location_3_slate_hollow("l3_13_kind", game, 101)
+    assert game.inventory["Мясо"] == 4
+    assert game.inventory["Кожа"] == 2
+    assert game.inventory["Кость"] == 2
+    assert game.inventory["Ягоды"] == 1  # оставил ягоды взамен
+    assert game.is_story_flag_set("l3_ridge_completed") is True
+    assert game.narrative_karma.get("compassion", 0) == 2
+
+
+def test_boar_combat_tactics_and_victory_loot():
+    """Тест боевой системы с Секачом: паттерн уворотов (1-нет, 2-да, 3-да, 4-нет, 5-да), крит x2 и добыча."""
+    game = GameState()
+    game.equipment = {
+        "head": "Сланцевая маска",
+        "torso": "Сланцевый панцирь",
+        "legs": "Сланцевые поножи",
+        "boots": "Сланцевые ботинки",
+        "hand_right": "Окованный посох",
+        "trinket": "Клык волка",
+    }
+    game.hp = 150
+
+    # Начало боя: Секач 180 HP и сразу начинает с разгона на таран
+    text, kb = handle_location_3_slate_hollow("l3_start_boar_battle", game, 101)
+    assert game.wolf_battle is not None
+    assert game.wolf_battle["wolf_hp"] == 180
+    assert game.wolf_battle["is_charging"] is True
+
+    # 1. Первый уворот всегда неудачный -> Секач сносит тараном на 53 HP
+    hp_before = game.hp
+    text, kb = handle_location_3_slate_hollow("boar_battle_dodge", game, 101)
+    assert game.wolf_battle["is_stunned"] is False
+    assert game.wolf_battle["dodge_count"] == 1
+    assert (hp_before - game.hp) == 53
+
+    # 2. Второй уворот успешный -> Секач врезается в скалу и оглушён
+    game.wolf_battle["is_charging"] = True
+    text, kb = handle_location_3_slate_hollow("boar_battle_dodge", game, 101)
+    assert game.wolf_battle["is_stunned"] is True
+    assert game.wolf_battle["dodge_count"] == 2
+
+    # 3. Крит-удар посохом по оглушённому (×2)
+    hp_boar_before = game.wolf_battle["wolf_hp"]
+    text, kb = handle_location_3_slate_hollow("boar_battle_crit", game, 101)
+    dmg_done = hp_boar_before - game.wolf_battle["wolf_hp"]
+    assert dmg_done >= 20
+
+    # 4. Третий уворот успешный -> Секач оглушён
+    game.wolf_battle["is_charging"] = True
+    text, kb = handle_location_3_slate_hollow("boar_battle_dodge", game, 101)
+    assert game.wolf_battle["is_stunned"] is True
+    assert game.wolf_battle["dodge_count"] == 3
+
+    # 5. Четвёртый уворот неудачный -> пропуск и урон
+    game.wolf_battle["is_charging"] = True
+    hp_before = game.hp
+    text, kb = handle_location_3_slate_hollow("boar_battle_dodge", game, 101)
+    assert game.wolf_battle["is_stunned"] is False
+    assert game.wolf_battle["dodge_count"] == 4
+    assert game.hp < hp_before
+
+    # 6. Пятый уворот снова успешный -> оглушение
+    game.wolf_battle["is_charging"] = True
+    text, kb = handle_location_3_slate_hollow("boar_battle_dodge", game, 101)
+    assert game.wolf_battle["is_stunned"] is True
+    assert game.wolf_battle["dodge_count"] == 5
+
+    # 7. Победа над Секачом и разделка туши
+    handle_location_3_slate_hollow("l3_11a_win", game, 101)
+    assert game.is_story_flag_set("boar_killed") is True
+
+    text, kb = handle_location_3_slate_hollow("l3_12a_loot", game, 101)
+    assert game.is_story_flag_set("l3_ridge_completed") is True
+    assert game.inventory["Мясо"] == 4
+    assert game.inventory["Кожа"] == 2
+    assert game.inventory["Кость"] == 2

@@ -20,6 +20,8 @@ from modules.items import is_item_consumable, get_item_rank, get_item_type
 from modules.combat import (
     start_battle,
     apply_action,
+    get_battle_text,
+    get_battle_kb,
     get_battle_text as get_wolf_battle_text,
 )
 
@@ -78,7 +80,14 @@ def handle_story(data: str, game, uid: int):
     """Обработать сюжетную сцену волка и котёнка или передать в ветку других локаций."""
     if data.startswith("l2_") or data.startswith("ruchey_") or data == "location_enter_2":
         return handle_location_2_ruchey(data, game, uid)
-    if data.startswith("l3_") or data.startswith("slate_") or data.startswith("rest_") or data.startswith("examine_") or data == "location_enter_3":
+    if (
+        data.startswith("l3_")
+        or data.startswith("slate_")
+        or data.startswith("rest_")
+        or data.startswith("examine_")
+        or data.startswith("boar_")
+        or data in ("location_enter_3", "location_enter_boar")
+    ):
         return handle_location_3_slate_hollow(data, game, uid)
     if data.startswith("hunters_") or data.startswith("glade_") or data == "location_enter_4":
         return handle_location_4_hunters_glade(data, game, uid)
@@ -271,6 +280,15 @@ def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool)
                 if count >= 2:
                     game.set_story_flag("l3_story_started", True)
                     return "l3_1_fire_low", "🔥 Впереди под нависающей плитой мерцает тёплый отблеск..."
+
+        elif (
+            game.is_story_flag_set("l3_shelter_unlocked")
+            and not game.is_story_flag_set("l3_ridge_completed")
+            and not game.is_story_flag_set("l3_7_triggered")
+        ):
+            game.set_story_flag("l3_7_triggered", True)
+            return "l3_7_morning", "🐗 С каменистого гребня доносится глухой хруст..."
+
         return None, None
 
     if loc_id != 1:
@@ -319,7 +337,7 @@ def is_story_callback(data: str) -> bool:
             "story_next",
         )
         or data.startswith((
-            "l1_5", "l1_6", "l1_7", "wolf_lair", "wolf_battle",
+            "l1_5", "l1_6", "l1_7", "wolf_lair", "wolf_battle", "boar_",
             "l2_", "ruchey_",
             "l3_", "slate_", "rest_", "examine_", "location_enter_3",
             "hunters_", "glade_", "location_enter_4",
@@ -1239,16 +1257,31 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
     text = None
     kb = None
 
+    if data in ("location_enter_boar",):
+        game.reset_nav()
+        game.current_location = "Скромная Лощина"
+        return handle_location_3_slate_hollow("l3_8_ridge", game, uid)
+
     if data in ("location_enter_3", "slate_hollow_start"):
         game.reset_nav()
         game.current_location = "Скромная Лощина"
         if game.is_story_flag_set("l3_shelter_unlocked"):
-            text = (
-                "Ты стоишь в глубине Скромной Лощины под надёжным сланцевым навесом.\n"
-                "В каменной печи потрескивает огонь, укрытый от непогоды, а на плите виднеются записи путников.\n\n"
-                "Что будешь делать?"
-            )
-            kb = get_main_kb(game)
+            if not game.is_story_flag_set("l3_ridge_completed"):
+                text = (
+                    "Ты стоишь под сланцевым навесом у печи. Впереди крутой подъём на гребень — "
+                    "единственный путь дальше на Просеку."
+                )
+                kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🐗 Разведать подъём (⚠️)", callback_data="l3_7_morning")],
+                    [InlineKeyboardButton(text="🏕 В лагерь к печи", callback_data="back")],
+                ])
+            else:
+                text = (
+                    "Ты стоишь в глубине Скромной Лощины под надёжным сланцевым навесом.\n"
+                    "В каменной печи потрескивает огонь, укрытый от непогоды, а на плите виднеются записи путников.\n\n"
+                    "Что будешь делать?"
+                )
+                kb = get_main_kb(game)
         else:
             text = (
                 "Ты перешагиваешь порог Скромной Лощины. Воздух здесь плотный, прохладный,\n"
@@ -1393,7 +1426,8 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
         buttons = []
         if game.inventory.get("Глина", 0) >= 1:
             buttons.append([InlineKeyboardButton(text="🤲 Оставить глину для следующего", callback_data="l3_6_leave_clay")])
-        buttons.append([InlineKeyboardButton(text="🏕 Обустроить лагерь у печи", callback_data="l3_6_finalize")])
+        buttons.append([InlineKeyboardButton(text="✏️ Оставить предупреждение", callback_data="l3_6_warning")])
+        buttons.append([InlineKeyboardButton(text="🚶 Уйти", callback_data="l3_7_morning")])
         kb = InlineKeyboardMarkup(inline_keyboard=buttons)
 
     elif data == "l3_6_leave_clay":
@@ -1409,7 +1443,23 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
             "🤲 Отдано: Глина ×1 (+2 Сострадание)"
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🏕 Обустроить лагерь у печи", callback_data="l3_6_finalize")]
+            [InlineKeyboardButton(text="🚶 Уйти", callback_data="l3_7_morning")]
+        ])
+
+    elif data == "l3_6_warning":
+        game.adjust_narrative_karma("compassion", 1)
+        try:
+            from services.database import save_tablet_note
+            save_tablet_note(uid, "Путник", "Не закрывай заднюю щель печи. За каменным выступом сухо, здесь можно спать.")
+        except Exception:
+            pass
+        text = (
+            "Ты подбираешь острый камень и высекаешь на плите слова:\n\n"
+            "«Не закрывай заднюю щель печи. За каменным выступом сухо, здесь можно спать».\n\n"
+            "Пыль осыпается под пальцами. Твоя надпись добавлена на каменную плиту у печи."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🚶 Уйти", callback_data="l3_7_morning")]
         ])
 
     elif data == "l3_6_finalize":
@@ -1419,9 +1469,263 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
         game.campfire_durability = max(int(getattr(game, "campfire_durability", 0) or 0), 15)
         game.story_state = None
         game.reset_nav()
-        game.add_log("🧱 Ты обустроил лагерь у каменной печи! Теперь очаг защищён от непогоды.")
+        game.add_log("🧱 Ты вернулся в лагерь у каменной печи.")
         text = game.get_ui()
         kb = get_main_kb(game)
+
+    elif data == "l3_7_morning":
+        game.story_state = "l3_7"
+        game.set_story_flag("l3_shelter_unlocked", True)
+        game.set_story_flag("has_stove", True)
+        game.campfire_active = True
+        game.campfire_durability = max(int(getattr(game, "campfire_durability", 0) or 0), 15)
+        text = (
+            "Перед подъёмом ты позволяешь себе немного посидеть под навесом.\n"
+            "Камень за спиной ещё хранит тепло. Ты смотришь на чужие надписи, на почерневшие лопатки, на аккуратно заделанную щель в крыше.\n\n"
+            "Люди, которые сделали всё это, могли никогда не встречаться. Один нашёл сухое место. Другой сложил печь. Теперь здесь осталось что-то и от тебя."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l3_8_ridge")]
+        ])
+
+    elif data == "l3_8_ridge":
+        game.story_state = "l3_8"
+        text = (
+            "Ты просыпаешься от глухой вибрации земли. Из дальней горловины ущелья доносится хриплый храп и треск корней.\n\n"
+            "У солонца кормится бурая громада — матёрый Секач с клыками в ладонь. Он жадно вгрызается в соль на тропе. Справа над обрывом вьётся узкая тропа, где свистит ледяной ветер со сланцевой крошкой."
+        )
+        buttons = []
+        if getattr(game, "is_full_slate_set_equipped", lambda: False)():
+            buttons.append([InlineKeyboardButton(text="⚔️ Атаковать зверя", callback_data="l3_10_armored")])
+            buttons.append([InlineKeyboardButton(text="🧗 Лезть в обход", callback_data="l3_11b_cliff")])
+        else:
+            buttons.append([InlineKeyboardButton(text="⚔️ Атаковать зверя", callback_data="l3_9a_charge")])
+            buttons.append([InlineKeyboardButton(text="🧗 Лезть в обход", callback_data="l3_9b_ridge")])
+        buttons.append([InlineKeyboardButton(text="🏕 В лагерь", callback_data="back")])
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    elif data == "l3_9a_charge":
+        game.story_state = "l3_9a"
+        damage = 30
+        game.hp = max(1, getattr(game, "hp", 100) - damage)
+        game.add_log(f"💥 Секач сбил тебя тараном! −{damage} HP.")
+        text = (
+            "Ты делаешь шаг вперёд, но Секач мгновенно срывается с места и сносит тебя бешеным ударом!\n\n"
+            "Потасканная одежда не защищает от клыков — туша впечатывает тебя в каменные плиты (−30 HP). "
+            "Чудом вывернувшись, ты на четвереньках отползаешь назад за спасительный каменный уступ."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏃 Отступить", callback_data="l3_9_camp")]
+        ])
+
+    elif data == "l3_9b_ridge":
+        game.story_state = "l3_9b"
+        damage = 25
+        game.hp = max(1, getattr(game, "hp", 100) - damage)
+        game.add_log(f"⚠️ Срыв с узкой тропы! −{damage} HP.")
+        text = (
+            "Ты пробуешь карабкаться по узкой тропе над обрывом. Острые сланцевые грани безжалостно режут ладони и распарывают штанины. "
+            "Камень крошится под ногой, и ты срываешься вниз на острый щебень (−25 HP)!\n\n"
+            "Без крепких наколенников, защитных поножей и обуви по этим бритвенным камням не подняться."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏃 Отступить", callback_data="l3_9_camp")]
+        ])
+
+    elif data == "l3_9_camp":
+        game.story_state = None
+        game.reset_nav()
+        for rec in ("Сланцевая маска", "Сланцевый панцирь", "Сланцевые поножи", "Сланцевые ботинки", "Окованный посох"):
+            if hasattr(game, "unlock_craft"):
+                game.unlock_craft(rec)
+            elif rec not in getattr(game, "unlocked_crafts", []):
+                game.unlocked_crafts.append(rec)
+
+        unlocked_locs = getattr(game, "unlocked_locations", []) or []
+        if "Солонец (Секач)" not in unlocked_locs:
+            if hasattr(game, "unlocked_locations"):
+                game.unlocked_locations.append("Солонец (Секач)")
+
+        game.add_log("🔨 Открыты новые рецепты: Сланцевая броня и Окованный посох.")
+        game.add_log("📍 Открыта локация: Солонец (Секач).")
+        text = (
+            "Ты возвращаешься к каменному козырьку, тяжело дыша и зажимая свежие раны.\n\n"
+            "Слова из свитка сбылись: не лезь в лоб без крепкого щита, а на узкую тропу над обрывом без надёжных поножей и обуви не залезть — скала изрежет до костей.\n\n"
+            "Обычный деревянный посох зверь переломит пополам — его нужно оковать железом и сланцем. А из тяжёлых сланцевых слитков предстоит выковать монолитный доспех.\n\n"
+            "🔨 Открыты новые рецепты: Сланцевая броня и Окованный посох.\n"
+            "📍 Открыта локация: Солонец (Секач)."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕 В лагерь", callback_data="back")]
+        ])
+
+    elif data == "l3_10_armored":
+        game.story_state = "l3_10"
+        text = (
+            "Тёмная сланцевая броня отливает холодным матовым блеском. "
+            "Массивный панцирь и щитки, выкованные из сланцевых слитков, глухо звенят, надёжно закрывая корпус и ноги. "
+            "Окованный посох уверенно лежит в ладони.\n\n"
+            "Впереди всё так же кормится Секач у солонца, а над ним вьётся узкая тропа в обход скалы. Теперь ты готов ко всему."
+        )
+        buttons = [
+            [InlineKeyboardButton(text="⚔️ Атаковать зверя", callback_data="l3_11a_start")],
+            [InlineKeyboardButton(text="🧗 Лезть в обход", callback_data="l3_11b_cliff")],
+            [InlineKeyboardButton(text="🏕 В лагерь", callback_data="back")],
+        ]
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    elif data == "l3_11a_start":
+        game.story_state = "l3_11a_start"
+        text = (
+            "Ты уверенно выходишь на солонец навстречу зверю.\n\n"
+            "Секач вскидывает массивную клыкастую голову, глухо ревёт и бьёт копытом о каменную плиту, готовясь к атаке. Время обнажить оружие!"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⚔️ Сражаться!", callback_data="l3_start_boar_battle")]
+        ])
+
+    elif data in ("l3_start_boar_battle", "boar_battle_screen"):
+        if data == "l3_start_boar_battle" or not getattr(game, "wolf_battle", None):
+            return start_battle(game, "ancient_boar")
+        return get_battle_text(game, "ancient_boar"), get_battle_kb(game, "ancient_boar")
+
+    elif data.startswith("boar_battle_"):
+        return apply_action(data, game, "ancient_boar")
+
+    elif data == "l3_11a_win":
+        game.wolf_battle = None
+        game.story_state = "l3_11a"
+        game.set_story_flag("boar_killed", True)
+        game.adjust_narrative_karma("compassion", -1)
+        game.adjust_narrative_karma("pragmatism", 3)
+        game.adjust_narrative_karma("intervention", 3)
+        text = (
+            "Секач повержен. Громадная туша рухнула на серые плиты у солонца, взметнув сухую пыль, и затихла.\n\n"
+            "Подъём наверх свободен. Впереди, на границе ущелья, уже видны светлые стволы осиновой рощи."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔪 Собрать лут", callback_data="l3_12a_loot")]
+        ])
+
+    elif data == "l3_12a_loot":
+        game.story_state = "l3_12a"
+        game.set_story_flag("l3_ridge_completed", True)
+        game.inventory["Мясо"] = game.inventory.get("Мясо", 0) + 4
+        game.inventory["Кожа"] = game.inventory.get("Кожа", 0) + 2
+        game.inventory["Кость"] = game.inventory.get("Кость", 0) + 2
+
+        text = (
+            "Секач повержен. Острым сколом ты быстро разделываешь тушу и забираешь ценную добычу:\n\n"
+            "📦 Получено:\n"
+            "🥩 Мясо ×4\n"
+            "🪢 Кожа ×2\n"
+            "🦴 Кость ×2"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l3_13_boundary")]
+        ])
+
+    elif data == "l3_11b_cliff":
+        game.story_state = "l3_11b"
+        game.set_story_flag("boar_bypassed", True)
+        game.adjust_narrative_karma("observation", 2)
+        game.adjust_narrative_karma("pragmatism", 2)
+        cliff_dmg = 5
+        game.hp = max(1, getattr(game, "hp", 100) - cliff_dmg)
+        game.add_log(f"⚠️ Острые щепки тропы: −{cliff_dmg} HP.")
+        text = (
+            "Ты осторожно ступаешь на узкую тропу над солонцом. Кабан кормится внизу и тебя не замечает.\n\n"
+            "Острые сланцевые щепки летят из-под ног, секут руки и сочленения доспеха (−5 HP)."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l3_12_cache")]
+        ])
+
+    elif data == "l3_12_cache":
+        game.story_state = "l3_12"
+        slip_dmg = 5
+        game.hp = max(1, getattr(game, "hp", 100) - slip_dmg)
+        game.add_log(f"⚠️ Срыв на узкой тропе: −{slip_dmg} HP.")
+        text = (
+            "Внезапно под ногой на узкой тропе обламывается пласт породы! Ты срываешься вниз, чудом успев ухватиться за выступ одной рукой. "
+            "Ноги повисают в пустоте, острый камень обдирает пальцы (−5 HP)!\n\n"
+            "Отчаянно шаря рукой по отвесной стене, пальцы ухватываются за край глубокой расселины. "
+            "Ты подтягиваешься и заглядываешь внутрь — в породе скрыта тайная ниша, оставленная охотником.\n\n"
+            "Внутри лежат сушёное мясо, полосы кожи и крепкие кости."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🎒 Взять припасы", callback_data="l3_12_taken")],
+        ])
+
+    elif data == "l3_12_taken":
+        game.inventory["Мясо"] = game.inventory.get("Мясо", 0) + 4
+        game.inventory["Кожа"] = game.inventory.get("Кожа", 0) + 2
+        game.inventory["Кость"] = game.inventory.get("Кость", 0) + 2
+        text = (
+            "Ты перекладываешь припасы в мешок (+4 Мясо, +2 Кожа, +2 Кость).\n\n"
+            "На плоском камне в глубине ниши выбиты слова:\n"
+            "«Если взял — оставь для следующего»."
+        )
+        buttons = []
+        has_food = game.inventory.get("Ягоды", 0) > 0 or game.inventory.get("Грибы", 0) > 0 or game.inventory.get("Мясо", 0) > 1
+        if has_food:
+            buttons.append([InlineKeyboardButton(text="🤲 Что-нибудь положить", callback_data="l3_13_kind")])
+        buttons.append([InlineKeyboardButton(text="🚶 Уйти", callback_data="l3_13_greed")])
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    elif data == "l3_13_kind":
+        game.story_state = "l3_13"
+        game.set_story_flag("l3_ridge_completed", True)
+        game.adjust_narrative_karma("compassion", 2)
+        if game.inventory.get("Ягоды", 0) > 0:
+            game.inventory["Ягоды"] -= 1
+            if game.inventory["Ягоды"] <= 0:
+                del game.inventory["Ягоды"]
+        elif game.inventory.get("Мясо", 0) > 0:
+            game.inventory["Мясо"] -= 1
+
+        text = (
+            "Ты аккуратно складываешь в нишу часть своих припасов и закрываешь отверстие каменным диском.\n\n"
+            "Долг перед тем, кто шёл впереди, закрыт (+2 Сострадание)."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l3_13_boundary")]
+        ])
+
+    elif data == "l3_13_greed":
+        game.story_state = "l3_13"
+        game.set_story_flag("l3_ridge_completed", True)
+        game.adjust_narrative_karma("pragmatism", 2)
+        text = (
+            "В тайге выживает тот, кто берёт всё и не оглядывается (+2 Прагматизм).\n\n"
+            "Ты оставляешь каменную нишу пустой и даже не закрываешь вход камнем."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l3_13_boundary")]
+        ])
+
+    elif data == "l3_13_boundary":
+        game.set_story_flag("l3_ridge_completed", True)
+        text = (
+            "По сланцевым выступам ты поднимаешься к краю лощины.\n"
+            "Отсюда видна полоса более редкого леса. Между стволами что-то светлеет.\n\n"
+            "С ветки свисает тонкий шнур. На его конце медленно поворачивается маленькая костяная пластинка. "
+            "Чуть дальше висит ещё одна. Кто-то отмечал дорогу. Или границу."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🌲 Шагнуть на Просеку", callback_data="location_enter_4")]
+        ])
+
+    elif data == "l3_flee_to_camp":
+        game.wolf_battle = None
+        game.story_state = None
+        text = (
+            "Ты отпрыгиваешь назад, скатываешься по осыпи и укрываешься в лагере под навесом.\n\n"
+            "Секач шумно сопит у солонца, не преследуя тебя дальше."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕 В лагерь", callback_data="back")]
+        ])
 
     # Старые коллбэки для обратной совместимости
     elif data == "slate_examine":
@@ -1443,7 +1747,7 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
         game.story_state = None
         kb = get_main_kb(game)
 
-    if kb == get_main_kb(game) or data in ("l3_6_finalize", "slate_end", "back") or getattr(game, "hp", 100) <= 0:
+    if kb == get_main_kb(game) or data in ("l3_6_finalize", "l3_11a_win", "l3_13_kind", "l3_13_greed", "l3_flee_to_camp", "slate_end", "back") or getattr(game, "hp", 100) <= 0:
         game.active_story_callback = None
     elif text is not None:
         game.active_story_callback = data

@@ -956,6 +956,10 @@ class GameState:
         slate_count = sum(1 for slot, name in slate_items.items() if self.equipment.get(slot) == name)
         if slate_count > 0 or getattr(self, "is_story_flag_set", lambda f: False)("l2_thorns_seen"):
             bonus_lines.append(f"• 🛡 Защита от шипов: {slate_count}/4")
+        if self.armor_defense > 0:
+            bonus_lines.append(f"• 🛡 Общая защита: +{self.armor_defense}")
+        if self.max_hp > 100:
+            bonus_lines.append(f"• ❤️ Макс. здоровье: {self.max_hp} (+{self.max_hp - 100} HP)")
 
         if not bonus_lines:
             bonus_block = "📊 ОБЩИЕ БОНУСЫ СНАРЯЖЕНИЯ:\n• Бонусы отсутствуют."
@@ -965,6 +969,57 @@ class GameState:
 
         body = "\n\n".join(blocks)
         return f"━━━━━━━━━━━━━━━━━━━\n{body}\n━━━━━━━━━━━━━━━━━━━"
+
+    @property
+    def max_hp(self) -> int:
+        bonus = 0
+        slate_hp = {
+            "Сланцевая маска": 8,
+            "Сланцевый панцирь": 25,
+            "Сланцевые поножи": 12,
+            "Сланцевые ботинки": 5,
+        }
+        for item in (getattr(self, "equipment", {}) or {}).values():
+            if item in slate_hp:
+                bonus += slate_hp[item]
+        return 100 + bonus
+
+    @property
+    def armor_defense(self) -> int:
+        defense = 0
+        slate_def = {
+            "Сланцевая маска": 2,
+            "Сланцевый панцирь": 5,
+            "Сланцевые поножи": 3,
+            "Сланцевые ботинки": 2,
+        }
+        for item in (getattr(self, "equipment", {}) or {}).values():
+            if item in slate_def:
+                defense += slate_def[item]
+        return defense
+
+    def is_full_slate_set_equipped(self) -> bool:
+        eq = getattr(self, "equipment", {}) or {}
+        has_pants = eq.get("pants") == "Сланцевые поножи" or eq.get("legs") == "Сланцевые поножи"
+        return (
+            eq.get("head") == "Сланцевая маска"
+            and eq.get("torso") == "Сланцевый панцирь"
+            and has_pants
+            and eq.get("boots") == "Сланцевые ботинки"
+        )
+
+    def count_slate_pieces_equipped(self) -> int:
+        eq = getattr(self, "equipment", {}) or {}
+        count = 0
+        if eq.get("head") == "Сланцевая маска":
+            count += 1
+        if eq.get("torso") == "Сланцевый панцирь":
+            count += 1
+        if eq.get("pants") == "Сланцевые поножи" or eq.get("legs") == "Сланцевые поножи":
+            count += 1
+        if eq.get("boots") == "Сланцевые ботинки":
+            count += 1
+        return count
 
     def get_death_text(self, reason: str = "") -> str:
         return get_death_text(self, reason)
