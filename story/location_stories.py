@@ -78,7 +78,7 @@ def handle_story(data: str, game, uid: int):
     """Обработать сюжетную сцену волка и котёнка или передать в ветку других локаций."""
     if data.startswith("l2_") or data.startswith("ruchey_") or data == "location_enter_2":
         return handle_location_2_ruchey(data, game, uid)
-    if data.startswith("slate_") or data.startswith("rest_") or data.startswith("examine_") or data == "location_enter_3":
+    if data.startswith("l3_") or data.startswith("slate_") or data.startswith("rest_") or data.startswith("examine_") or data == "location_enter_3":
         return handle_location_3_slate_hollow(data, game, uid)
     if data.startswith("hunters_") or data.startswith("glade_") or data == "location_enter_4":
         return handle_location_4_hunters_glade(data, game, uid)
@@ -251,6 +251,28 @@ def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool)
     Возвращает:
         (callback_name, log_message) или (None, None).
     """
+    if loc_id == 3:
+        # Триггер Локации 3 (Скромная Лощина: обнаружение печи и убежища)
+        # Условие: не сразу в первый день, а после сна на локации (день > дня входа или общий день >= 5)
+        # на 2-е исследование этого дня.
+        if (
+            not game.is_story_flag_set("l3_shelter_unlocked")
+            and not game.is_story_flag_set("l3_story_started")
+        ):
+            l3_entered = game.story_flags.get("l3_entered_day")
+            if l3_entered is None:
+                game.story_flags["l3_entered_day"] = getattr(game, "day", 1)
+                l3_entered = game.story_flags["l3_entered_day"]
+
+            cur_day = getattr(game, "day", 1)
+            if cur_day > l3_entered or cur_day >= 5:
+                count = getattr(game, "l3_research_count", 0) + 1
+                game.l3_research_count = count
+                if count >= 2:
+                    game.set_story_flag("l3_story_started", True)
+                    return "l3_1_fire_low", "🔥 Впереди под нависающей плитой мерцает тёплый отблеск..."
+        return None, None
+
     if loc_id != 1:
         return None, None
 
@@ -299,7 +321,7 @@ def is_story_callback(data: str) -> bool:
         or data.startswith((
             "l1_5", "l1_6", "l1_7", "wolf_lair", "wolf_battle",
             "l2_", "ruchey_",
-            "slate_", "rest_", "examine_", "location_enter_3",
+            "l3_", "slate_", "rest_", "examine_", "location_enter_3",
             "hunters_", "glade_", "location_enter_4",
             "slug_", "pit_", "location_enter_5",
             "furry_", "warm_", "cave_", "location_enter_6",
@@ -1185,6 +1207,10 @@ def handle_location_2_ruchey(data: str, game, uid: int):
             game.unlocked_locations = unlocked
         game.set_story_flag("l2_completed", True)
 
+        # Карма за решение головоломки за 1 или 2 захода (максимум 1 ошибка)
+        if getattr(game, "l2_puzzle_attempt", 0) <= 1:
+            game.adjust_narrative_karma("observation", 2)
+
         text = (
             "Раздаётся оглушительный лязг многотонных противовесов. "
             "Многолетняя ржавчина осыпается бурыми хлопьями, когда тяжёлые шестерни приходят в движение.\n\n"
@@ -1208,66 +1234,216 @@ def handle_location_2_ruchey(data: str, game, uid: int):
 # ЛОКАЦИЯ 3: СКРОМНАЯ ЛОЩИНА
 # ──────────────────────────────────────────────────────────────────────────────
 
-def handle_location_3_slate_hollow(data, game, uid):
-    """Обработать события на локации 'Скромная Лощина'."""
+def handle_location_3_slate_hollow(data: str, game, uid: int):
+    """Сюжетная линия Локации 3: Скромная Лощина, убежище у сланцевой печи и каменная плита."""
     text = None
     kb = None
-    
-    if data in ("slate_hollow_start", "location_enter_3"):
+
+    if data in ("location_enter_3", "slate_hollow_start"):
+        game.reset_nav()
+        game.current_location = "Скромная Лощина"
+        if game.is_story_flag_set("l3_shelter_unlocked"):
+            text = (
+                "Ты стоишь в глубине Скромной Лощины под надёжным сланцевым навесом.\n"
+                "В каменной печи потрескивает огонь, укрытый от непогоды, а на плите виднеются записи путников.\n\n"
+                "Что будешь делать?"
+            )
+            kb = get_main_kb(game)
+        else:
+            text = (
+                "Ты перешагиваешь порог Скромной Лощины. Воздух здесь плотный, прохладный,\n"
+                "запах влажного камня и древней глины. Стены выложены из ровных пластов тёмного сланца.\n\n"
+                "Лощина тянется далеко вперёд, уводя вглубь каменистого ущелья."
+            )
+            kb = get_main_kb(game)
+
+    elif data == "l3_1_fire_low":
+        game.story_state = "l3_1"
         text = (
-            "Ты перешагиваешь порог Скромной Лощины. Воздух здесь плотный, прохладный,\n"
-            "запах влажного камня и древней глины. Стены выложены из тёмного сланца,\n"
-            "отражая тусклый свет факела.\n\n"
-            "Что будешь делать?"
+            "Ты спускаешься в неглубокую лощину.\n"
+            "Ветер остаётся наверху. Здесь слышно только, как вода с редкими щелчками падает с каменного выступа.\n"
+            "Стены сложены из ровных пластов серого сланца. Между ними темнеет влажная глина. "
+            "На одном из камней отпечатался тонкий лист — с таким чётким стеблем, будто его прижали сюда вчера.\n\n"
+            "Под нависающей плитой что-то мерцает.\n"
+            "Ты подходишь ближе.\n"
+            "Небольшая печь сложена прямо у стены. В её глубине тлеют угли. Над ними дрожит воздух.\n"
+            "Рядом стоит пустая кружка. Она лежит на боку, ручкой к выходу."
         )
-        game.karma["mysterious"] = game.karma.get("mysterious", 0) + 2
-        game.story_state = "slate_encounter"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗣 Позвать хозяина", callback_data="l3_2_call")],
+            [InlineKeyboardButton(text="🔍 Осмотреть убежище", callback_data="l3_3_inspect")],
+            [InlineKeyboardButton(text="↩️ Не трогать и уйти", callback_data="back")],
+        ])
+
+    elif data == "l3_2_call":
+        game.story_state = "l3_2"
+        text = (
+            "— Здесь кто-нибудь есть?\n\n"
+            "Голос звучит неожиданно громко. Ты ждёшь.\n"
+            "С каменного выступа срывается капля. Потом ещё одна.\n"
+            "Никто не отвечает.\n\n"
+            "Ты замечаешь возле печи гладкую плитку с нацарапанными словами. "
+            "Нижний край вдавлен в глину, чтобы она стояла вертикально:\n"
+            "«Если пришёл — грейся.\n"
+            "Если взял — оставь для следующего»."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l3_3_inspect")]
+        ])
+
+    elif data == "l3_3_inspect":
+        game.story_state = "l3_3"
+        text = (
+            "Под каменным навесом достаточно места, чтобы лечь, не сворачиваясь клубком.\n"
+            "Земля выровнена. В щелях стены аккуратно размазана глина. "
+            "Возле печи сложены две длинные деревянные лопатки, почерневшие на концах.\n\n"
+            "Здесь не просто пережидали дождь. Кто-то старался сделать так, чтобы можно было остаться.\n"
+            "На стене, чуть выше пола, видны короткие надписи:\n"
+            "«Крыша течёт справа».\n"
+            "Ниже, другим почерком:\n"
+            "«Уже нет».\n\n"
+            "Ты проводишь взглядом по заделанной щели. Глина в ней отличается по цвету от остальной стены."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🧱 Осмотреть печь", callback_data="l3_5_stove")],
+            [InlineKeyboardButton(text="📜 Посмотреть остальные надписи", callback_data="l3_4_writings")],
+        ])
+
+    elif data == "l3_4_writings":
+        game.story_state = "l3_4"
+        game.adjust_narrative_karma("observation", 1)
+        text = (
+            "Большую часть надписей трудно разобрать. Одни процарапаны острым камнем, другие проведены пальцем по ещё мягкой глине.\n\n"
+            "«Не пей из лужи у выхода».\n"
+            "«В печи тяга плохая. Заднюю щель не закрывать».\n"
+            "«Спасибо за сухое место».\n\n"
+            "Последняя надпись находится совсем низко:\n"
+            "«Я думал, здесь никого больше нет».\n"
+            "Под ней — несколько коротких чёрточек. Ты сначала принимаешь их за счёт дней. Потом замечаешь возле одной:\n"
+            "«Я тоже».\n\n"
+            "👁️ Наблюдательность: ты запомнил совет о тяге в печи."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🧱 К печи ➔", callback_data="l3_5_stove")]
+        ])
+
+    elif data == "l3_5_stove":
+        game.story_state = "l3_5"
+        text = (
+            "На двух каменных опорах внутри печи лежит плоская заготовка.\n"
+            "По краям она уже стала тёмной и плотной, но середина ещё светлее.\n"
+            "Рядом на стенке нацарапана простая последовательность рисунков:\n"
+            "глина ➔ плоская форма ➔ печь ➔ готовая пластина.\n"
+            "Под последним рисунком написано: «Не спеши вынимать».\n\n"
+            "Топлива в очаге осталось немного, но под каменным козырьком припрятаны сухие щепки.\n"
+            "Теперь это укрытие станет твоим новым домом. С такой печью здесь можно пережить любые холода. "
+            "Осталось лишь решить, что сделать с первой заготовкой."
+        )
+        flask = int(getattr(game, "flask_water", 0) or 0)
+        has_water = flask >= 2 or game.inventory.get("Вода", 0) >= 2 or game.inventory.get("Бутылка воды", 0) >= 1
+
+        buttons = [
+            [InlineKeyboardButton(text="🔥 Закончить обжиг", callback_data="l3_5_finish_bake")],
+        ]
+        if has_water:
+            buttons.append([InlineKeyboardButton(text="💧 Погасить печь и забрать глину", callback_data="l3_5_take_clay")])
+        buttons.append([InlineKeyboardButton(text="✋ Оставить заготовку на месте", callback_data="l3_6_stay")])
+
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    elif data == "l3_5_finish_bake":
+        game.inventory["Сланцевый слиток"] = game.inventory.get("Сланцевый слиток", 0) + 1
+        game.adjust_narrative_karma("pragmatism", 2)
+        text = (
+            "Ты подкладываешь сухих щепок под заготовку. Огонь разгорается ярче, жар охватывает форму со всех сторон.\n\n"
+            "Спустя время раскалённый брусок остывает, превращаясь в крепкий, закалённый Сланцевый слиток!\n\n"
+            "📦 Получено: Сланцевый слиток ×1"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l3_6_stay")]
+        ])
+
+    elif data == "l3_5_take_clay":
+        flask = int(getattr(game, "flask_water", 0) or 0)
+        if flask >= 2:
+            game.flask_water = max(0, flask - 2)
+        elif game.inventory.get("Вода", 0) >= 2:
+            game.inventory["Вода"] -= 2
+        game.inventory["Глина"] = game.inventory.get("Глина", 0) + 1
+        game.adjust_narrative_karma("compassion", 1)
+        text = (
+            "Ты аккуратно плещешь водой на угли. С шипением поднимается пар, остужая заготовку.\n\n"
+            "Ты вынимаешь сырую глину из формы, скатывая её в плотный комок.\n\n"
+            "📦 Получено: Глина ×1"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l3_6_stay")]
+        ])
+
+    elif data == "l3_6_stay":
+        game.story_state = "l3_6"
+        text = (
+            "Ты оглядываешь сухое каменное укрытие.\n"
+            "Печь сложена на совесть, стены защищают от сквозняков, а над головой — надёжный сланцевый навес.\n\n"
+            "«Тот, кто растопил эту печь и оставил заготовку, явно вернётся сюда. Или хотя бы проходил совсем недавно... "
+            "Торопиться некуда. Надо обжиться на этом месте и дождаться хозяина».\n\n"
+            "Возле печи в глину вдавлена каменная плита: «Если пришёл — грейся. Если взял — оставь для следующего».\n"
+            "Рядом чернеет пустая форма для новой заготовки."
+        )
+        buttons = []
+        if game.inventory.get("Глина", 0) >= 1:
+            buttons.append([InlineKeyboardButton(text="🤲 Оставить глину для следующего", callback_data="l3_6_leave_clay")])
+        buttons.append([InlineKeyboardButton(text="🏕 Обустроить лагерь у печи", callback_data="l3_6_finalize")])
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    elif data == "l3_6_leave_clay":
+        if game.inventory.get("Глина", 0) >= 1:
+            game.inventory["Глина"] -= 1
+            if game.inventory["Глина"] <= 0:
+                del game.inventory["Глина"]
+        game.adjust_narrative_karma("compassion", 2)
+        game.set_story_flag("left_clay_for_next", True)
+        text = (
+            "Ты кладёшь кусок чистой глины в пустую каменную форму у печи.\n"
+            "Пусть следующий путник тоже найдёт здесь то, что согреет его и поможет выжить.\n\n"
+            "🤲 Отдано: Глина ×1 (+2 Сострадание)"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕 Обустроить лагерь у печи", callback_data="l3_6_finalize")]
+        ])
+
+    elif data == "l3_6_finalize":
+        game.set_story_flag("l3_shelter_unlocked", True)
+        game.set_story_flag("has_stove", True)
+        game.campfire_active = True
+        game.campfire_durability = max(int(getattr(game, "campfire_durability", 0) or 0), 15)
+        game.story_state = None
+        game.reset_nav()
+        game.add_log("🧱 Ты обустроил лагерь у каменной печи! Теперь очаг защищён от непогоды.")
+        text = game.get_ui()
         kb = get_main_kb(game)
-    
+
+    # Старые коллбэки для обратной совместимости
     elif data == "slate_examine":
         game.adjust_narrative_karma("observation", 3)
         text = (
             "Ты осматриваешь стены — сланец холодный на ощупь, с тонкими прожилками.\n"
-            "Где-то в углу лежит глиняный слиток — основа для крафта новой брони.\n\n"
             "Сланцевая Лощина — место, где камень живёт своей жизнью."
         )
-        game.karma["clever"] = game.karma.get("clever", 0) + 1
-        game.story_state = "slate_exploring"
         kb = get_main_kb(game)
-    
     elif data == "slate_climb":
         game.adjust_narrative_karma("intervention", 2)
-        text = (
-            "Ты взбираешься по ступеням, ведущим к верхней палате. Сланец скрипит под ногами,\n"
-            "отдавая эхом в пустоту. Вверху — ещё больше глины, ещё больше возможностей.\n\n"
-            "Поднимайся выше — там ждут новые открытия."
-        )
-        game.karma["heroic"] = game.karma.get("heroic", 0) + 1
-        game.story_state = "slate_upper"
+        text = "Ты взбираешься по ступеням, ведущим к верхней палате."
         kb = get_main_kb(game)
-    
     elif data == "slate_rest":
         game.adjust_narrative_karma("compassion", 1)
-        text = (
-            "Ты накрываешься на свежем камне, давая телу отдохнуть. Прохладный сланец\n"
-            "впитывает тепло, а ты чувствуешь, как напряжение спадает.\n\n"
-            "Отдых в каменистой палате — редкое удовольствие."
-        )
-        game.karma["gentle"] = game.karma.get("gentle", 0) + 1
-        game.story_state = "slate_resting"
+        text = "Ты отдыхаешь на прохладном сланце."
         kb = get_main_kb(game)
-    
     elif data == "slate_end":
-        text = (
-            "Ты покидаешь Лощину, оставляя за собой лишь воспоминания о холодном камне\n"
-            "и глиняных слитках. Сланцевая броня теперь часть твоего арсенала."
-        )
         game.story_state = None
-        if hasattr(game, "reset_nav"):
-            game.reset_nav()
         kb = get_main_kb(game)
-    
-    if kb == get_main_kb(game) or data in ("slate_end", "back") or getattr(game, "hp", 100) <= 0:
+
+    if kb == get_main_kb(game) or data in ("l3_6_finalize", "slate_end", "back") or getattr(game, "hp", 100) <= 0:
         game.active_story_callback = None
     elif text is not None:
         game.active_story_callback = data

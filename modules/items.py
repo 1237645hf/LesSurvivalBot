@@ -642,6 +642,30 @@ ITEMS: Dict[str, Dict[str, Any]] = {
         "can_use": False,
         "stackable": True,
     },
+    "Сланцевый слиток": {
+        "description": "Плотный, обожжённый в печи термостойкий брусок из сланца и глины. Основа для продвинутого снаряжения.",
+        "type": "resource",
+        "rank": 2,
+        "note": "Материал печного обжига для ковки и посуды.",
+        "can_use": False,
+        "stackable": True,
+    },
+    "Древесный уголь": {
+        "description": "Туго обугленные без доступа воздуха ветви и кора. Даёт ровный, мощный жар без едкого дыма.",
+        "type": "fuel",
+        "rank": 2,
+        "note": "Высокоэффективное топливо: добавляет +3 к прочности очага.",
+        "can_use": False,
+        "stackable": True,
+    },
+    "Сланцевая тарелка": {
+        "description": "Прочная плоская тарелка из обожжённого сланца. Многоразовая посуда для приготовления сытных похлёбок и рагу.",
+        "type": "tool",
+        "rank": 2,
+        "note": "Заменяет кусок коры при готовке; после еды возвращается в инвентарь.",
+        "can_use": False,
+        "stackable": True,
+    },
     "Кость": {
         "description": "Крепкий трубчатый фрагмент скелета таёжного зверя. Необработанная кость, которой найдётся применение на стоянке.",
         "type": "resource",
@@ -669,20 +693,30 @@ ITEMS: Dict[str, Dict[str, Any]] = {
 }
 
 
+def _clean_item_name(item_name: str) -> str:
+    if isinstance(item_name, str) and item_name.endswith(" (🍽️)"):
+        return item_name[:-5].strip()
+    return item_name
+
+
 def get_item_description(item_name: str) -> str:
-    return ITEMS.get(item_name, {}).get("description", "Нет описания")
+    base = _clean_item_name(item_name)
+    return ITEMS.get(item_name, ITEMS.get(base, {})).get("description", "Нет описания")
 
 
 def get_item_type(item_name: str) -> str:
-    return ITEMS.get(item_name, {}).get("type", "misc")
+    base = _clean_item_name(item_name)
+    return ITEMS.get(item_name, ITEMS.get(base, {})).get("type", "misc")
 
 
 def get_item_rank(item_name: str) -> int:
-    return int(ITEMS.get(item_name, {}).get("rank", 1))
+    base = _clean_item_name(item_name)
+    return int(ITEMS.get(item_name, ITEMS.get(base, {})).get("rank", 1))
 
 
 def get_item_rank_marker(item_name: str) -> str:
     item_clean = item_name.replace(" 🔥", "").replace("🔥", "").strip()
+    item_clean = _clean_item_name(item_clean)
     for prefix in ("⚪ ", "🟢 ", "🔵 ", "🟣 ", "🟡 ", "🟨 ", "🌿 ", "🫐 ", "🍄 ", "📦 "):
         if item_clean.startswith(prefix):
             item_clean = item_clean[len(prefix):].strip()
@@ -706,15 +740,18 @@ def get_item_display_name(item_name: str) -> str:
 
 
 def get_item_effects(item_name: str) -> Dict[str, int]:
-    return dict(ITEMS.get(item_name, {}).get("effects", {}))
+    base = _clean_item_name(item_name)
+    return dict(ITEMS.get(item_name, ITEMS.get(base, {})).get("effects", {}))
 
 
 def get_item_negative_effects(item_name: str) -> Optional[Dict[str, Any]]:
-    return ITEMS.get(item_name, {}).get("negative_effects")
+    base = _clean_item_name(item_name)
+    return ITEMS.get(item_name, ITEMS.get(base, {})).get("negative_effects")
 
 
 def get_item_stackable(item_name: str) -> bool:
-    return ITEMS.get(item_name, {}).get("stackable", True)
+    base = _clean_item_name(item_name)
+    return ITEMS.get(item_name, ITEMS.get(base, {})).get("stackable", True)
 
 
 def get_all_items() -> Dict[str, Dict]:
@@ -730,11 +767,13 @@ def is_mushroom(item_name: str) -> bool:
 
 
 def _item_can_use(item_name: str) -> bool:
-    return ITEMS.get(item_name, {}).get("can_use", True)
+    base = _clean_item_name(item_name)
+    return ITEMS.get(item_name, ITEMS.get(base, {})).get("can_use", True)
 
 
 def _has_consumable_effects(item_name: str) -> bool:
-    effects = ITEMS.get(item_name, {}).get("effects", {})
+    base = _clean_item_name(item_name)
+    effects = ITEMS.get(item_name, ITEMS.get(base, {})).get("effects", {})
     return any(k in CONSUMABLE_EFFECT_KEYS for k in effects)
 
 
@@ -760,6 +799,7 @@ ITEM_EMOJIS: Dict[str, str] = {
     "Ветка": "🪵", "Палка": "🪵", "Палки": "🪵",
     "Камень": "🪨", "Заострённый камень": "🪨",
     "Сланец": "⛰️", "Сланцевая заготовка": "◽", "Сланцевая пластина": "🛡️",
+    "Сланцевый слиток": "🧱", "Древесный уголь": "⚫", "Сланцевая тарелка": "🍽️",
     "Кусок коры": "🍂", "Кора": "🍂",
     "Мох": "🧽", "Сухой мох": "🧽", "Сухая трава": "🧽", "Пещерный мох": "🧽", "Горный лишайник": "🧽",
     "Глина": "🏺", "Слизь": "🧪", "Кость": "🦴", "Кожа": "🟤", "Мех": "🧶",

@@ -109,6 +109,8 @@ def get_item_card_actions_kb(item_name: str, game=None):
         keyboard.append([InlineKeyboardButton(text="🥾 Надеть ботинки", callback_data="use_item_Сланцевые ботинки")])
     elif item_name == "Отремонтированные ботинки":
         keyboard.append([InlineKeyboardButton(text="🥾 Надеть ботинки", callback_data="use_item_Отремонтированные ботинки")])
+    elif item_name == "Охотничья ловушка":
+        keyboard.append([InlineKeyboardButton(text="🪤 Установить ловушку", callback_data="use_item_Охотничья ловушка")])
     elif is_item_consumable(item_name):
         keyboard.append([InlineKeyboardButton(text="🍽️ Съесть / Применить", callback_data=f"use_consumable_{item_name}")])
 
@@ -153,11 +155,15 @@ def get_bottle_actions_kb():
 
 
 def get_main_kb(game):
-    # Ряд 1: Исследовать + Костёр (справа, только если горит)
+    # Ряд 1: Исследовать + Костёр/Печь (справа)
     row1 = [
         InlineKeyboardButton(text="🔍 Исследовать", callback_data="action_1"),
     ]
-    if getattr(game, "campfire_active", False) and getattr(game, "campfire_durability", 0) > 0:
+    is_stove = getattr(game, "is_stove", False)
+    if is_stove:
+        d = int(getattr(game, "campfire_durability", 0) or 0)
+        row1.append(InlineKeyboardButton(text=f"🧱 Печь {d}/30", callback_data="menu_campfire"))
+    elif getattr(game, "campfire_active", False) and getattr(game, "campfire_durability", 0) > 0:
         d = int(game.campfire_durability)
         m = int(getattr(game, "campfire_max_durability", 10) or 10)
         row1.append(InlineKeyboardButton(text=f"🔥 Костёр {d}/{m}", callback_data="menu_campfire"))
@@ -172,6 +178,10 @@ def get_main_kb(game):
     row2.append(InlineKeyboardButton(text="😴 Спать", callback_data="action_4"))
 
     kb_rows = [row1, row2]
+    if is_stove or "Лощина" in str(getattr(game, "current_location", "")):
+        kb_rows.append([
+            InlineKeyboardButton(text="📜 Каменная плита", callback_data="tablet_notes_view")
+        ])
     if game.weather in {"rain", "storm"}:
         kb_rows.append([
             InlineKeyboardButton(text="🌧️ Пить дождь", callback_data="action_collect_water")
@@ -185,7 +195,14 @@ def get_main_kb(game):
 
 
 def get_campfire_kb(game=None):
-    """Меню Костра (только Рецепты, Подкинуть и Назад)."""
+    """Меню Костра/Печи (Рецепты, Подкинуть, Растопить и Назад)."""
+    is_stove = getattr(game, "is_stove", False) if game else False
+    dur = int(getattr(game, "campfire_durability", 0) or 0) if game else 1
+    if is_stove and dur <= 0:
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔥 Растопить печь (2 ⚡ AP)", callback_data="stove_rekindle")],
+            [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
+        ])
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📜 Рецепты", callback_data="campfire_recipes"),
          InlineKeyboardButton(text="🪵 Подкинуть", callback_data="campfire_add_fuel_menu")],
@@ -194,26 +211,39 @@ def get_campfire_kb(game=None):
 
 
 def get_campfire_fuel_kb(game):
-    """Подменю выбора топлива: Палки (1 шт = +1 к огню) и Кора (2 шт = +1 к огню)."""
+    """Подменю выбора топлива: Палки (+1), Кора (2 шт = +1) и Древесный уголь (+3)."""
     inv = getattr(game, "inventory", {}) or {}
     sticks = inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)
     bark = inv.get("Кусок коры", 0) + inv.get("Кора", 0)
+    coal = inv.get("Древесный уголь", 0)
 
     keyboard = [
         [InlineKeyboardButton(text=f"🪵 Палки ({sticks})", callback_data="fuel_menu:sticks")],
         [InlineKeyboardButton(text=f"🧱 Кора ({bark})", callback_data="fuel_menu:bark")],
-        [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
     ]
+    if coal > 0 or getattr(game, "is_stove", False):
+        keyboard.append([InlineKeyboardButton(text=f"⚫ Древесный уголь ({coal})", callback_data="fuel_menu:coal")])
+    keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 def get_fuel_quantity_kb(fuel_type: str, game=None):
-    """Выбор количества топлива для подкидывания в костёр (без отдельной кнопки ввода числа)."""
+    """Выбор количества топлива для подкидывания в костёр/печь."""
     if fuel_type == "sticks":
         return InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="🪵 Добавить 1", callback_data="feed_fuel_action:sticks:1"),
                 InlineKeyboardButton(text="🪵 До максимума", callback_data="feed_fuel_action:sticks:max"),
+            ],
+            [
+                InlineKeyboardButton(text="↩️ Назад", callback_data="back"),
+            ],
+        ])
+    elif fuel_type == "coal":
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⚫ Добавить 1 (+3 🔥)", callback_data="feed_fuel_action:coal:1"),
+                InlineKeyboardButton(text="⚫ До максимума", callback_data="feed_fuel_action:coal:max"),
             ],
             [
                 InlineKeyboardButton(text="↩️ Назад", callback_data="back"),
@@ -309,33 +339,41 @@ def get_wolf_battle_kb():
 def get_trap_buttons_kb(game):
     """Кнопки ловушек для каждой локации (1-7)."""
     kb = InlineKeyboardMarkup(inline_keyboard=[])
+    location_names = {
+        1: "Лес",
+        2: "Ручей",
+        3: "Лощина",
+        4: "Просека",
+        5: "Яр",
+        6: "Пещера",
+        7: "Святилище",
+    }
+    traps = getattr(game, "traps", {}) or {}
     for loc_id in range(1, 8):
-        trap = game.traps.get(loc_id)
+        loc_name = location_names.get(loc_id, f"Локация {loc_id}")
+        trap = traps.get(loc_id)
         if trap and trap.get("is_active"):
-            location_name = {
-                2: "Ручей", 3: "Лощина", 4: "Просека", 5: "Яр",
-                6: "Пещера", 7: "Святилище"
-            }.get(loc_id, f"Локация {loc_id}")
             kb.inline_keyboard.append([
                 InlineKeyboardButton(
-                    text=f"🕳️ {location_name}",
-                    callback_data=f"trap_place_{loc_id}"
+                    text=f"✅ {loc_name} (взведена)",
+                    callback_data=f"trap_status_{loc_id}"
                 )
             ])
         elif trap and trap.get("is_broken"):
-            # Ловушка сломана — кнопка для установки новой
-            location_name = {
-                2: "Ручей", 3: "Лощина", 4: "Просека", 5: "Яр",
-                6: "Пещера", 7: "Святилище"
-            }.get(loc_id, f"Локация {loc_id}")
             kb.inline_keyboard.append([
                 InlineKeyboardButton(
-                    text=f"🔨 {location_name}",
+                    text=f"🔨 {loc_name} (сломана — заменить)",
                     callback_data=f"trap_replace_{loc_id}"
                 )
             ])
-    if kb.inline_keyboard:
-        kb.inline_keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back")])
+        else:
+            kb.inline_keyboard.append([
+                InlineKeyboardButton(
+                    text=f"🪤 {loc_name} (поставить)",
+                    callback_data=f"trap_place_{loc_id}"
+                )
+            ])
+    kb.inline_keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back")])
     return kb
 
 
@@ -388,3 +426,29 @@ def get_campfire_light_confirm_kb():
         [InlineKeyboardButton(text="🔥 Разжечь", callback_data="campfire_confirm_light")],
         [InlineKeyboardButton(text="❌ Отмена", callback_data="back")],
     ])
+
+
+def get_tablet_notes_kb(current_page: int, total_pages: int) -> InlineKeyboardMarkup:
+    """Клавиатура для просмотра записей на каменной плите с пагинацией."""
+    nav_row = []
+    if current_page > 1:
+        nav_row.append(InlineKeyboardButton(text="⬅️", callback_data=f"tablet_page:{current_page - 1}"))
+    if total_pages > 1:
+        nav_row.append(InlineKeyboardButton(text=f"{current_page}/{total_pages}", callback_data="noop"))
+    if current_page < total_pages:
+        nav_row.append(InlineKeyboardButton(text="➡️", callback_data=f"tablet_page:{current_page + 1}"))
+
+    kb = []
+    if nav_row:
+        kb.append(nav_row)
+    kb.append([InlineKeyboardButton(text="✏️ Высечь свою надпись", callback_data="tablet_notes_edit")])
+    kb.append([InlineKeyboardButton(text="↩️ В лагерь", callback_data="back")])
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+def get_tablet_edit_kb() -> InlineKeyboardMarkup:
+    """Клавиатура при вводе надписи на плите."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="↩️ Отмена", callback_data="tablet_notes_view")],
+    ])
+

@@ -307,10 +307,35 @@ class GameState:
             self.campfire_durability -= 1
             if self.campfire_durability <= 0:
                 self.campfire_durability = 0
-                self.campfire_active = False
-                self.add_log("🔥 Костёр погас.")
+                if self.is_stove:
+                    self.add_log("🧱 Печь остыла.")
+                else:
+                    self.campfire_active = False
+                    self.add_log("🔥 Костёр погас.")
 
         return result
+
+    @property
+    def is_stove(self) -> bool:
+        flags = getattr(self, "story_flags", {}) or {}
+        if flags.get("has_stove") or flags.get("l3_shelter_unlocked"):
+            return True
+        loc_idx = int(getattr(self, "location_index", 0) or 0)
+        cur_loc = str(getattr(self, "current_location", "") or "")
+        return loc_idx == 2 or "Лощина" in cur_loc
+
+    def rekindle_stove(self):
+        """Растопить остывшую печь: 2 AP, +7 голода, +18 жажды, даёт 1 огонь."""
+        if self.ap < 2:
+            return False, "Недостаточно энергии (нужно 2 ⚡ AP)."
+        self.ap -= 2
+        self.hunger = max(0, self.hunger - 7)
+        self.thirst = max(0, self.thirst - 18)
+        self.campfire_active = True
+        self.campfire_durability = 1
+        self.campfire_max_durability = 30
+        self.add_log("Печь растоплена. В глубине очага снова теплится огонёк (+1 к огню).")
+        return True, "Печь успешно растоплена!"
 
     def light_campfire(self):
         """Умный розжиг костра по 3 сценариям:
@@ -438,13 +463,16 @@ class GameState:
         if self.ap > 0:
             self.consume_action(action_type="sleep", base_hunger=1, base_thirst=1)
 
-        # 2. Костёр за ночь: −3 прочности
+        # 2. Костёр / Печь за ночь: −3 прочности
         if self.campfire_active:
             self.campfire_durability = max(0, int(self.campfire_durability) - 3)
             if self.campfire_durability <= 0:
                 self.campfire_durability = 0
-                self.campfire_active = False
-                self.add_log("Костёр потух. Ты не уследил за огнём.", "sleep")
+                if self.is_stove:
+                    self.add_log("Печь остыла. Огонь погас, но печь можно растопить заново.", "sleep")
+                else:
+                    self.campfire_active = False
+                    self.add_log("Костёр потух. Ты не уследил за огнём.", "sleep")
 
         # 3. Факел в руке ночью сгорает
         torch_in_hand = (

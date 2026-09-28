@@ -222,7 +222,9 @@ def get_recipe_max_count(game: Any, recipe_id: str) -> int:
     limits = []
 
     if recipe.get("needs_bark", True):
-        limits.append(inv.get(bark, 0))
+        bark_avail = inv.get("Кусок коры", 0) + inv.get("Кора", 0)
+        plates_avail = inv.get("Сланцевая тарелка", 0)
+        limits.append(bark_avail + plates_avail)
 
     if recipe.get("needs_meat"):
         limits.append(inv.get("Сырое мясо", 0))
@@ -269,7 +271,7 @@ def format_recipe_card(recipe_id: str, game: Any = None) -> str:
     # Ингредиенты в едином формате
     ing_parts = []
     if recipe.get("needs_bark"):
-        ing_parts.append("Кусок коры: 1")
+        ing_parts.append("Посуда: Кусок коры или Сланцевая тарелка: 1")
     if recipe.get("needs_meat"):
         ing_parts.append("Сырое мясо: 1")
     if recipe.get("berries_needed"):
@@ -349,11 +351,18 @@ def cook_item(game: Any, recipe_id: str) -> Tuple[bool, str]:
         return False, f"Рецепт '{recipe_id}' не найден."
 
     inv = game.inventory
-    bark = "Кусок коры"
-
+    used_plate = False
     if recipe.get("needs_bark", True):
-        if inv.get(bark, 0) < 1:
-            return False, f"Нужен {bark} (посуда для костра)."
+        plate = "Сланцевая тарелка"
+        bark = "Кусок коры"
+        bark_avail = inv.get(bark, 0) + inv.get("Кора", 0)
+        plate_avail = inv.get(plate, 0)
+        if plate_avail > 0:
+            used_plate = True
+        elif bark_avail > 0:
+            used_plate = False
+        else:
+            return False, f"Нужен {bark} или {plate} (посуда для готовки)."
 
     # Проверка мяса
     if recipe.get("needs_meat"):
@@ -389,7 +398,12 @@ def cook_item(game: Any, recipe_id: str) -> Tuple[bool, str]:
 
     # --- Списание ингредиентов ---
     if recipe.get("needs_bark", True):
-        _consume(inv, bark, 1)
+        if used_plate:
+            _consume(inv, "Сланцевая тарелка", 1)
+        elif inv.get("Кусок коры", 0) > 0:
+            _consume(inv, "Кусок коры", 1)
+        else:
+            _consume(inv, "Кора", 1)
 
     meat_used = False
     if recipe.get("needs_meat"):
@@ -408,7 +422,10 @@ def cook_item(game: Any, recipe_id: str) -> Tuple[bool, str]:
         c_mushrooms = _consume_tagged_items(inv, "mushroom", mushrooms_needed)
         used_ingredients.extend(c_mushrooms)
 
-    used_ingredients.append("Кусок коры×1")
+    if used_plate:
+        used_ingredients.append("Сланцевая тарелка×1")
+    else:
+        used_ingredients.append("Кусок коры×1")
 
     # Списание воды
     if water_needed > 0:
@@ -456,6 +473,8 @@ def cook_item(game: Any, recipe_id: str) -> Tuple[bool, str]:
         used_ingredients.append(f"вода×{water_needed}")
 
     result = recipe["result"]
+    if used_plate:
+        result = f"{result} (🍽️)"
     inv[result] = inv.get(result, 0) + 1
     rank_marker = items.get_item_rank_marker(result)
 

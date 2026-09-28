@@ -479,6 +479,69 @@ async def handle_waiting_for_cook_count(
     return True
 
 
+async def handle_waiting_for_tablet_note(
+    uid: int,
+    chat_id: int,
+    text: str,
+    message: types.Message,
+    game: Game,
+    bot_ctx: dict,
+) -> bool:
+    """Обработать ввод надписи на каменной плите (лимит 50 символов)."""
+    if game.story_state != "WAITING_FOR_TABLET_NOTE":
+        return False
+
+    await bot_ctx["safe_delete_message"](chat_id, message.message_id)
+
+    raw_text = message.text.strip() if message.text else ""
+    if not raw_text:
+        return True
+
+    from keyboards import get_tablet_edit_kb
+
+    # Проверка на длину надписи (ровно 50 символов)
+    if len(raw_text) > 50:
+        import html
+        escaped_text = html.escape(raw_text)
+        warn_text = (
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚠️ <b>Слишком длинная надпись ({len(raw_text)}/50 символов)!</b>\n"
+            "Каменная плита не вместит столько слов.\n\n"
+            f"<code>{escaped_text}</code>\n\n"
+            "👆 Нажми на текст в рамке выше, чтобы скопировать и сократить его до 50 символов.\n"
+            "━━━━━━━━━━━━━━━━━━━━"
+        )
+        kb = get_tablet_edit_kb()
+        msg_id = bot_ctx["last_active_msg_id"].get(uid)
+        if msg_id:
+            await bot_ctx["safe_edit_message"](chat_id, msg_id, warn_text, kb, parse_mode="HTML")
+        else:
+            await bot_ctx["update_or_send_message"](chat_id, uid, warn_text, kb, parse_mode="HTML")
+        return True
+
+    # Текст валиден (<= 50 символов) — формируем подпись автора
+    player_name = getattr(game, "character_name", None) or getattr(game, "player_name", None) or "Безымянный"
+    companion = getattr(game, "companion_name", None)
+    has_pet = bool(companion) or game.is_story_flag_set("has_pet") or (game.equipment.get("pet") and game.equipment.get("pet") != "Пусто")
+    if has_pet:
+        pet_name = companion if companion else "Кот"
+        author = f"Бродяга {player_name} и {pet_name}"
+    else:
+        author = f"Бродяга {player_name}"
+
+    from services.database import save_tablet_note
+    save_tablet_note(uid, author, raw_text)
+
+    game.story_state = None
+    game.add_log(f"📜 Ты высек на каменной плите: «{raw_text}»")
+    save_game(uid, game)
+
+    render_fn = bot_ctx.get("render_tablet_view")
+    if render_fn:
+        await render_fn(chat_id, uid, page=1, notice=f"✨ Твоя надпись успешно высечена на плите!\n«{raw_text}»\n— {author}")
+    return True
+
+
 async def process_text_input(
     uid: int,
     chat_id: int,
@@ -498,6 +561,7 @@ async def process_text_input(
         handle_waiting_for_fuel_count,
         handle_waiting_for_drop_quantity,
         handle_waiting_for_cook_count,
+        handle_waiting_for_tablet_note,
     ]
     for handler in handlers:
         try:

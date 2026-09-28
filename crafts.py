@@ -12,6 +12,15 @@ CRAFT_RECIPES = {
     "Сланцевый панцирь": [("Сланцевая пластина", 8), ("Кусок коры", 5), ("Мох", 4), ("Ветка", 4)],
     "Сланцевые поножи": [("Сланцевая пластина", 6), ("Кусок коры", 3), ("Мох", 4)],
     "Сланцевые ботинки": [("Сланцевая пластина", 2), ("Мох", 3), ("Кусок коры", 2)],
+    "Древесный уголь": [("Ветка", 5), ("Кусок коры", 2)],
+    "Сланцевый слиток": [("Сланец", 2), ("Глина", 2)],
+    "Сланцевая тарелка": [("Сланцевый слиток", 1)],
+    "Охотничья ловушка": [("Ветка", 4), ("Кусок коры", 2), ("Кожа", 1), ("Кость", 1)],
+}
+
+CRAFT_YIELDS = {
+    "Древесный уголь": 3,
+    "Сланцевая тарелка": 2,
 }
 
 
@@ -39,6 +48,8 @@ def _check_ingredient(game, name: str, need: int) -> bool:
         return (game.inventory.get("Кусок коры", 0) + game.inventory.get("Кора", 0)) >= need
     if name in ("Ветка", "Палка", "Палки"):
         return (game.inventory.get("Ветка", 0) + game.inventory.get("Палка", 0) + game.inventory.get("Палки", 0)) >= need
+    if name in ("Сланец", "Сланцевая пластина"):
+        return (game.inventory.get("Сланец", 0) + game.inventory.get("Сланцевая пластина", 0)) >= need
     return game.inventory.get(name, 0) >= need
 
 
@@ -160,13 +171,25 @@ def do_craft(game, recipe_name: str):
                     rem -= take
                     if game.inventory[s_name] <= 0:
                         del game.inventory[s_name]
+        elif n in ("Сланец", "Сланцевая пластина"):
+            for sl_name in ("Сланец", "Сланцевая пластина"):
+                if rem <= 0:
+                    break
+                have = game.inventory.get(sl_name, 0)
+                if have > 0:
+                    take = min(have, rem)
+                    game.inventory[sl_name] -= take
+                    rem -= take
+                    if game.inventory[sl_name] <= 0:
+                        del game.inventory[sl_name]
         else:
             game.inventory[n] -= q
             if game.inventory[n] <= 0:
                 del game.inventory[n]
 
     # Добавление скрафченного предмета
-    game.inventory[recipe_name] = game.inventory.get(recipe_name, 0) + 1
+    yield_qty = CRAFT_YIELDS.get(recipe_name, 1)
+    game.inventory[recipe_name] = game.inventory.get(recipe_name, 0) + yield_qty
     if hasattr(game, "unlock_craft"):
         game.unlock_craft(recipe_name)
 
@@ -197,6 +220,10 @@ CRAFT_ICONS = {
     "Сланцевый панцирь": "🦺",
     "Сланцевые поножи": "👖",
     "Сланцевые ботинки": "🥾",
+    "Древесный уголь": "⚫",
+    "Сланцевый слиток": "🧱",
+    "Сланцевая тарелка": "🍽️",
+    "Охотничья ловушка": "🪤",
 }
 
 
@@ -405,6 +432,22 @@ def handle_craft(data, game, uid):
             kb = get_main_kb(game)
         else:
             game.add_log("В инвентаре нет отремонтированных ботинок.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Охотничья ловушка":
+        from keyboards import get_trap_buttons_kb
+        if game.inventory.get("Охотничья ловушка", 0) > 0:
+            if hasattr(game, "push_screen"):
+                game.push_screen("traps")
+            text = (
+                "🪤 <b>Установка охотничьей ловушки</b>\n\n"
+                "Выбери локацию, где хочешь взвести ловушку на ночь.\n"
+                "Утром после сна проверяй результат (добыча или поломка).\n"
+                "<i>На каждой локации может стоять только одна ловушка.</i>"
+            )
+            kb = get_trap_buttons_kb(game)
+        else:
+            game.add_log("В инвентаре нет готовой охотничьей ловушки.")
             text = game.get_ui()
             kb = get_main_kb(game)
     return text, kb
