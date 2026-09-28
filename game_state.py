@@ -883,10 +883,21 @@ class GameState:
             left_val = "Пусто"
 
         right_item = self.equipment.get("hand_right")
+        from modules.items import ITEMS_METADATA
         if right_item:
             right_emoji = get_item_emoji(right_item)
             right_label = f"{right_emoji} Правая рука:"
-            right_val = f"⚪ {right_item}"
+            extra = ""
+            if right_item in ITEMS_METADATA:
+                eff = ITEMS_METADATA[right_item].get("effects", {})
+                notes = []
+                if "damage" in eff:
+                    notes.append(f"⚔️ Урон +{eff['damage']}")
+                if "stun_chance" in eff:
+                    notes.append(f"💫 Оглушение +{eff['stun_chance']}%")
+                if notes:
+                    extra = f"\n{' | '.join(notes)}"
+            right_val = f"⚪ {right_item}{extra}"
         else:
             right_label = "✋ Правая рука:"
             right_val = "Пусто"
@@ -960,6 +971,10 @@ class GameState:
             bonus_lines.append(f"• 🛡 Общая защита: +{self.armor_defense}")
         if self.max_hp > 100:
             bonus_lines.append(f"• ❤️ Макс. здоровье: {self.max_hp} (+{self.max_hp - 100} HP)")
+        if right_item and right_item in ITEMS_METADATA:
+            r_eff = ITEMS_METADATA[right_item].get("effects", {})
+            if "stun_chance" in r_eff:
+                bonus_lines.append(f"• 💫 Шанс оглушения: +{r_eff['stun_chance']}%")
 
         if not bonus_lines:
             bonus_block = "📊 ОБЩИЕ БОНУСЫ СНАРЯЖЕНИЯ:\n• Бонусы отсутствуют."
