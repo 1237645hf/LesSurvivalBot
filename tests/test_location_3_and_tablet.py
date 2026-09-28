@@ -303,50 +303,48 @@ def test_boar_combat_tactics_and_victory_loot():
     }
     game.hp = 150
 
-    # Начало боя: Секач 180 HP и сразу начинает с разгона на таран
+    # Начало боя: Секач 350 HP, Герой 150 HP, статус '⚡ Мчится на таран!'
     text, kb = handle_location_3_slate_hollow("l3_start_boar_battle", game, 101)
     assert game.wolf_battle is not None
-    assert game.wolf_battle["wolf_hp"] == 180
+    assert game.wolf_battle["wolf_hp"] == 350
+    assert game.hp == 150
+    assert game.wolf_battle["is_charging"] is True
+    assert game.wolf_battle["boar_status"] == "⚡ Мчится на таран!"
+
+    # 1. Первый ход: таран врасплох (-44 HP Герою, -18 HP Секачу) -> статус '💢 В ярости'
+    text, kb = handle_location_3_slate_hollow("boar_battle_dodge", game, 101)
+    assert game.hp == 106
+    assert game.wolf_battle["wolf_hp"] == 332
+    assert game.wolf_battle["boar_status"] == "💢 В ярости"
+
+    # 1. Удар, пока он в ярости -> Секач отвечает и переходит в '⏳ Разгоняется'
+    text, kb = handle_location_3_slate_hollow("boar_battle_attack", game, 101)
+    assert game.wolf_battle["boar_status"] == "⏳ Разгоняется"
+    assert game.wolf_battle["is_charging"] is False
+
+    # 2. Удар, пока он разгоняется -> Секач отвечает и переходит в '⚡ Мчится на таран!'
+    text, kb = handle_location_3_slate_hollow("boar_battle_attack", game, 101)
+    assert game.wolf_battle["boar_status"] == "⚡ Мчится на таран!"
     assert game.wolf_battle["is_charging"] is True
 
-    # 1. Первый уворот всегда неудачный -> Секач сносит тараном на 53 HP
-    hp_before = game.hp
-    text, kb = handle_location_3_slate_hollow("boar_battle_dodge", game, 101)
-    assert game.wolf_battle["is_stunned"] is False
-    assert game.wolf_battle["dodge_count"] == 1
-    assert (hp_before - game.hp) == 53
-
-    # 2. Второй уворот успешный -> Секач врезается в скалу и оглушён
-    game.wolf_battle["is_charging"] = True
+    # 3. Уворот от тарана -> Секач всегда врезается в стену и оглушён
     text, kb = handle_location_3_slate_hollow("boar_battle_dodge", game, 101)
     assert game.wolf_battle["is_stunned"] is True
-    assert game.wolf_battle["dodge_count"] == 2
+    assert game.wolf_battle["boar_status"] == "💫 Оглушён (1 ход)"
 
-    # 3. Крит-удар посохом по оглушённому (×2)
+    # 4. Крит-удар посохом по оглушённому (×2) -> Секач очухался и снова '💢 В ярости'
     hp_boar_before = game.wolf_battle["wolf_hp"]
-    text, kb = handle_location_3_slate_hollow("boar_battle_crit", game, 101)
+    text, kb = handle_location_3_slate_hollow("boar_battle_attack", game, 101)
     dmg_done = hp_boar_before - game.wolf_battle["wolf_hp"]
     assert dmg_done >= 20
+    assert game.wolf_battle["boar_status"] == "💢 В ярости"
 
-    # 4. Третий уворот успешный -> Секач оглушён
-    game.wolf_battle["is_charging"] = True
-    text, kb = handle_location_3_slate_hollow("boar_battle_dodge", game, 101)
-    assert game.wolf_battle["is_stunned"] is True
-    assert game.wolf_battle["dodge_count"] == 3
-
-    # 5. Четвёртый уворот неудачный -> пропуск и урон
+    # 5. Если игрок не увернулся, а атаковал на таране -> Секач сносит тараном
     game.wolf_battle["is_charging"] = True
     hp_before = game.hp
-    text, kb = handle_location_3_slate_hollow("boar_battle_dodge", game, 101)
-    assert game.wolf_battle["is_stunned"] is False
-    assert game.wolf_battle["dodge_count"] == 4
+    text, kb = handle_location_3_slate_hollow("boar_battle_attack", game, 101)
     assert game.hp < hp_before
-
-    # 6. Пятый уворот снова успешный -> оглушение
-    game.wolf_battle["is_charging"] = True
-    text, kb = handle_location_3_slate_hollow("boar_battle_dodge", game, 101)
-    assert game.wolf_battle["is_stunned"] is True
-    assert game.wolf_battle["dodge_count"] == 5
+    assert game.wolf_battle["boar_status"] == "💢 В ярости"
 
     # 7. Победа над Секачом и разделка туши
     handle_location_3_slate_hollow("l3_11a_win", game, 101)

@@ -26,7 +26,7 @@ ENEMIES: Dict[str, Dict[str, Any]] = {
         "id": "ancient_boar",
         "name": "Секач солонца",
         "title": "🐗 СОЛОНЕЦ СЕКАЧА",
-        "max_hp": 180,
+        "max_hp": 350,
         "attack_min": 22,
         "attack_max": 26,
         "defended_min": 10,

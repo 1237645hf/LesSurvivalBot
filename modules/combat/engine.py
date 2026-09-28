@@ -56,15 +56,27 @@ def get_battle_text(game, enemy_id: str = "old_wolf") -> str:
     armor_str = f" (🛡 Защита: {armor_def})" if armor_def > 0 else ""
 
     phase_str = ""
+    status_line = ""
     if enemy_id == "ancient_boar":
-        cur_phase = 2 if wolf_hp <= 90 else 1
+        cur_phase = 2 if wolf_hp <= (wolf_max_hp // 2) else 1
         phase_str = f" | 🔥 ФАЗА {cur_phase}"
+        if battle.get("is_stunned"):
+            status_text = "💫 Оглушён (1 ход)"
+        elif battle.get("is_charging"):
+            status_text = "⚡ Мчится на таран!"
+        elif battle.get("is_enraged") or (cur_phase == 2 and not battle.get("is_stunned")):
+            status_text = "💢 Рассвирепел"
+        else:
+            status_text = battle.get("boar_status", "⏳ Готовится к броску")
+        status_line = f"📍 Статус зверя: {status_text}\n"
 
+    enemy_icon = "🐗" if enemy_id == "ancient_boar" else "🐺"
     return (
         f"{title}{phase_str}\n"
         "━━━━━━━━━━━━━━━━━━━\n"
         f"❤️ Твоё здоровье: {game.hp}/{max_hp} HP{armor_str}\n"
-        f"🐗 {enemy_name}: {wolf_hp}/{wolf_max_hp} HP\n"
+        f"{enemy_icon} {enemy_name}: {wolf_hp}/{wolf_max_hp} HP\n"
+        f"{status_line}"
         "━━━━━━━━━━━━━━━━━━━\n"
         f"{last_log}\n"
         "━━━━━━━━━━━━━━━━━━━\n"
@@ -80,18 +92,28 @@ def start_battle(game, enemy_id: str = "old_wolf") -> Tuple[str, InlineKeyboardM
         game.push_screen("wolf_battle")
 
     is_charging = (enemy_id == "ancient_boar")
+    wolf_hp = enemy["max_hp"]
+    player_dmg = 0
+    wolf_dmg = 0
+    start_log = enemy.get("start_log", "")
+
+    if enemy_id == "ancient_boar":
+        start_log = "🐗 Секач сорвался с места и на полной скорости несётся на тебя на таран!"
+
     game.wolf_battle = {
         "enemy_id": enemy_id,
-        "wolf_hp": enemy["max_hp"],
+        "wolf_hp": wolf_hp,
         "wolf_max_hp": enemy["max_hp"],
-        "player_dmg_dealt": 0,
-        "wolf_dmg_dealt": 0,
+        "player_dmg_dealt": player_dmg,
+        "wolf_dmg_dealt": wolf_dmg,
         "turn_count": 0,
         "dodge_count": 0,
         "phase": 1,
         "is_charging": is_charging,
         "is_stunned": False,
-        "last_log": enemy.get("start_log", ""),
+        "is_enraged": False,
+        "boar_status": "⚡ Мчится на таран!" if is_charging else "",
+        "last_log": start_log,
     }
     game.active_story_callback = "wolf_battle_screen" if enemy_id == "old_wolf" else "boar_battle_screen"
     text = get_battle_text(game, enemy_id)
@@ -132,13 +154,37 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
             ])
             return text, kb
 
-        if clean_action == "crit":
+        # ПЕРВЫЙ ХОД (Стартовый таран врасплох)
+        if battle.get("turn_count", 0) == 0:
+            battle["turn_count"] = 1
+            ram_dmg = 44
+            strike_dmg = 18
+            game.hp = max(0, game.hp - ram_dmg)
+            battle["wolf_hp"] = max(0, battle["wolf_hp"] - strike_dmg)
+            battle["player_dmg_dealt"] += strike_dmg
+            battle["wolf_dmg_dealt"] += ram_dmg
+            battle["is_charging"] = False
+            battle["is_enraged"] = True
+            battle["boar_status"] = "💢 В ярости"
+            log_lines = [
+                f"⚠️ Внезапный таран сбивает с ног: Секач сносит −{ram_dmg} HP (Твоё HP: {game.hp}/{getattr(game, 'max_hp', 100)})!",
+                f"🦯 На встречном движении ты бьёшь посохом: −{strike_dmg} HP! Зверь разворачивается в ярости."
+            ]
+            battle["last_log"] = "\n".join(log_lines)
+            return get_battle_text(game, enemy_id), get_battle_kb(game, enemy_id)
+
+        if clean_action in ("attack", "crit") and battle.get("is_stunned"):
             p_dmg = _calc_player_damage(game) * 2
             battle["wolf_hp"] = max(0, battle["wolf_hp"] - p_dmg)
             battle["player_dmg_dealt"] += p_dmg
             battle["is_stunned"] = False
             battle["is_charging"] = False
-            log_lines = [f"💥 Крит (×2): −{p_dmg} HP (Секач: {battle['wolf_hp']}/{enemy.get('max_hp', 180)} HP)."]
+            battle["is_enraged"] = True
+            battle["boar_status"] = "💢 В ярости"
+            log_lines = [
+                f"💥 Критический удар посохом: −{p_dmg} HP (Секач: {battle['wolf_hp']}/{enemy.get('max_hp', 350)} HP).",
+                "🐗 Секач оправился от оглушения и в ярости готов к бою!"
+            ]
 
             if battle["wolf_hp"] <= 0:
                 vic_cb = enemy.get("victory_callback", "l3_11a_win")
@@ -156,36 +202,12 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
                 ])
                 return text, kb
 
-            if battle["wolf_hp"] <= 90 and not battle.get("phase2_announced"):
+            half_hp = enemy.get("max_hp", 350) // 2
+            if battle["wolf_hp"] <= half_hp and not battle.get("phase2_announced"):
                 battle["phase2_announced"] = True
                 battle["phase"] = 2
+                battle["is_enraged"] = True
                 log_lines.append("🔥 ФАЗА 2: НЕИСТОВСТВО! Секач в ярости!")
-
-            log_lines.append("🐗 Секач оправился от оглушения.")
-            game.active_story_callback = "boar_battle_screen"
-            battle["last_log"] = "\n".join(log_lines)
-            return get_battle_text(game, enemy_id), get_battle_kb(game, enemy_id)
-
-        if clean_action == "block":
-            charge_raw = 55 if battle.get("phase") == 2 else 50
-            rem = max(0, charge_raw - armor_def)
-            block_cut = rem // 2
-            taken = max(6, rem - block_cut)
-            game.hp = max(0, game.hp - taken)
-            battle["wolf_dmg_dealt"] += taken
-            battle["is_charging"] = False
-            log_lines = [
-                f"🛡️ ТАРАН СЕКАЧА! Лобовой удар на {charge_raw} урона! "
-                f"Броня погасила {armor_def}. Блок панцирем погасил {block_cut}. Ты устоял! Получено: −{taken} HP."
-            ]
-
-            if game.hp <= 0:
-                game.hp = 0
-                game.wolf_battle = None
-                from keyboards import get_death_kb
-                from game_state import get_death_text
-                text = get_death_text(game, f"🐗 Секач сокрушил твой панцирь тараном (−{taken} HP).")
-                return text, get_death_kb()
 
             game.active_story_callback = "boar_battle_screen"
             battle["last_log"] = "\n".join(log_lines)
@@ -194,39 +216,28 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
         if clean_action == "dodge":
             d_count = battle.get("dodge_count", 0) + 1
             battle["dodge_count"] = d_count
+            was_charging = battle.get("is_charging", False)
             battle["is_charging"] = False
-            battle["is_stunned"] = False
 
-            # Логика уворота: 1-й и 4-й — провал, 2-й, 3-й, 5-й и далее — успех (стан кабана)
-            if d_count in (1, 4):
-                taken = 53 if d_count == 1 else max(10, 50 - armor_def)
-                game.hp = max(0, game.hp - taken)
-                battle["wolf_dmg_dealt"] += taken
-                log_lines = [
-                    f"⚠️ Уворот провален! Секач таранит: −{taken} HP (Твоё HP: {game.hp}/{getattr(game, 'max_hp', 100)})."
-                ]
-                if game.hp <= 0:
-                    game.hp = 0
-                    game.wolf_battle = None
-                    from keyboards import get_death_kb
-                    from game_state import get_death_text
-                    text = get_death_text(game, f"🐗 Секач сокрушил тебя встречным тараном (−{taken} HP).")
-                    return text, get_death_kb()
-            else:
+            if was_charging:
                 battle["is_stunned"] = True
+                battle["is_enraged"] = False
+                battle["boar_status"] = "💫 Оглушён (1 ход)"
                 log_lines = [
-                    "⚡ Уворот успешен! Секач врезался в стену (Оглушён на 1 ход)."
+                    "⚡ Уворот успешен! Секач со всего размаха врезался в скалу (Оглушён на 1 ход)."
                 ]
+            else:
+                log_lines = ["⚡ Ты ушёл в сторону, но Секач не шёл на таран."]
 
             game.active_story_callback = "boar_battle_screen"
             battle["last_log"] = "\n".join(log_lines)
             return get_battle_text(game, enemy_id), get_battle_kb(game, enemy_id)
 
-        if clean_action == "attack":
+        if clean_action in ("attack", "crit"):
             p_dmg = _calc_player_damage(game)
             battle["wolf_hp"] = max(0, battle["wolf_hp"] - p_dmg)
             battle["player_dmg_dealt"] += p_dmg
-            log_lines = [f"🦯 Удар посохом: −{p_dmg} HP (Секач: {battle['wolf_hp']}/{enemy.get('max_hp', 180)} HP)."]
+            log_lines = [f"🦯 Удар посохом: −{p_dmg} HP (Секач: {battle['wolf_hp']}/{enemy.get('max_hp', 350)} HP)."]
 
             if battle["wolf_hp"] <= 0:
                 vic_cb = enemy.get("victory_callback", "l3_11a_win")
@@ -244,33 +255,71 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
                 ])
                 return text, kb
 
-            if battle["wolf_hp"] <= 90 and not battle.get("phase2_announced"):
-                battle["phase2_announced"] = True
-                battle["phase"] = 2
-                log_lines.append("🔥 ВТОРАЯ ФАЗА: НЕИСТОВСТВО! Секач захлёбывается яростью, его глаза налились кровью! Удары стали свирепее!")
-
-            turn_count = battle.get("turn_count", 0) + 1
-            battle["turn_count"] = turn_count
-
-            # Во 2-й фазе таран каждый 2-й ход, в 1-й — каждый 3-й
-            freq = 2 if battle.get("phase") == 2 else 3
-            if turn_count % freq == 0:
-                battle["is_charging"] = True
-                log_lines.append("⚠️ ТАРАН! Урон: 50. Сметёт всё на пути!")
-            else:
-                raw_atk = random.randint(25, 29) if battle.get("phase") == 2 else random.randint(22, 26)
-                taken = max(4, raw_atk - armor_def)
-                game.hp = max(0, game.hp - taken)
-                battle["wolf_dmg_dealt"] += taken
-                log_lines.append(f"🐗 Секач атакует клыками на {raw_atk}. Броня погасила {armor_def}. Получено: −{taken} HP.")
+            was_charging = battle.get("is_charging", False)
+            if was_charging:
+                # Игрок не нажал уворот, а ударил в лоб: Секач сносит тараном
+                ram_dmg = max(10, 50 - armor_def)
+                game.hp = max(0, game.hp - ram_dmg)
+                battle["wolf_dmg_dealt"] += ram_dmg
+                battle["is_charging"] = False
+                battle["is_enraged"] = True
+                battle["boar_status"] = "💢 В ярости"
+                log_lines.append(f"🐗 Секач сносит тебя встречным тараном: −{ram_dmg} HP! Зверь разворачивается в ярости.")
 
                 if game.hp <= 0:
                     game.hp = 0
                     game.wolf_battle = None
                     from keyboards import get_death_kb
                     from game_state import get_death_text
-                    text = get_death_text(game, f"🐗 Секач нанёс смертельный удар клыками (−{taken} HP).")
+                    text = get_death_text(game, f"🐗 Секач растоптал тебя встречным тараном (−{ram_dmg} HP).")
                     return text, get_death_kb()
+            else:
+                # 15% шанс оглушения от Окованного посоха
+                stun_proc = False
+                weapon = (getattr(game, "equipment", {}) or {}).get("hand_right")
+                if weapon:
+                    from modules.items import ITEMS
+                    eff = ITEMS.get(weapon, {}).get("effects", {})
+                    s_chance = eff.get("stun_chance", 0)
+                    if s_chance > 0 and random.randint(1, 100) <= s_chance:
+                        stun_proc = True
+
+                if stun_proc:
+                    battle["is_stunned"] = True
+                    battle["is_charging"] = False
+                    battle["is_enraged"] = False
+                    battle["boar_status"] = "💫 Оглушён (1 ход)"
+                    log_lines.append("💫 Сокрушительный удар посохом оглушил зверя на 1 ход!")
+                else:
+                    b_dmg = max(6, 26 - armor_def)
+                    game.hp = max(0, game.hp - b_dmg)
+                    battle["wolf_dmg_dealt"] += b_dmg
+
+                    if battle.get("boar_status") == "💢 В ярости":
+                        battle["is_enraged"] = False
+                        battle["is_charging"] = False
+                        battle["boar_status"] = "⏳ Разгоняется"
+                        log_lines.append(f"🐗 Секач в ярости бьёт клыками: −{b_dmg} HP и начинает разбег!")
+                    else:
+                        battle["is_enraged"] = False
+                        battle["is_charging"] = True
+                        battle["boar_status"] = "⚡ Мчится на таран!"
+                        log_lines.append(f"🐗 Секач наносит выпад клыками: −{b_dmg} HP, набрал скорость и мчится на таран!")
+
+                    if game.hp <= 0:
+                        game.hp = 0
+                        game.wolf_battle = None
+                        from keyboards import get_death_kb
+                        from game_state import get_death_text
+                        text = get_death_text(game, f"🐗 Секач распорол клыками в ближнем бою (−{b_dmg} HP).")
+                        return text, get_death_kb()
+
+            half_hp = enemy.get("max_hp", 350) // 2
+            if battle["wolf_hp"] <= half_hp and not battle.get("phase2_announced"):
+                battle["phase2_announced"] = True
+                battle["phase"] = 2
+                battle["is_enraged"] = True
+                log_lines.append("🔥 ФАЗА 2: НЕИСТОВСТВО! Секач в ярости!")
 
             game.active_story_callback = "boar_battle_screen"
             battle["last_log"] = "\n".join(log_lines)

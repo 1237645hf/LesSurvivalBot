@@ -350,16 +350,18 @@ def get_wolf_battle_kb():
 
 
 def get_boar_battle_kb(is_stunned: bool = False, is_charging: bool = False):
-    """Клавиатура пошагового боя с Секачом: только Атака, Уворот и Отступить."""
+    """Клавиатура боя с Секачом: Атаковать всегда, Уворот только при таране."""
     kb = []
-    if is_stunned:
-        kb.append([InlineKeyboardButton(text="💥 Крит (×2)", callback_data="boar_battle_crit")])
-    else:
+    if is_charging:
         kb.append([
-            InlineKeyboardButton(text="⚔️ Атака", callback_data="boar_battle_attack"),
+            InlineKeyboardButton(text="⚔️ Атаковать", callback_data="boar_battle_attack"),
             InlineKeyboardButton(text="⚡ Уворот", callback_data="boar_battle_dodge"),
         ])
-    kb.append([InlineKeyboardButton(text="🏃 Отступить", callback_data="boar_battle_flee")])
+    else:
+        kb.append([
+            InlineKeyboardButton(text="⚔️ Атаковать", callback_data="boar_battle_attack"),
+        ])
+    kb.append([InlineKeyboardButton(text="🏃 Сбежать", callback_data="boar_battle_flee")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
