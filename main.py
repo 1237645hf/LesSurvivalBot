@@ -10,6 +10,7 @@ from aiohttp import web, ClientSession
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Message, ReplyKeyboardRemove
 from aiogram.filters import CommandStart, Command
+from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from pymongo import MongoClient
 
@@ -416,6 +417,74 @@ async def safe_delete_message(chat_id: int, message_id: int):
         logging.exception(f"Ошибка удаления сообщения {message_id}: {exc}")
 
 
+async def safe_delete_messages(chat_id: int, message_ids: List[int]):
+    """Пакетное удаление сообщений через Telegram Bot API deleteMessages.
+
+    - Принимает список реальных message_ids (до 100 за один сетевой запрос).
+    - Обернут в try/except TelegramBadRequest (сообщения старше 48ч или уже удалённые).
+    - Обрабатывает TelegramRetryAfter (FloodWait).
+    """
+    valid_ids = [mid for mid in set(message_ids) if isinstance(mid, int)]
+    if not valid_ids:
+        return
+
+    # Telegram API метод deleteMessages принимает пачку до 100 ID за 1 сетевой запрос
+    for i in range(0, len(valid_ids), 100):
+        chunk = valid_ids[i:i + 100]
+        if not chunk:
+            continue
+        try:
+            await bot.delete_messages(chat_id=chat_id, message_ids=chunk)
+        except TelegramBadRequest as exc:
+            logging.warning(f"Не удалось пакетно удалить сообщения {chunk}: {exc}")
+        except TelegramRetryAfter as exc:
+            logging.warning(f"Flood control при delete_messages: ждём {exc.retry_after} сек")
+            try:
+                await asyncio.sleep(exc.retry_after + 0.5)
+                await bot.delete_messages(chat_id=chat_id, message_ids=chunk)
+            except Exception as retry_exc:
+                logging.warning(f"Ошибка повторного delete_messages: {retry_exc}")
+        except Exception as exc:
+            logging.exception(f"Неожиданная ошибка delete_messages {chunk}: {exc}")
+
+
+async def track_message_to_delete(state: FSMContext, message_id: int):
+    """Сохранить реальный message_id в FSM-состояние для последующего пакетного удаления."""
+    try:
+        data = await state.get_data()
+        msg_ids = list(data.get("messages_to_delete", []))
+        if message_id not in msg_ids:
+            msg_ids.append(message_id)
+            await state.update_data(messages_to_delete=msg_ids)
+    except Exception as exc:
+        logging.warning(f"Ошибка сохранения message_id в состояние: {exc}")
+
+
+async def clear_tracked_messages(chat_id: int, state: FSMContext, extra_ids: Optional[List[int]] = None):
+    """Пакетно удалить сохраненные в состоянии сообщения через delete_messages (1 сетевой запрос).
+
+    После удаления список сохранённых ID в состоянии очищается.
+    """
+    try:
+        data = await state.get_data()
+        ids_to_delete = list(data.get("messages_to_delete", []))
+    except Exception as exc:
+        logging.warning(f"Ошибка чтения messages_to_delete из состояния: {exc}")
+        ids_to_delete = []
+
+    if extra_ids:
+        for mid in extra_ids:
+            if isinstance(mid, int) and mid not in ids_to_delete:
+                ids_to_delete.append(mid)
+
+    if ids_to_delete:
+        await safe_delete_messages(chat_id=chat_id, message_ids=ids_to_delete)
+        try:
+            await state.update_data(messages_to_delete=[])
+        except Exception as exc:
+            logging.warning(f"Ошибка сброса messages_to_delete в состоянии: {exc}")
+
+
 async def safe_edit_message(chat_id: int, msg_id: int, text: str, reply_markup=None, parse_mode: Optional[str] = None):
     try:
         await bot.edit_message_text(text, chat_id=chat_id, message_id=msg_id, reply_markup=reply_markup, parse_mode=parse_mode)
@@ -602,15 +671,25 @@ def format_start_character_text(game) -> str:
 # ХЕНДЛЕРЫ
 # ──────────────────────────────────────────────────────────────────────────────
 @dp.message(CommandStart())
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, state: Optional[FSMContext] = None):
     uid = message.from_user.id
     chat_id = message.chat.id
     logging.info(f"[START] Получен /start от {uid}")
-    try:
-        for i in range(1, 50):
-            await bot.delete_message(chat_id, message.message_id - i)
-    except:
-        pass
+
+    if state is None:
+        state = dp.fsm.get_context(bot=bot, chat_id=chat_id, user_id=uid)
+
+    # Безопасная пакетная очистка реальных ID за один запрос delete_messages:
+    # 1. Сохранённые ранее сообщения из FSM-состояния (messages_to_delete)
+    # 2. Сообщение самой команды /start
+    # 3. Предыдущий активный экран игры (last_active_msg_id), если перезапуск
+    extra_ids = [message.message_id]
+    old_active_msg = last_active_msg_id.pop(uid, None)
+    if old_active_msg:
+        extra_ids.append(old_active_msg)
+
+    await clear_tracked_messages(chat_id=chat_id, state=state, extra_ids=extra_ids)
+
     loaded = load_game(uid)
     if loaded and getattr(loaded, "is_name_set", False):
         hero_name = loaded.character_name or "Выживший"
@@ -621,7 +700,8 @@ async def cmd_start(message: Message):
         kb = get_start_new_game_kb()
     # Нижняя Reply-клавиатура полностью отключена — сбрасываем кэш у клиента
     try:
-        await message.answer("🌲 LesSurvivalBot", reply_markup=ReplyKeyboardRemove())
+        rm_msg = await message.answer("🌲 LesSurvivalBot", reply_markup=ReplyKeyboardRemove())
+        await safe_delete_message(chat_id, rm_msg.message_id)
     except Exception:
         pass
     await update_or_send_message(chat_id, uid, text, kb)
@@ -2022,6 +2102,8 @@ async def process_text_message(message: Message):
             "last_active_msg_id": last_active_msg_id,
             "safe_edit_message": safe_edit_message,
             "safe_delete_message": safe_delete_message,
+            "safe_delete_messages": safe_delete_messages,
+            "clear_tracked_messages": clear_tracked_messages,
             "update_or_send_message": update_or_send_message,
             "format_game_text": format_game_text,
             "inventory_inline_kb": inventory_inline_kb,
