@@ -52,7 +52,6 @@ def handle_location_1_forest_start(data: str, game, uid: int):
 
     elif data == "wolf_leave":
         game.story_state = None
-        game.karma["clever"] = game.karma.get("clever", 0) + 2
         game.add_log("Ты тихо отступил, не связываясь с волком.")
         text = game.get_ui() if hasattr(game, "get_ui") else "Ты отступил."
         kb = get_main_kb(game)
@@ -183,7 +182,6 @@ def handle_story(data: str, game, uid: int):
         kb = cat_kb
 
     elif data == "pet_leave":
-        game.karma["gentle"] = max(0, game.karma.get("gentle", 0) - 5)
         game.adjust_narrative_karma("compassion", -3)
         game.story_state = None
         game.reset_nav()
@@ -1771,7 +1769,6 @@ def handle_location_4_hunters_glade(data, game, uid):
             "В воздухе пахнет дымом и кровью, давнишней, старой.\n\n"
             "Что будешь делать?"
         )
-        game.karma["reckless"] = game.karma.get("reckless", 0) + 1
         game.story_state = "hunters_encounter"
         kb = get_main_kb(game)
     
@@ -1784,8 +1781,6 @@ def handle_location_4_hunters_glade(data, game, uid):
             "Охотник охотит, даже если охотников давно нет."
         )
         game.inventory["Еда"] = game.inventory.get("Еда", 0) + 1
-        game.karma["clever"] = game.karma.get("clever", 0) + 1
-        game.karma["reckless"] = game.karma.get("reckless", 0) + 1
         game.story_state = "hunters_trapped"
         kb = get_main_kb(game)
     
@@ -1797,8 +1792,6 @@ def handle_location_4_hunters_glade(data, game, uid):
             "Ты следишь по крови — она ведёт в кусты, где ты находишь раненого оленя.\n\n"
             "Выбор: помочь или оставить?"
         )
-        game.karma["gentle"] = game.karma.get("gentle", 0) + 1
-        game.karma["mysterious"] = game.karma.get("mysterious", 0) + 1
         game.story_state = "hunters_blood_choice"
         kb = get_main_kb(game)
     
@@ -1816,8 +1809,6 @@ def handle_location_4_hunters_glade(data, game, uid):
         # Вода с учётом коэффициента голода
         water_cost = 1 * get_resource_multiplier(game, "hunger")
         game.inventory["Вода"] = max(0, game.inventory.get("Вода", 0) - water_cost)
-        game.karma["gentle"] = game.karma.get("gentle", 0) + 3
-        game.karma["heroic"] = game.karma.get("heroic", 0) + 1
         game.story_state = "hunters_helped"
         kb = get_main_kb(game)
     
@@ -1829,9 +1820,6 @@ def handle_location_4_hunters_glade(data, game, uid):
             "Ты разжигаешь костер, и вскоре тепло согревает окрестности.\n\n"
             "Старый огонь охотников горит ещё раз."
         )
-        game.karma["clever"] = game.karma.get("clever", 0) + 2
-        game.karma["brutal"] = game.karma.get("brutal", 0) + 1
-        
         # Жажда и Голод с учётом коэффициентов
         thirst_restore = 10 * get_resource_multiplier(game, "thirst")
         game.thirst = min(100, game.thirst + thirst_restore)
@@ -1867,8 +1855,6 @@ def handle_location_5_slug_pit(data, game, uid):
             "Воздух пахнет гнилью и жизнью одновременно.\n\n"
             "Что будешь делать?"
         )
-        game.karma["mysterious"] = game.karma.get("mysterious", 0) + 2
-        game.karma["reckless"] = game.karma.get("reckless", 0) + 1
         game.story_state = "slug_encounter"
         kb = get_main_kb(game)
     
@@ -1882,7 +1868,6 @@ def handle_location_5_slug_pit(data, game, uid):
             "Природное волшебство, собранное своими руками."
         )
         game.inventory["Грибы"] = game.inventory.get("Грибы", 0) + 3
-        game.karma["mysterious"] = game.karma.get("mysterious", 0) + 2
         game.story_state = "slug_mushroom_gathered"
         kb = get_main_kb(game)
     
@@ -1896,8 +1881,6 @@ def handle_location_5_slug_pit(data, game, uid):
             "Вы смотрите друг на друга, два существа из разных миров.\n\n"
             "Никто не движется. Никто не атакует."
         )
-        game.karma["mysterious"] = game.karma.get("mysterious", 0) + 3
-        game.karma["gentle"] = game.karma.get("gentle", 0) + 1
         game.story_state = "slug_met_giant"
         kb = get_main_kb(game)
     
@@ -1909,8 +1892,6 @@ def handle_location_5_slug_pit(data, game, uid):
             "В этом яре всё странно, всё полно тайн."
         )
         game.inventory["Слизь"] = game.inventory.get("Слизь", 0) + 2
-        game.karma["mysterious"] = game.karma.get("mysterious", 0) + 1
-        game.karma["reckless"] = game.karma.get("reckless", 0) + 1
         game.story_state = "slug_slime_collected"
         kb = get_main_kb(game)
     
@@ -1924,8 +1905,6 @@ def handle_location_5_slug_pit(data, game, uid):
             "Ты находишь источник — гигантский кокон из слизи, внутри которого что-то движется.\n\n"
             "Рождение? Смерть? Трансформация?"
         )
-        game.karma["reckless"] = game.karma.get("reckless", 0) + 2
-        game.karma["mysterious"] = game.karma.get("mysterious", 0) + 2
         game.story_state = "slug_deep_seen"
         kb = get_main_kb(game)
 
@@ -1952,7 +1931,6 @@ def handle_location_6_furry_cave(data, game, uid):
             "и древними кострами. Стены покрыты слоями налёта, а пол — мягким мхом.\n\n"
             "Что будешь делать?"
         )
-        game.karma["mysterious"] = game.karma.get("mysterious", 0) + 2
         game.story_state = "furry_encounter"
         kb = get_main_kb(game)
     
@@ -1964,7 +1942,6 @@ def handle_location_6_furry_cave(data, game, uid):
             "ещё тлеющий углём.\n\n"
             "Мохнатая Пещера — убежище для тех, кто ищет тепла."
         )
-        game.karma["gentle"] = game.karma.get("gentle", 0) + 1
         game.story_state = "furry_exploring"
         kb = get_main_kb(game)
     
@@ -1976,7 +1953,6 @@ def handle_location_6_furry_cave(data, game, uid):
             "обволакивают тебя, как мягкое одеяло. Жажда отступает, тело согревается.\n\n"
             "Тепло — редкий гость в этом лесу."
         )
-        game.karma["brutal"] = game.karma.get("brutal", 0) + 1
         game.story_state = "furry_warmed"
         kb = get_main_kb(game)
     
@@ -1988,7 +1964,6 @@ def handle_location_6_furry_cave(data, game, uid):
             "Сон приходит быстро — здесь тихо, тепло и безопасно.\n\n"
             "Ночь в пещере — лучший отдых для уставшего путника."
         )
-        game.karma["gentle"] = game.karma.get("gentle", 0) + 2
         game.story_state = "furry_sleeping"
         kb = get_main_kb(game)
     
@@ -2032,41 +2007,9 @@ def handle_location_7_sanctuary_peak(data, game, uid):
             "Здесь, на самой вершине, лежат камни, расположенные в странную мандалу.\n"
             "В центре — старая чаша, заросшая мхом, наполненная водой, чистой как слеза.\n"
             "Ты понимаешь: это конец пути.\n\n"
-            "Твоя карма подскажет, какая развязка тебя ждёт."
+            "Твои решения и сюжетная карма определят, какая развязка тебя ждёт."
         )
         game.story_state = "sanctuary_choice"
-        kb = get_main_kb(game)
-    
-    elif data == "sanctuary_heroic":
-        text = (
-            "Ты наполняешь чашу водой из родника, что течёт с верхушки святилища.\n"
-            "В этот момент небо вспыхивает золотом — ты видишь образ Героя, который ушёл здесь давно.\n"
-            "Его голос в твоём сознании: 'Ты прошёл испытание. Лес отпускает тебя, герой.'\n\n"
-            "Ты спускаешься со святилища, и лес отступает, открывая дорогу к дому."
-        )
-        game.story_state = "sanctuary_heroic_end"
-        kb = get_main_kb(game)
-    
-    elif data == "sanctuary_gentle":
-        text = (
-            "Ты нежно касаешься поверхности воды в чаше.\n"
-            "Мир замирает. Ты видишь не врагов в лесу, а друзей, потерянных и вновь найденных.\n"
-            "Лес не враг, а живое существо, нуждающееся в заботе.\n"
-            "Ты осознаёшь: можно остаться здесь, стать хранителем этого места.\n\n"
-            "Или вернуться в мир людей, изменённым, но целым."
-        )
-        game.story_state = "sanctuary_gentle_end"
-        kb = get_main_kb(game)
-    
-    elif data == "sanctuary_mysterious":
-        text = (
-            "Ты пьёшь воду из чаши.\n"
-            "Видение охватывает тебя — ты видишь лес таким, каким он был тысячи лет назад.\n"
-            "Видишь существа, которые здесь жили до людей, видишь магию, которая в земле.\n"
-            "Ты больше не человек простой — ты хранитель древних знаний.\n\n"
-            "Лес принял тебя как своего."
-        )
-        game.story_state = "sanctuary_mysterious_end"
         kb = get_main_kb(game)
 
     if kb == get_main_kb(game) or data in ("sanctuary_resolve", "back") or getattr(game, "hp", 100) <= 0:

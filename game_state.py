@@ -85,15 +85,8 @@ class GameState:
     # Ключевой предмет локации (что запускает сцену)
     current_location_key: str = "Факел"
     
-    # Система кармы (6 измерений для эмоционального разветвления)
-    karma: Dict[str, int] = field(default_factory=lambda: {
-        "heroic": 20,
-        "brutal": 5,
-        "gentle": 10,
-        "clever": 15,
-        "reckless": 8,
-        "mysterious": 12,
-    })
+    # Устаревшая карма (сохраняется для обратной совместимости сохранений)
+    karma: Dict[str, int] = field(default_factory=dict)
 
     # Бонус AP от экипировки (суммируется с базовым AP по HP)
     equipment_ap_bonus: int = 0
@@ -536,20 +529,20 @@ class GameState:
         return default
     
     def calculate_karma_bonus(self) -> Dict[str, int]:
-        """Рассчитать бонусы от кармы к характеристикам."""
-        stats = {
-            "strength": self.karma.get("brutal", 3),
-            "agility": self.karma.get("clever", 5),
-            "charm": self.karma.get("gentle", 5),
-            "mystery": self.karma.get("mysterious", 5),
+        """Рассчитать бонусы к характеристикам."""
+        return {
+            "strength": 0,
+            "agility": 0,
+            "charm": 0,
+            "mystery": 0,
         }
-        return stats
     
     def adjust_karma(self, category: str, amount: int):
-        """Изменить карму по категории."""
-        if category in self.karma:
-            self.karma[category] += amount
-            self.add_log(f"Карма {category} изменилась на {amount}", "karma")
+        """Изменить карму по категории (при наличии перенаправляет в narrative_karma)."""
+        if category in getattr(self, "narrative_karma", {}):
+            self.adjust_narrative_karma(category, amount)
+        elif hasattr(self, "karma"):
+            self.karma[category] = self.karma.get(category, 0) + amount
 
     def adjust_narrative_karma(self, category: str, amount: int):
         """Изменить шкалу, используемую условиями семи финалов."""
@@ -721,32 +714,35 @@ class GameState:
         self.add_log("Навигация сброшена", "nav")
     
     def get_karma_title(self) -> str:
-        """Получить заголовок кармы для UI."""
-        # Находим категорию с наибольшим значением
-        if self.karma:
-            max_karma = max(self.karma.items(), key=lambda x: x[1])
-            return f"{max_karma[0].capitalize()} {max_karma[1]}"
-        return "Герой"
+        """Получить заголовок сюжетной кармы для UI."""
+        if hasattr(self, "narrative_karma") and self.narrative_karma:
+            max_item = max(self.narrative_karma.items(), key=lambda x: x[1])
+            if max_item[1] > 0:
+                titles = {
+                    "compassion": "Сострадательный",
+                    "pragmatism": "Прагматик",
+                    "intervention": "Решительный",
+                    "observation": "Наблюдатель",
+                }
+                return f"{titles.get(max_item[0], max_item[0].capitalize())} {max_item[1]}"
+        return "Выживший"
     
-    def get_karma_progress(self) -> Dict[str, int]:
-        """Получить прогресс кармы для финальных развязок."""
-        # Проверяем, достигла ли карма определённого порога
+    def get_karma_progress(self) -> Dict[str, Any]:
+        """Получить прогресс сюжетной кармы для финальных развязок."""
         progress = {}
         thresholds = {
-            "heroic": 30,
-            "brutal": 25,
-            "gentle": 25,
-            "clever": 25,
-            "reckless": 20,
-            "mysterious": 25,
+            "compassion": 8,
+            "pragmatism": 8,
+            "intervention": 8,
+            "observation": 12,
         }
         for category, threshold in thresholds.items():
-            current = self.karma.get(category, 0)
+            current = self.narrative_karma.get(category, 0)
             progress[category] = {
                 "current": current,
                 "threshold": threshold,
                 "reached": current >= threshold,
-                "level": current // 10,  # Уровень кармы
+                "level": current // 4,
             }
         return progress
     

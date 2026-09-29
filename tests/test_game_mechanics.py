@@ -1048,6 +1048,41 @@ def test_12_unified_emojis_torch_and_navigation():
     assert narrative_pos < header_pos < fire_pos
 
 
+def test_narrative_karma_and_endings():
+    """Проверка сюжетной кармы, титула, прогресса и определения финалов."""
+    from story.location_stories import resolve_ending
+
+    game = GameState()
+    # 1. Проверяем, что в GameState нет шкал старой кармы
+    for legacy_key in ("heroic", "brutal", "gentle", "clever", "reckless", "mysterious"):
+        assert legacy_key not in game.karma
+
+    # 2. Проверяем канонические шкалы narrative_karma
+    for category in ("intervention", "compassion", "pragmatism", "observation"):
+        assert category in game.narrative_karma
+        assert game.narrative_karma[category] == 0
+
+    # 3. Изменение narrative_karma
+    game.adjust_narrative_karma("compassion", 5)
+    assert game.narrative_karma["compassion"] == 5
+
+    # 4. Титул кармы
+    assert game.get_karma_title() == "Сострадательный 5"
+
+    # 5. Прогресс кармы
+    prog = game.get_karma_progress()
+    assert prog["compassion"]["current"] == 5
+    assert not prog["compassion"]["reached"]
+    assert prog["compassion"]["threshold"] == 8
+
+    # 6. Достижение порога и проверка финала
+    game.adjust_narrative_karma("compassion", 4)  # compassion = 9 >= high (8)
+    game.set_story_flag("has_pet", True)
+    game.set_story_flag("deer_freed", True)
+    game.set_story_flag("left_warning", True)
+    assert resolve_ending(game) == "guardian"
+
+
 
 
 

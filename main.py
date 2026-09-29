@@ -1946,7 +1946,8 @@ async def process_callback(callback: types.CallbackQuery):
             kb = get_main_kb(game)
 
         elif data == "karma_escape":
-            karma_ok = all(v > 0 for v in game.karma.values())
+            narrative = getattr(game, "narrative_karma", {})
+            karma_ok = bool(narrative) and all(v > 0 for v in narrative.values())
             if karma_ok:
                 game.add_log("Карма идеальна — ты сбежал из леса!")
                 game.story_state = "karma_escape"
