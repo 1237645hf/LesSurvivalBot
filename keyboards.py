@@ -93,6 +93,10 @@ def get_item_card_actions_kb(item_name: str, game=None):
     elif item_name == "Бутылка воды":
         keyboard.append([InlineKeyboardButton(text="🧴 Надеть на пояс (в слот фляги)", callback_data="equip_bottle_flask")])
         keyboard.append([InlineKeyboardButton(text="💧 Сделать глоток (+15 жажды)", callback_data="drink_bottle_single")])
+    elif item_name == "Армейская фляга":
+        keyboard.append([InlineKeyboardButton(text="🧴 Надеть на пояс (в слот фляги)", callback_data="equip_army_flask")])
+    elif item_name == "Бутылка дождевой воды":
+        keyboard.append([InlineKeyboardButton(text="💧 Сделать глоток (риск)", callback_data="drink_rain_bottle")])
     elif item_name == "Факел":
         keyboard.append([InlineKeyboardButton(text="🔦 Взять в левую руку", callback_data="use_item_Факел")])
     elif item_name == "Крепкий посох":
@@ -187,9 +191,16 @@ def get_main_kb(game):
             InlineKeyboardButton(text="📜 Каменная плита", callback_data="tablet_notes_view")
         ])
     if game.weather in {"rain", "storm"}:
-        kb_rows.append([
+        rain_btns = [
             InlineKeyboardButton(text="🌧️ Пить дождь", callback_data="action_collect_water")
-        ])
+        ]
+        has_empty_bottle = game.inventory.get("Пустая бутылка", 0) > 0
+        has_partial_rain_bottle = any(w < 20 for w in getattr(game, "rain_bottles", []))
+        if has_empty_bottle or has_partial_rain_bottle:
+            rain_btns.append(
+                InlineKeyboardButton(text="🧴 Набрать дождь (1 ⚡)", callback_data="action_fill_rain_bottle")
+            )
+        kb_rows.append(rain_btns)
     if getattr(game, "locations_unlocked", False):
         kb_rows.append([
             InlineKeyboardButton(text="🗺️ Локации", callback_data="locations_menu")
@@ -207,11 +218,29 @@ def get_campfire_kb(game=None):
             [InlineKeyboardButton(text="🔥 Растопить печь (2 ⚡ AP)", callback_data="stove_rekindle")],
             [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
         ])
-    return InlineKeyboardMarkup(inline_keyboard=[
+    kb_rows = [
         [InlineKeyboardButton(text="📜 Рецепты", callback_data="campfire_recipes"),
          InlineKeyboardButton(text="🪵 Подкинуть", callback_data="campfire_add_fuel_menu")],
-        [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
-    ])
+    ]
+    # Прямая кнопка кипячения воды во фляге
+    has_flask = (
+        game
+        and (game.equipment.get("flask") == "Армейская фляга" or game.inventory.get("Армейская фляга", 0) > 0)
+    )
+    has_rain_water = (
+        game
+        and (
+            game.inventory.get("Бутылка дождевой воды", 0) > 0
+            or any(w > 0 for w in getattr(game, "rain_bottles", []))
+        )
+    )
+    flask_w = int(getattr(game, "flask_water", 0) or 0) if game else 0
+    if has_flask and has_rain_water and flask_w < 20:
+        kb_rows.append([
+            InlineKeyboardButton(text=f"🔥 Вскипятить воду ({flask_w}/20)", callback_data="campfire_boil_water")
+        ])
+    kb_rows.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
+    return InlineKeyboardMarkup(inline_keyboard=kb_rows)
 
 
 def get_campfire_fuel_kb(game):
@@ -305,35 +334,50 @@ def get_locations_kb(game):
             [InlineKeyboardButton(text=btn_text, callback_data="wolf_lair_enter")],
             [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
         ])
-    elif getattr(game, "wolf_lair_defeated", False):
-        keyboard = [
-            [InlineKeyboardButton(text="🌲 Стартовый лес", callback_data="location_enter_1")],
-            [InlineKeyboardButton(text="🏞️ Ручей", callback_data="location_enter_2")],
-        ]
-        unlocked = getattr(game, "unlocked_locations", []) or []
-        if "Скромная Лощина" in unlocked:
-            keyboard.append([InlineKeyboardButton(text="⛰️ Скромная Лощина", callback_data="location_enter_3")])
-        if "Солонец (Секач)" in unlocked and not game.is_story_flag_set("l3_ridge_completed"):
-            keyboard.append([InlineKeyboardButton(text="🐗 Солонец (Секач)", callback_data="location_enter_boar")])
-        if "Просека охотников" in unlocked:
-            keyboard.append([InlineKeyboardButton(text="🏹 Просека охотников", callback_data="location_enter_4")])
-        keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
-        return InlineKeyboardMarkup(inline_keyboard=keyboard)
-    else:
-        keyboard = []
-        unlocked = getattr(game, "unlocked_locations", ["Лесной старт"]) or ["Лесной старт"]
-        if "Лесной старт" in unlocked:
-            keyboard.append([InlineKeyboardButton(text="🌲 Стартовый лес", callback_data="location_enter_1")])
-        if "Ручей" in unlocked or "Ручей с Змеями" in unlocked:
-            keyboard.append([InlineKeyboardButton(text="🏞️ Ручей", callback_data="location_enter_2")])
-        if "Скромная Лощина" in unlocked:
-            keyboard.append([InlineKeyboardButton(text="⛰️ Скромная Лощина", callback_data="location_enter_3")])
-        if "Солонец (Секач)" in unlocked and not game.is_story_flag_set("l3_ridge_completed"):
-            keyboard.append([InlineKeyboardButton(text="🐗 Солонец (Секач)", callback_data="location_enter_boar")])
-        if "Просека охотников" in unlocked:
-            keyboard.append([InlineKeyboardButton(text="🏹 Просека охотников", callback_data="location_enter_4")])
-        keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
-        return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+    keyboard = []
+    unlocked = getattr(game, "unlocked_locations", []) or []
+
+    def is_loc_unlocked(*keywords):
+        if not unlocked:
+            return False
+        for loc in unlocked:
+            loc_low = str(loc).lower()
+            if any(kw.lower() in loc_low for kw in keywords):
+                return True
+        return False
+
+    # 0. Забытый купол (В САМОМ ВЕРХУ, пока не получен лут)
+    if game.is_story_flag_set("l1_dome_discovered") and not game.is_story_flag_set("l1_dome_completed"):
+        keyboard.append([InlineKeyboardButton(text="🪂 Забытый купол", callback_data="l1_dome_enter")])
+
+    # 1. Стартовый лес
+    if is_loc_unlocked("лес", "старт") or not unlocked:
+        keyboard.append([InlineKeyboardButton(text="🌲 Стартовый лес", callback_data="location_enter_1")])
+    # 2. Ручей со змеями
+    if is_loc_unlocked("ручей"):
+        keyboard.append([InlineKeyboardButton(text="🏞️ Ручей со змеями", callback_data="location_enter_2")])
+    # 3. Скромная лощина
+    if is_loc_unlocked("лощин"):
+        keyboard.append([InlineKeyboardButton(text="⛰️ Скромная лощина", callback_data="location_enter_3")])
+    # Босс: Солонец (Секач)
+    if is_loc_unlocked("секач", "солонец") and not game.is_story_flag_set("l3_ridge_completed"):
+        keyboard.append([InlineKeyboardButton(text="🐗 Солонец (Секач)", callback_data="location_enter_boar")])
+    # 4. Просека охотников
+    if is_loc_unlocked("просек", "охотник"):
+        keyboard.append([InlineKeyboardButton(text="🏹 Просека охотников", callback_data="location_enter_4")])
+    # 5. Яр слизней
+    if is_loc_unlocked("яр", "слизн"):
+        keyboard.append([InlineKeyboardButton(text="🐌 Яр слизней", callback_data="location_enter_5")])
+    # 6. Мохнатая пещера
+    if is_loc_unlocked("пещер", "мохнат"):
+        keyboard.append([InlineKeyboardButton(text="🦇 Мохнатая пещера", callback_data="location_enter_6")])
+    # 7. Святилище
+    if is_loc_unlocked("святилищ"):
+        keyboard.append([InlineKeyboardButton(text="🏛️ Святилище", callback_data="location_enter_7")])
+
+    keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 def get_wolf_battle_kb():
@@ -369,12 +413,12 @@ def get_trap_buttons_kb(game):
     """Кнопки ловушек для каждой локации (1-7)."""
     kb = InlineKeyboardMarkup(inline_keyboard=[])
     location_names = {
-        1: "Лес",
-        2: "Ручей",
-        3: "Лощина",
-        4: "Просека",
-        5: "Яр",
-        6: "Пещера",
+        1: "Стартовый лес",
+        2: "Ручей со змеями",
+        3: "Скромная лощина",
+        4: "Просека охотников",
+        5: "Яр слизней",
+        6: "Мохнатая пещера",
         7: "Святилище",
     }
     traps = getattr(game, "traps", {}) or {}

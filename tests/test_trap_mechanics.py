@@ -118,6 +118,6 @@ def test_trap_buttons_keyboard():
 
     kb = get_trap_buttons_kb(game)
     texts = [btn.text for row in kb.inline_keyboard for btn in row]
-    assert any("✅ Ручей (взведена)" in t for t in texts)
-    assert any("🔨 Лощина (сломана — заменить)" in t for t in texts)
-    assert any("🪤 Лес (поставить)" in t for t in texts)
+    assert any("✅ Ручей со змеями (взведена)" in t for t in texts)
+    assert any("🔨 Скромная лощина (сломана — заменить)" in t for t in texts)
+    assert any("🪤 Стартовый лес (поставить)" in t for t in texts)

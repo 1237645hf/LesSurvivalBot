@@ -43,6 +43,8 @@ def handle_location_1_forest_start(data: str, game, uid: int):
 
 def handle_story(data: str, game, uid: int):
     """Обработать сюжетную сцену волка и котёнка или передать в ветку других локаций."""
+    if data.startswith("l1_dome"):
+        return handle_l1_dome(data, game, uid)
     if data.startswith("l2_") or data.startswith("ruchey_") or data == "location_enter_2":
         return handle_location_2_ruchey(data, game, uid)
     if (
@@ -54,7 +56,7 @@ def handle_story(data: str, game, uid: int):
         or data in ("location_enter_3", "location_enter_boar")
     ):
         return handle_location_3_slate_hollow(data, game, uid)
-    if data.startswith("hunters_") or data.startswith("glade_") or data == "location_enter_4":
+    if data.startswith("l4_") or data.startswith("hunters_") or data.startswith("glade_") or data == "location_enter_4":
         return handle_location_4_hunters_glade(data, game, uid)
     if data.startswith("slug_") or data.startswith("pit_") or data == "location_enter_5":
         return handle_location_5_slug_pit(data, game, uid)
@@ -244,6 +246,23 @@ def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool)
 
         return None, None
 
+    if loc_id == 4:
+        # Триггер Локации 4 (Просека Охотников):
+        # Условие: прожить минимум 2 ночи (2 сна на L4 или day >= l4_entered_day + 2).
+        # При первом исследовании после этого запускается l4_1_entry.
+        if not game.is_story_flag_set("l4_completed"):
+            l4_entered = game.story_flags.get("l4_entered_day")
+            if l4_entered is None:
+                game.story_flags["l4_entered_day"] = getattr(game, "day", 1)
+                l4_entered = game.story_flags["l4_entered_day"]
+
+            cur_day = getattr(game, "day", 1)
+            sleeps = game.story_flags.get("l4_sleep_count", 0)
+            if sleeps >= 2 or cur_day >= l4_entered + 2 or game.is_story_flag_set("l4_started"):
+                game.set_story_flag("l4_started", True)
+                return "l4_1_entry", "🏹 Ты замечаешь странную натянутую верёвку между деревьями..."
+        return None, None
+
     if loc_id != 1:
         return None, None
 
@@ -270,6 +289,20 @@ def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool)
                 game.set_story_flag("l1_5_triggered")
                 return "l1_5_start", None
 
+    # Триггер 3: Забытый купол (дуб с парашютом)
+    # Запуск: после первой ночи (day == 2) на 2-е исследование леса без факела
+    if (
+        getattr(game, "day", 1) == 2
+        and not torch_equipped
+        and not game.is_story_flag_set("l1_dome_discovered")
+        and not game.is_story_flag_set("l1_dome_completed")
+    ):
+        day2_count = getattr(game, "l1_day2_research_count", 0) + 1
+        game.l1_day2_research_count = day2_count
+        if day2_count >= 2:
+            game.set_story_flag("l1_dome_discovered", True)
+            return "l1_dome_start", None
+
     return None, None
 
 
@@ -289,7 +322,7 @@ def is_story_callback(data: str) -> bool:
             "story_next",
         )
         or data.startswith((
-            "l1_5", "l1_6", "l1_7", "wolf_lair", "wolf_battle", "boar_",
+            "l1_dome", "l1_5", "l1_6", "l1_7", "wolf_lair", "wolf_battle", "boar_",
             "l2_", "ruchey_",
             "l3_", "slate_", "rest_", "examine_", "location_enter_3",
             "hunters_", "glade_", "location_enter_4",
@@ -298,6 +331,247 @@ def is_story_callback(data: str) -> bool:
             "sanctuary_", "location_enter_7",
         ))
     )
+
+
+def handle_l1_dome(data: str, game, uid: int):
+    """Сюжетный сценарий локации «Забытый купол» (дуб с парашютом и армейской флягой)."""
+    text = None
+    kb = None
+    cur_day = getattr(game, "day", 1)
+
+    # 1. Первый визит или повторный вход на локацию
+    if data in ("l1_dome_start", "l1_dome_enter"):
+        game.push_screen("l1_dome")
+        visited_once = game.is_story_flag_set("l1_dome_visited_once")
+
+        # Если уже был первый визит ранее:
+        if visited_once:
+            # А. Если ранец уже упал на землю — сразу показываем завал!
+            if game.is_story_flag_set("l1_dome_backpack_fallen"):
+                text = (
+                    "Ранец лежит прямо среди густого валежника, колючего терновника и вывороченных корней дуба.\n\n"
+                    "Чтобы достать его, придется потратить силы и расчистить завал."
+                )
+                if game.ap >= 1:
+                    kb = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="🪓 Расчистить завал (1 ⚡)", callback_data="l1_dome_loot")],
+                        [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")],
+                    ])
+                else:
+                    kb = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="❌ Нет сил расчищать", callback_data="menu_main")],
+                    ])
+                return text, kb
+
+            # Б. Проверка: уже была попытка сегодня?
+            last_attempt_day = game.story_flags.get("l1_dome_day_attempt")
+            if last_attempt_day == cur_day:
+                text = (
+                    "Тело всё еще ноет от недавнего падения и усталости.\n\n"
+                    "Лезть на дуб или суетиться прямо сейчас бессмысленно. "
+                    "Нужно переждать до завтра, дать силам восстановиться и обдумать план."
+                )
+                kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")]
+                ])
+                return text, kb
+
+            # В. Проверка погоды: плохая погода (дождь, гроза, пасмурно)
+            if game.weather in {"rain", "storm", "cloudy"}:
+                text = (
+                    "Непогода окутала поляну сыростью. С ветвей дуба стекают струи воды, а намокший купол тяжело обвис между сучьями.\n\n"
+                    "В такой серый полумрак и скользкую сырость разглядеть крепление ранца и сбить его невозможно. Стоит прийти в ясную погоду."
+                )
+                kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")]
+                ])
+                return text, kb
+
+            # Г. Ясная солнечная погода (clear): выбор вариантов
+            has_pet = game.is_story_flag_set("saved_kitten") or bool(game.equipment.get("pet"))
+            has_staff = (
+                game.equipment.get("hand_right") in ("Крепкий посох", "Палка")
+                or game.equipment.get("hand_left") in ("Крепкий посох", "Палка")
+                or game.inventory.get("Крепкий посох", 0) > 0
+                or game.inventory.get("Палка", 0) > 0
+            )
+
+            text = (
+                "Солнечные лучи пробиваются сквозь крону. На сухом дубе хорошо виден застрявший ранец и переплетенные стропы.\n\n"
+                "Лезть на дерево нельзя. Как попытаться достать ранец?"
+            )
+            buttons = []
+            if has_staff:
+                buttons.append([InlineKeyboardButton(text="🥢 Сбить посохом (1 ⚡)", callback_data="l1_dome_staff_solve")])
+            if has_pet:
+                buttons.append([InlineKeyboardButton(text="🐱 Отправить котёнка", callback_data="l1_dome_cat_solve")])
+            buttons.append([InlineKeyboardButton(text="🪨 Бросать камни (1 ⚡)", callback_data="l1_dome_stone_throw")])
+            buttons.append([InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")])
+            kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+            return text, kb
+
+        # ПЕРВЫЙ ВИЗИТ (погода игнорируется): Окно 1.1
+        text = (
+            "В глубине леса ветви расступаются перед поляной. Посреди неё возвышается древний расколотый дуб.\n\n"
+            "Высоко на черных сучьях висит выцветший парашютный купол. В истлевших стропах белеют кости и виден армейский брезентовый ранец."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🧗 Вскарабкаться на дуб", callback_data="l1_dome_climb_v1")],
+            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")],
+        ])
+
+    elif data == "l1_dome_climb_v1":
+        # Окно 1.2: Срыв ветви и падение
+        damage = 5
+        game.hp = max(1, game.hp - damage)
+        game.consume_action(1)
+        text = (
+            "Ты хватаешься за толстый сук и подтягиваешься. Но мертвая древесина с глухим сухим треском обламывается под твоим весом!\n\n"
+            "Ты летишь вниз и со всего маху ударяешься о корни дуба. Дыхание перехватывает от резкой боли.\n\n"
+            "*(Эффекты: -5 HP, -1 AP)*"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🤕 Подняться на ноги", callback_data="l1_dome_after_fall")],
+        ])
+
+    elif data == "l1_dome_after_fall":
+        # Окно 1.3: Урок на будущее
+        game.story_flags["l1_dome_visited_once"] = True
+        game.story_flags["l1_dome_day_attempt"] = cur_day
+        text = (
+            "С трудом поднявшись, ты отряхиваешь грязь и потираешь ушибленные ребра.\n\n"
+            "Голыми руками на этот сухой дуб не залезть — кора осыпается, а ветви гнилые. "
+            "Не стоит унывать, но сегодня тело слишком ноет. Нужно вернуться завтра и придумать другой способ."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")],
+        ])
+
+    elif data == "l1_dome_stone_throw":
+        # Броски камнями: тратит 1 AP и 15 жажды, не получается
+        game.consume_action(1)
+        game.thirst = max(0, game.thirst - 15)
+        text = (
+            "Ты собираешь увесистые камни и изо всех сил швыряешь их вверх. Камни звонко бьют по коре и веткам, "
+            "но стропы слишком тонкие и гибкие — сбить их не удается.\n\n"
+            "От бесконечных бросков пересохло в горле, а плечо мучительно ломит. Кажется, камнями здесь ничего не добиться.\n\n"
+            "*(Эффекты: -1 AP, -15 к жажде)*"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="↩️ Перевести дух", callback_data="l1_dome_enter")],
+        ])
+
+    elif data == "l1_dome_staff_solve":
+        # Попытка с посохом: 3 попытки
+        game.consume_action(1)
+        game.story_flags["l1_dome_day_attempt"] = cur_day
+        staff_tries = game.story_flags.get("l1_dome_staff_tries", 0) + 1
+        game.story_flags["l1_dome_staff_tries"] = staff_tries
+
+        if staff_tries == 1:
+            # Попытка 1
+            text = (
+                "Ты привязываешь длинную крепкую ветвь к своему посоху и с трудом поднимаешь конструкцию вверх. "
+                "Долго ловишь баланс, целясь в спутанные стропы.\n\n"
+                "Конец ветви лишь вскользь задевает узел. От долгого напряжения шея и руки затекли и дрожат. "
+                "Сбить с наскока не вышло, придется отложить до завтра.\n\n"
+                "*(Эффекты: -1 AP)*"
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")],
+            ])
+        elif staff_tries == 2:
+            # Попытка 2
+            text = (
+                "Ты вновь поднимаешь удлиненный посох и методично бьешь по стропе. Снова долгая ловля баланса, "
+                "руки немеют от тяжести, а ветвь вибрирует от ударов.\n\n"
+                "Узел строп заметно разболтался и надорвался, но ранец всё еще держится. Силы на исходе, мышцы гудят. "
+                "На сегодня хватит, завтра узел точно поддастся.\n\n"
+                "*(Эффекты: -1 AP)*"
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")],
+            ])
+        else:
+            # Попытка 3 — решающая (успех)
+            game.set_story_flag("l1_dome_backpack_fallen", True)
+            text = (
+                "Натренированным движением ты поддеваешь разболтанный узел раздвоенным концом посоха и с силой проворачиваешь его.\n\n"
+                "Сухой треск! Перетертые стропы лопаются, и тяжелый ранец с шумом летит вниз, врезаясь в густой валежник у корней дуба!\n\n"
+                "*(Эффекты: -1 AP)*"
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🌿 Осмотреть завал у корней", callback_data="l1_dome_fall")],
+            ])
+
+    elif data == "l1_dome_cat_solve":
+        # Вариант с котёнком — мгновенный успех
+        game.set_story_flag("l1_dome_backpack_fallen", True)
+        text = (
+            "Котёнок с интересом смотрит на колышущиеся от ветра стропы. Мяукнув, он мгновенно взлетает по шершавому стволу дуба, словно белка.\n\n"
+            "Пара ловких движений острыми зубками и когтями — и стропа лопается! Ранец с треском падает вниз прямо в валежник у корней. "
+            "Довольный кот спрыгивает к тебе на плечо."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🌿 Осмотреть завал у корней", callback_data="l1_dome_fall")],
+        ])
+
+    elif data == "l1_dome_fall":
+        # Окно 5.1: Ранец в завале
+        text = (
+            "Ранец лежит прямо среди густого валежника, колючего терновника и вывороченных корней дуба.\n\n"
+            "Чтобы достать его, придется потратить силы и расчистить завал."
+        )
+        if game.ap >= 1:
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🪓 Расчистить завал (1 ⚡)", callback_data="l1_dome_loot")],
+                [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")],
+            ])
+        else:
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="❌ Нет сил расчищать", callback_data="menu_main")],
+            ])
+
+    elif data == "l1_dome_loot":
+        if game.ap < 1:
+            text = (
+                "Ранец лежит прямо среди густого валежника, колючего терновника и вывороченных корней дуба.\n\n"
+                "У тебя нет сил расчистить завал! Нужно отдохнуть и набраться сил."
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="❌ Нет сил расчищать", callback_data="menu_main")],
+            ])
+            return text, kb
+
+        game.consume_action(1)
+        # Экипируем флягу, если слот пуст, либо даем в инвентарь
+        if not game.equipment.get("flask") or game.equipment.get("flask") == "Бутылка воды":
+            # Если надета обычная пластиковая бутылка, снимаем в инвентарь (или пустую)
+            old_flask = game.equipment.get("flask")
+            if old_flask:
+                game.inventory[old_flask] = game.inventory.get(old_flask, 0) + 1
+            game.equipment["flask"] = "Армейская фляга"
+            game.flask_water = 20
+        else:
+            game.inventory["Армейская фляга"] = game.inventory.get("Армейская фляга", 0) + 1
+
+        game.adjust_narrative_karma("pragmatism", 3)
+        game.set_story_flag("l1_dome_completed", True)
+        game.story_state = None
+        game.active_story_callback = None
+        game.reset_nav()
+        text = (
+            "Разбросав ветви валежника, ты открываешь тяжелые пряжки ранца. Внутри — надежная металлическая **Армейская фляга**, "
+            "до краев наполненная чистой водой!\n\n"
+            "Ты бережно укладываешь упавшие останки парашютиста под сенью дуба и присыпаешь их землей и камнями, воздав последние почести. "
+            "На душе становится спокойнее.\n\n"
+            "*(Эффекты: -1 AP, получена Армейская фляга 20/20, +3 кармы)*"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")],
+        ])
+
+    return text, kb
 
 
 def handle_l1_wolf_lair(data: str, game, uid: int):
@@ -1683,6 +1957,11 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
 
     elif data == "l3_13_boundary":
         game.set_story_flag("l3_ridge_completed", True)
+        unlocked = getattr(game, "unlocked_locations", []) or []
+        if "Просека Охотников" not in unlocked:
+            unlocked.append("Просека Охотников")
+            game.unlocked_locations = unlocked
+        game.add_log("🗺️ Открыта новая локация: Просека Охотников.")
         text = (
             "По сланцевым выступам ты поднимаешься к краю лощины.\n"
             "Отсюда видна полоса более редкого леса. Между стволами что-то светлеет.\n\n"
@@ -1737,82 +2016,521 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
 # ──────────────────────────────────────────────────────────────────────────────
 
 def handle_location_4_hunters_glade(data, game, uid):
-    """Обработать события на локации 'Просека Охотников'."""
+    """Обработать события на локации 'Просека Охотников' (художественный канон L4)."""
     text = None
     kb = None
-    
+
+    # Вход на локацию через меню / переход с L3
     if data in ("hunters_glade_start", "location_enter_4"):
+        game.reset_nav()
+        game.current_location = "Просека Охотников"
+        unlocked = getattr(game, "unlocked_locations", []) or []
+        if "Просека Охотников" not in unlocked:
+            unlocked.append("Просека Охотников")
+            game.unlocked_locations = unlocked
+
+        if "l4_entered_day" not in game.story_flags:
+            game.story_flags["l4_entered_day"] = getattr(game, "day", 1)
+
+        # Если сюжет уже завершён: спокойная стоянка
+        if game.is_story_flag_set("l4_completed"):
+            text = (
+                "Ты выходишь на широкую Просеку Охотников.\n\n"
+                "Старые кострища укрыты опавшей хвоей. Костяные пластинки больше не трещат на ветру, "
+                "а тропа свободна для исследования и установки охотничьих ловушек."
+            )
+            kb = get_main_kb(game)
+            return text, kb
+
+        # Если сюжет ещё не запущен (нужно пожить 2 ночи): спокойное обживание стоянки
+        if not game.is_story_flag_set("l4_started"):
+            text = (
+                "Ты выходишь на широкую Просеку Охотников.\n\n"
+                "Между деревьями чернеют старые кострища, на стволах видны зарубки. "
+                "Воздух пахнет смолой и сухой травой. Нужно осмотреться, пожить здесь и обустроить лагерь."
+            )
+            kb = get_main_kb(game)
+            return text, kb
+
+        # Если сюжет активен (в процессе прохождения): возобновить
+        return handle_location_4_hunters_glade("l4_1_entry", game, uid)
+
+    # L4.1 — Старт сюжетной ветки: Кто-то ещё здесь
+    elif data == "l4_1_entry":
+        game.story_state = "l4_1_entry"
         text = (
-            "Просека охотников раскинулась перед тобой как гигантский стол.\n"
-            "На земле — следы, множество следов. Волков. Оленей. Людей, которые пришли и ушли давно.\n"
-            "В воздухе пахнет дымом и кровью, давнишней, старой.\n\n"
-            "Что будешь делать?"
+            "Ты осторожно раздвигаешь колючие лапы елей и выходишь на широкую заросшую просеку. "
+            "В воздухе пахнет смолой, сырой землёй и давней гарью старых кострищ.\n\n"
+            "Внезапно у самой земли сухо щёлкает натянутая бечёвка — на ней вздрагивают костяные пластинки, "
+            "и шнур петляет дальше в траву. И в тот же миг из глубины чащи доносится глухой шум: "
+            "кто-то отчаянно бьётся в кустах, натягивая эту струну."
         )
-        game.story_state = "hunters_encounter"
-        kb = get_main_kb(game)
-    
-    elif data == "hunters_trap":
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Идти по верёвке", callback_data="l4_2_rope")],
+            [InlineKeyboardButton(text="Прямо на звук", callback_data="l4_3_deer")],
+        ])
+
+    # L4.2 — Верёвка среди травы
+    elif data == "l4_2_rope":
+        game.story_state = "l4_2_rope"
+        text = (
+            "Пригнувшись к земле, ты пальцами нащупываешь грубый шнур. Тонкая жила ныряет под узловатые корни сосен "
+            "и ведёт вглубь просеки. Волокна бечёвки местами совсем свежие, натёртые смолой — ловушку взвели недавно "
+            "и со знанием дела.\n\n"
+            "Чуть дальше в жухлой листве чернеет расправленная петля, замаскированная мхом. "
+            "Ты аккуратно перешагиваешь её, стараясь не задеть затаившийся сторожок."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l4_2a_bushes")]
+        ])
+
+    # L4.2a — За кустами (возможное появление котёнка)
+    elif data == "l4_2a_bushes":
+        game.story_state = "l4_2a_bushes"
+        has_pet = bool(game.equipment.get("pet"))
+        if has_pet:
+            text = (
+                "Ты осторожно раздвигаешь мокрые ветви малинника. Вдруг котёнок беспокойно возится под курткой, "
+                "впиваясь коготками в твоё плечо, и предостерегающе шипит в темноту. Ты замираешь на полушаге.\n\n"
+                "Прямо перед твоим сапогом, укрытый жухлым папоротником, натянут тугой шнур с противовесом на ветке. "
+                "Ещё одно неосторожное движение — и стальная удавка захлестнула бы ногу."
+            )
+        else:
+            text = (
+                "Ты осторожно раздвигаешь мокрые ветви малинника и опускаешь взгляд под ноги. "
+                "Инстинкт заставляет тебя замереть на полушаге, вглядываясь в полумрак подлеска.\n\n"
+                "Среди жухлого папоротника едва заметно поблёскивает тугой кручёный шнур. "
+                "Он уходит к ветке дерева, образуя коварную петлю-удавку прямо на уровне щиколотки. "
+                "Ещё шаг вперёд — и ловушка сработала бы на тебе."
+            )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Осмотреть проход", callback_data="l4_3_deer")],
+            [InlineKeyboardButton(text="Шагнуть вперёд", callback_data="l4_2b_trap")],
+        ])
+
+    # L4.2b — Опасное приближение
+    elif data == "l4_2b_trap":
+        game.story_state = "l4_2b_trap"
+        if not game.is_story_flag_set("l4_trap_stepped"):
+            game.set_story_flag("l4_trap_stepped", True)
+            trap_dmg = 5
+            game.hp = max(1, getattr(game, "hp", 100) - trap_dmg)
+            game.add_log(f"⚠️ Ловушка на просеке: −{trap_dmg} HP.")
+            if getattr(game, "hp", 100) <= 20:
+                game.thirst = max(0, getattr(game, "thirst", 60) - 5)
+        text = (
+            "Ты делаешь неосторожный шаг. Носок цепляет шнур — верёвка со свистом натягивается, "
+            "выдёргивая опору из-под ног!\n\n"
+            "Ты кубарем летишь в мох, больно ударившись плечом о корягу. Колышек с треском вырывается, "
+            "а костяные пластинки яростно гремят над просекой.\n"
+            "──────────\n"
+            "Ты ушиб плечо: −5 ХП"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l4_3_deer")]
+        ])
+
+    # L4.3 — На другом конце (Раненый олень)
+    elif data == "l4_3_deer":
+        game.story_state = "l4_3_deer"
+        text = (
+            "За густым кустарником на земле замер молодой олень. Его задняя нога крепко запутана "
+            "в тугой петле из толстого ремня и неестественно поджата к брюху.\n\n"
+            "Заметив твоё появление, зверь настороженно прижимает уши, а затем с надрывным хрипом "
+            "делает отчаянный рывок, пытаясь вырваться из капкана на свободу. Но натянутый шнур держит намертво."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Снять петлю руками", callback_data="l4_3a_approach")],
+            [InlineKeyboardButton(text="Найти крепление", callback_data="l4_3b_mount")],
+            [InlineKeyboardButton(text="Оставить его", callback_data="l4_3c_ignore")],
+        ])
+
+    # L4.3a — Подойти напрямую
+    elif data == "l4_3a_approach":
+        game.story_state = "l4_3a_approach"
+        if not game.is_story_flag_set("l4_deer_kicked"):
+            game.set_story_flag("l4_deer_kicked", True)
+            deer_dmg = 3
+            game.hp = max(1, getattr(game, "hp", 100) - deer_dmg)
+            game.add_log(f"⚠️ Удар оленя: −{deer_dmg} HP.")
+            game.adjust_narrative_karma("compassion", 1)
+        text = (
+            "Ты мягко ступаешь по мху, протянув ладонь к раненой ноге. Но обезумевший от боли зверь вскидывает круп "
+            "и со всей силы бьёт копытом!\n\n"
+            "Удар приходится по руке. Ты отлетаешь на сучья, баюкая ушибленную кисть, а олень глухо хрипит, не подпуская ближе.\n"
+            "──────────\n"
+            "Ты ушиб кисть: −3 ХП"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Найти крепление", callback_data="l4_3b_mount")],
+            [InlineKeyboardButton(text="Оставить его", callback_data="l4_3c_ignore")],
+        ])
+
+    # L4.3b — Найти крепление
+    elif data == "l4_3b_mount":
+        game.story_state = "l4_3b_mount"
+        text = (
+            "Обойдя бьющегося зверя широкой дугой, ты пробираешься к старой берёзе. "
+            "Здесь коварный шнур захлёстнут морским узлом вокруг глубоко вбитого в корни дубового колышка.\n\n"
+            "Чуть выше на жиле подвешены те самые костяные пластинки. "
+            "Любой рывок оленя передавал натяжение на ветку, заставляя кости трещать и оповещая охотника о добыче."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Снять пластинки", callback_data="l4_3b1_plates")],
+            [InlineKeyboardButton(text="Выдернуть колышек", callback_data="l4_3b2_shake")],
+        ])
+
+    # L4.3b.1 — Отвязать пластинки
+    elif data == "l4_3b1_plates":
+        game.story_state = "l4_3b1_plates"
+        game.set_story_flag("signal_disabled", True)
+        game.adjust_narrative_karma("observation", 2)
+        text = (
+            "Чуткими пальцами ты аккуратно распускаешь смоляной узел и перехватываешь связку. "
+            "Костяные пластинки лишь глухо звякают в кулаке и мягко ложатся в траву под деревом.\n\n"
+            "Олень позади снова надрывно дёргается, но теперь просека безмолвна. "
+            "Тревожный сторожок обезврежен, и можно безопасно подобраться к натянутому шнуру."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l4_4_freed")]
+        ])
+
+    # L4.3b.2 — Сразу расшатать колышек
+    elif data == "l4_3b2_shake":
+        game.story_state = "l4_3b2_shake"
+        game.set_story_flag("signal_disabled", False)
+        game.adjust_narrative_karma("pragmatism", 1)
+        text = (
+            "Ты хватаешься обеими руками за дубовый колышек и изо всех сил раскачиваешь его во влажной земле. "
+            "Натянутый шнур моментально передаёт яростную вибрацию вверх на гибкую ветку.\n\n"
+            "Костяные пластинки оглушительно затрещали на всю округу! Эхо сухого стука разносится по кронам. "
+            "Ты приседаешь, тревожно вглядываясь в чащу: не идёт ли кто на шум?"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l4_4_freed")]
+        ])
+
+    # L4.4 — Освобождение
+    elif data == "l4_4_freed":
+        game.story_state = "l4_4_freed"
+        game.set_story_flag("deer_freed", True)
+        game.set_story_flag("helped_deer", True)
+        game.adjust_narrative_karma("compassion", 3)
+
+        sig_disabled = game.is_story_flag_set("signal_disabled")
+        if not sig_disabled:
+            if not game.is_story_flag_set("l4_whistle_thirst"):
+                game.set_story_flag("l4_whistle_thirst", True)
+                game.thirst = max(0, getattr(game, "thirst", 60) - 5)
+            text = (
+                "Ты с силой выдёргиваешь колышек, и петля соскальзывает с копыта. Олень вскакивает, "
+                "на секунду замирает перед тобой и вихрем срывается в чащу. Он на свободе, и от этого на душе "
+                "становится легче.\n\n"
+                "Но внезапно из глубины леса доносится резкий свист: человек или птица — не понять, "
+                "но от тревоги во рту моментально пересыхает.\n"
+                "──────────\n"
+                "Жажда: −5"
+            )
+        else:
+            text = (
+                "Ты перерезаешь натяжение, и петля соскальзывает с копыта. Олень с трудом поднимается на ноги, "
+                "на мгновение замирает и в один прыжок растворяется в ельнике.\n\n"
+                "Он на свободе, и от этого на душе становится легко и спокойно. Вокруг шелестит живая листва — тишина."
+            )
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l4_5_firepit")]
+        ])
+
+    # L4.3c — Не вмешиваться / Оставить зверя
+    elif data == "l4_3c_ignore":
+        game.story_state = "l4_3c_ignore"
+        game.set_story_flag("deer_freed", False)
         game.adjust_narrative_karma("pragmatism", 2)
         text = (
-            "Ты осматриваешь старые ловушки. Некоторые еще целы, готовы принять добычу.\n"
-            "В одной из них — остатки мяса, высохшие, как кость.\n"
-            "Ты осторожно срезаешь мясо и добавляешь его в ёмкость.\n\n"
-            "Охотник охотит, даже если охотников давно нет."
+            "Ты медленно отступаешь на шаг назад, не решаясь вмешиваться. Испуганный зверь собирает последние "
+            "силы и делает отчаянный рывок всем телом. Старый колышек трещит и поддаётся — петля соскальзывает!\n\n"
+            "Олень в одно мгновение срывается с места и вихрем уносится в чащу. "
+            "Он на свободе, и от этого на душе становится легче и спокойнее."
         )
-        game.inventory["Еда"] = game.inventory.get("Еда", 0) + 1
-        game.story_state = "hunters_trapped"
-        kb = get_main_kb(game)
-    
-    elif data == "hunters_blood":
-        game.adjust_narrative_karma("observation", 3)
-        text = (
-            "Следы крови на земле. Свежей. Очень свежей.\n"
-            "Волк или олень? Кто охотился, кого охотили?\n"
-            "Ты следишь по крови — она ведёт в кусты, где ты находишь раненого оленя.\n\n"
-            "Выбор: помочь или оставить?"
-        )
-        game.story_state = "hunters_blood_choice"
-        kb = get_main_kb(game)
-    
-    elif data == "hunters_animal_help":
-        game.adjust_narrative_karma("compassion", 3)
-        game.set_story_flag("helped_deer")
-        game.set_story_flag("deer_freed")
-        game.set_story_flag("left_warning")
-        text = (
-            "Ты подходишь к оленю тихо, без угрозы. Его глаза полны боли.\n"
-            "Ты перевязываешь рану тканью, даёшь воду.\n"
-            "Олень медленно встаёт и уходит в лес, живой благодаря тебе.\n\n"
-            "Одна жизнь спасена. Может быть, это важно."
-        )
-        # Вода с учётом коэффициента голода
-        water_cost = 1 * get_resource_multiplier(game, "hunger")
-        game.inventory["Вода"] = max(0, game.inventory.get("Вода", 0) - water_cost)
-        game.story_state = "hunters_helped"
-        kb = get_main_kb(game)
-    
-    elif data == "hunters_fire":
-        game.adjust_narrative_karma("intervention", 2)
-        text = (
-            "В центре просеки — остатки охотничьего костра. Он давно потух, но угли ещё теплые.\n"
-            "Рядом лежат охотничьи принадлежности, забытые или специально оставленные.\n"
-            "Ты разжигаешь костер, и вскоре тепло согревает окрестности.\n\n"
-            "Старый огонь охотников горит ещё раз."
-        )
-        # Жажда и Голод с учётом коэффициентов
-        thirst_restore = 10 * get_resource_multiplier(game, "thirst")
-        game.thirst = min(100, game.thirst + thirst_restore)
-        
-        hunger_mult = get_resource_multiplier(game, "hunger")
-        game.hunger = max(1, game.hunger + 5 * hunger_mult)
-        
-        game.story_state = "hunters_fired"
-        kb = get_main_kb(game)
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Осмотреть кострище", callback_data="l4_5_firepit")],
+            [InlineKeyboardButton(text="🏕 Закончить вылазку: в лагерь", callback_data="l4_9_exit")],
+        ])
 
-    if kb == get_main_kb(game) or data in ("hunters_fired", "back") or getattr(game, "hp", 100) <= 0:
+    # L4.5 — Осмотреть старое кострище
+    elif data == "l4_5_firepit":
+        game.story_state = "l4_5_firepit"
+        text = (
+            "Возле старого кострища сложена невысокая полукруглая стенка из плоских валунов. "
+            "Твой наметанный взгляд цепляется за широкий камень у самого основания — земля вокруг него примята совсем недавно.\n\n"
+            "Приподняв тяжёлую плиту, ты замираешь: в тайнике лежит тугой свёрток из выделанной кожи с выдавленным знакомым знаком Ника — "
+            "три косых надреза и черта. Внутри укрыты порции сытного мяса на коре."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Забрать свёрток", callback_data="l4_5a_loot_all")],
+            [InlineKeyboardButton(text="Взять кусок мяса", callback_data="l4_5b_loot_one")],
+            [InlineKeyboardButton(text="Не трогать тайник", callback_data="l4_5c_loot_none")],
+        ])
+
+    # L4.5a — Забрать целиком
+    elif data == "l4_5a_loot_all":
+        game.story_state = "l4_5a_loot_all"
+        if not game.is_story_flag_set("l4_meat_taken"):
+            game.set_story_flag("l4_meat_taken", True)
+            game.inventory["Мясо на коре"] = game.inventory.get("Мясо на коре", 0) + 2
+            game.inventory["Кожа"] = game.inventory.get("Кожа", 0) + 1
+            game.adjust_narrative_karma("pragmatism", 2)
+        next_cb = "l4_6_aftermath" if game.is_story_flag_set("deer_freed") else "l4_7_hearth"
+        game.story_flags["l4_cache_next"] = next_cb
+        text = (
+            "Ты прячешь в мешок найденные припасы. Но закон тайги прост: взял чужое — оставь что-то взамен "
+            "для хозяина схрона или другого путника.\n\n"
+            "Поднять плиту и оставить часть своих вещей?\n"
+            "──────────\n"
+            "Получено: Мясо на коре ×2, Кожа ×1"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Положить взамен...", callback_data="l4_5_put_select")],
+            [InlineKeyboardButton(text="Ничего не класть", callback_data=next_cb)],
+        ])
+
+    # L4.5b — Взять часть
+    elif data == "l4_5b_loot_one":
+        game.story_state = "l4_5b_loot_one"
+        if not game.is_story_flag_set("l4_meat_taken"):
+            game.set_story_flag("l4_meat_taken", True)
+            game.inventory["Мясо на коре"] = game.inventory.get("Мясо на коре", 0) + 1
+            game.adjust_narrative_karma("compassion", 1)
+        next_cb = "l4_6_aftermath" if game.is_story_flag_set("deer_freed") else "l4_7_hearth"
+        game.story_flags["l4_cache_next"] = next_cb
+        text = (
+            "Ты берёшь одну порцию мяса, оставив остальное. Но закон тайги гласит: взял чужое — оставь что-то взамен.\n\n"
+            "Положить в схрон что-нибудь из своего инвентаря?\n"
+            "──────────\n"
+            "Получено: Мясо на коре ×1"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Положить взамен...", callback_data="l4_5_put_select")],
+            [InlineKeyboardButton(text="Ничего не класть", callback_data=next_cb)],
+        ])
+
+    # L4.5 — Выбор предмета для тайника
+    elif data == "l4_5_put_select":
+        game.story_state = "l4_5_put_select"
+        next_cb = game.story_flags.get("l4_cache_next") or ("l4_6_aftermath" if game.is_story_flag_set("deer_freed") else "l4_7_hearth")
+        candidate_items = ["Ветка", "Камень", "Кусок коры", "Лесная ягода", "Красная ягода", "Лесной гриб", "Дикий гриб", "Мох", "Сырое мясо"]
+        available = [it for it in candidate_items if game.inventory.get(it, 0) > 0]
+        if not available:
+            available = [it for it, cnt in game.inventory.items() if cnt > 0 and it not in ("Мясо на коре", "Кожа")][:4]
+
+        buttons = []
+        for it in available[:4]:
+            buttons.append([InlineKeyboardButton(text=f"Оставить: {it}", callback_data=f"l4_put_{it}")])
+        buttons.append([InlineKeyboardButton(text="Ничего не класть", callback_data=next_cb)])
+
+        text = (
+            "Ты приподнимаешь каменную плиту тайника. Карманы хранят немного припасов, "
+            "собранных в лесу. Что ты готов оставить хозяину схрона взамен взятого мяса?"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    # L4.5 — Предмет оставлен в тайнике
+    elif data.startswith("l4_put_"):
+        item_to_leave = data[len("l4_put_"):]
+        game.story_state = "l4_5_put_done"
+        if game.inventory.get(item_to_leave, 0) > 0:
+            game.inventory[item_to_leave] -= 1
+            if game.inventory[item_to_leave] <= 0:
+                del game.inventory[item_to_leave]
+            game.adjust_narrative_karma("compassion", 2)
+            game.set_story_flag("l4_cache_shared", True)
+
+        next_cb = game.story_flags.get("l4_cache_next") or ("l4_6_aftermath" if game.is_story_flag_set("deer_freed") else "l4_7_hearth")
+        text = (
+            f"Ты аккуратно укладываешь в нишу {item_to_leave} и опускаешь каменную плиту на место.\n\n"
+            "Схрон вновь надёжно укрыт мхом, а неписаный долг чести закрыт: взял припасы — оставил своё взамен. "
+            "Теперь с лёгким сердцем можно продолжать путь."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data=next_cb)]
+        ])
+
+    # L4.5c — Оставить всё
+    elif data == "l4_5c_loot_none":
+        game.story_state = "l4_5c_loot_none"
+        text = (
+            "Ты бережно опускаешь каменную плиту на место. Пусть чужой схрон остаётся нетронутым — "
+            "тайга сурова к тем, кто забирает последнее у товарища по тропе.\n\n"
+            "Мох глушит глухой стук камня. Ты выпрямляешься и оглядываешь окрестности."
+        )
+        next_cb = "l4_6_aftermath" if game.is_story_flag_set("deer_freed") else "l4_7_hearth"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data=next_cb)]
+        ])
+
+    # L4.6 — Что оставить после себя
+    elif data == "l4_6_aftermath":
+        game.story_state = "l4_6_aftermath"
+        text = (
+            "Тропа уводит дальше, но теперь намётанный глаз различает в траве контуры других петель. "
+            "Охотник щедро усеял сужающийся проход скрытыми силками и настороженными дужками.\n\n"
+            "Оставить опасные ловушки позади или позаботиться о тех, кто может пойти по твоим следам?"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Обезвредить силки", callback_data="l4_6a_disarm")],
+            [InlineKeyboardButton(text="Поставить крест", callback_data="l4_6b_warn")],
+            [InlineKeyboardButton(text="Идти дальше", callback_data="l4_7_hearth")],
+        ])
+
+    # L4.6a — Обезвредить
+    elif data == "l4_6a_disarm":
+        game.story_state = "l4_6a_disarm"
+        if not game.is_story_flag_set("l4_trap_leather_taken"):
+            game.set_story_flag("l4_trap_leather_taken", True)
+            game.inventory["Кожа"] = game.inventory.get("Кожа", 0) + 1
+            game.thirst = max(0, getattr(game, "thirst", 60) - 5)
+            game.adjust_narrative_karma("intervention", 2)
+        text = (
+            "Опустившись на колени, ты методично распускаешь узлы и выдёргиваешь удерживающие колья. "
+            "Самая широкая петля скручена из прочной сыромятной кожи — ты аккуратно сматываешь её в моток.\n\n"
+            "Кропотливая возня на солнцепеке отнимает последние силы, и в пересохшем горле першит.\n"
+            "──────────\n"
+            "Получено: Кожа ×1\n"
+            "Жажда: −5"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l4_7_hearth")]
+        ])
+
+    # L4.6b — Сделать предупреждение
+    elif data == "l4_6b_warn":
+        game.story_state = "l4_6b_warn"
+        game.set_story_flag("left_warning", True)
+        game.adjust_narrative_karma("compassion", 2)
+        text = (
+            "Ты подбираешь две сухие сучковатые ветви и связываешь их крест-накрест посреди тропы, подвесив снятые пластинки.\n\n"
+            "Теперь любой путник издалека различит тревожный силуэт охотничьего предупреждения и обойдёт гиблую траву стороной."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l4_7_hearth")]
+        ])
+
+    # L4.7 — Охотничий очаг
+    elif data == "l4_7_hearth":
+        game.story_state = "l4_7_hearth"
+        text = (
+            "У края просеки темнеет добротно сложенное кострище. Под широким навесом из еловой коры сложена сухая береста, "
+            "смолистая щепа и сушняк — стоянка обустроена для ночлега.\n\n"
+            "После пережитой тревоги тело гудит от усталости, а прохладный таёжный ветер пробирает до костей. "
+            "Здесь можно перевести дух у живого огня."
+        )
+        buttons = [
+            [InlineKeyboardButton(text="Развести огонь", callback_data="l4_7a_fire")],
+            [InlineKeyboardButton(text="Не разводить огонь", callback_data="l4_7b_stones")],
+            [InlineKeyboardButton(text="Уйти с просеки", callback_data="l4_8_final")],
+        ]
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    # L4.7a — Разжечь огонь
+    elif data == "l4_7a_fire":
+        game.story_state = "l4_7a_fire"
+        if not game.is_story_flag_set("l4_fire_lit"):
+            game.set_story_flag("l4_fire_lit", True)
+            game.adjust_narrative_karma("intervention", 1)
+        text = (
+            "Ты опускаешься на колени и ворошишь серую золу. Глубоко под старыми углями ещё теплится слабое рыжее пятно. "
+            "Ты подсовываешь бересту и начинаешь осторожно дуть, закрывая тление ладонями.\n\n"
+            "Огонь разводится неохотно: сырая растопка долго шипит, задыхается и пускает едкий сизый дым. "
+            "Но терпение берёт своё — береста трещит, и над валунами взмывает яркое пламя, окутывая лицо благодатным теплом."
+        )
+        flask_w = int(getattr(game, "flask_water", 0) or 0)
+        has_bottle_water = bool(game.equipment.get("flask")) and flask_w > 0
+        water_not_drunk = not game.is_story_flag_set("l4_water_drunk")
+        buttons = []
+        if has_bottle_water and water_not_drunk:
+            buttons.append([InlineKeyboardButton(text="Попить воды", callback_data="l4_7a1_drink")])
+        buttons.append([InlineKeyboardButton(text="Закончить отдых", callback_data="l4_8_final")])
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    # L4.7a.1 — Попить воды
+    elif data == "l4_7a1_drink":
+        game.story_state = "l4_7a1_drink"
+        flask_w = int(getattr(game, "flask_water", 0) or 0)
+        if not game.is_story_flag_set("l4_water_drunk"):
+            game.set_story_flag("l4_water_drunk", True)
+            if bool(game.equipment.get("flask")) and flask_w > 0:
+                sips = min(3, flask_w)
+                game.flask_water = max(0, flask_w - sips)
+                if game.flask_water <= 0:
+                    game.equipment["flask"] = None
+                    game.inventory["Пустая бутылка"] = game.inventory.get("Пустая бутылка", 0) + 1
+                game.add_log(f"💧 Три глотка из бутылки (+20 жажда). Осталось в бутылке: {game.flask_water}/20.")
+            game.thirst = min(100, getattr(game, "thirst", 60) + 20)
+        text = (
+            "Сидя у жаркого пламени, ты откупориваешь бутылку с водой на поясе и делаешь три долгих, "
+            "жадных глотка прохладной влаги.\n\n"
+            "Живительная вода мгновенно смывает сухость и горечь дыма, возвращая ясность голове и бодрость телу.\n"
+            "──────────\n"
+            "Утоление жажды: +20"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l4_8_final")]
+        ])
+
+    # L4.7b — Не разводить огонь
+    elif data == "l4_7b_stones":
+        game.story_state = "l4_7b_stones"
+        text = (
+            "Ты решаешь не разводить огонь — лишний столб дыма может привлечь нежелательное внимание. "
+            "Ты лишь аккуратно укрываешь растопку пластами коры от сырости и поправляешь валуны очага.\n\n"
+            "Пора двигаться дальше."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l4_8_final")]
+        ])
+
+    # L4.8 — Финал
+    elif data == "l4_8_final":
+        game.story_state = None
+        game.set_story_flag("l4_completed", True)
+        if game.is_story_flag_set("deer_freed"):
+            text = (
+                "На выходе с просеки твой взгляд падает на вековую сосну. На янтарном стволе свежей зарубкой высечен знак: "
+                "три надреза и черта. Из древесины медленно сочится густая пахучая смола — след оставлен совсем недавно.\n\n"
+                "Чуть поодаль на влажной земле чернеют неровные отпечатки копыт спасённого оленя, скрывшиеся в глубине чащи. "
+                "Ты глубоко вдыхаешь смолистый воздух и берёшь курс к лагерю."
+            )
+        else:
+            text = (
+                "На выходе с просеки твой взгляд падает на вековую сосну. На стволе свежей зарубкой высечен знак: "
+                "три надреза и черта. Из древесины медленно сочится густая смола — след оставлен совсем недавно.\n\n"
+                "Ты касаешься липкой коры. Где-то в чаще бродит тот, кто расставил эти силки и знает счёт каждой петле. "
+                "Пора возвращаться в лагерь."
+            )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕 В лагерь", callback_data="back")]
+        ])
+
+    # L4.9 — Уйти с просеки (ранний финал)
+    elif data == "l4_9_exit":
+        game.story_state = None
+        game.set_story_flag("l4_completed", True)
+        text = (
+            "Ты оставляешь просеку позади. Сухой дробный стук костяных пластинок постепенно тонет в монотонном шуме сосен, "
+            "пока не смолкает вовсе.\n\n"
+            "Коварные силки остались позади, укрытые ковром жухлой травы. "
+            "Ты ускоряешь шаг, возвращаясь к безопасности своего лагеря."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕 В лагерь", callback_data="back")]
+        ])
+
+    # Управление active_story_callback
+    if kb == get_main_kb(game) or data in ("l4_8_final", "l4_9_exit", "back") or getattr(game, "hp", 100) <= 0:
         game.active_story_callback = None
     elif text is not None:
-        game.active_story_callback = data
+        game.active_story_callback = "l4_1_entry" if data in ("hunters_glade_start", "location_enter_4") else data
 
     return text, kb
 

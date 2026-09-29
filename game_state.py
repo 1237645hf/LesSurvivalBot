@@ -106,6 +106,7 @@ class GameState:
 
     # Вода во фляге (макс 10 делений)
     flask_water: int = 10
+    rain_bottles: List[int] = field(default_factory=list)
 
     # Открытые рецепты крафта (старт: Костёр, Факел)
     unlocked_crafts: List[str] = field(default_factory=lambda: ["Костёр", "Факел"])
@@ -132,11 +133,12 @@ class GameState:
     companion_status: str = "alive"
     
     # Поля совместимости из Game (ранее отсутствовали в GameState)
-    location: str = "Лесной старт"
+    location: str = "Стартовый лес"
     unlocked_locations: List[str] = field(default_factory=lambda: [
-        "Лесной старт", "Ручей с Змеями", "Скромоная Лощина",
-        "Просека Охотников", "Яр Слизней", "Мохнатая Пещера", "Вершина Святилища",
+        "Стартовый лес", "Ручей со змеями", "Скромная лощина",
+        "Просека охотников", "Яр слизней", "Мохнатая пещера", "Святилище",
     ])
+    last_message_id: Optional[int] = None
     current_location_state: str = "forest_start"
     found_branch_once: bool = False
     karma_goal: int = 100
@@ -604,6 +606,7 @@ class GameState:
             "campfire_durability": int(getattr(self, "campfire_durability", 0)),
             "campfire_max_durability": int(getattr(self, "campfire_max_durability", 10)),
             "flask_water": int(getattr(self, "flask_water", 10)),
+            "rain_bottles": list(getattr(self, "rain_bottles", [])),
             "unlocked_crafts": list(getattr(self, "unlocked_crafts", ["Костёр", "Факел"])),
             "player_name": str(getattr(self, "player_name", getattr(self, "character_name", "Выживший"))),
             "character_name": str(getattr(self, "character_name", getattr(self, "player_name", "Выживший"))),
@@ -618,6 +621,7 @@ class GameState:
             "l2_puzzle_attempt": int(getattr(self, "l2_puzzle_attempt", 0)),
             "l2_puzzle_step": int(getattr(self, "l2_puzzle_step", 1)),
             "active_story_callback": getattr(self, "active_story_callback", None),
+            "last_message_id": getattr(self, "last_message_id", None),
         }
 
 
@@ -694,6 +698,7 @@ class GameState:
         if game.campfire_durability <= 0:
             game.campfire_active = False
         game.flask_water = int(getattr(game, "flask_water", 10) or 10)
+        game.rain_bottles = [int(x) for x in data.get("rain_bottles", [])]
         game.locations_unlocked = bool(data.get("locations_unlocked", False))
         game.wolf_lair_unlocked = bool(data.get("wolf_lair_unlocked", False))
         game.wolf_lair_active = bool(data.get("wolf_lair_active", False))
@@ -874,6 +879,8 @@ class GameState:
             flask_w = int(getattr(self, "flask_water", 0) or 0)
             if "Бутылк" in flask_item or flask_item == "flask":
                 flask_str = f"🧴 Бутылка воды ({flask_w}/20)"
+            elif "Армейская" in flask_item:
+                flask_str = f"🟨 Армейская фляга ({flask_w}/20)"
             else:
                 flask_str = f"{flask_item} ({flask_w}/20)"
         else:

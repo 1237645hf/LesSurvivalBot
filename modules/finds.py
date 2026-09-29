@@ -72,7 +72,10 @@ BONUS_FINDS: Dict[int, List[Dict[str, Any]]] = {
         {"item": "Глина", "chance": 40},
         {"item": "Кусок коры", "chance": 30},
     ],
-    4: [{"item": "Кусок коры", "chance": 40}],
+    4: [
+        {"item": "Кусок коры", "chance": 40},
+        {"item": "Ветка", "chance": 30, "count_range": (1, 2)},
+    ],
     5: [{"item": "Кусок коры", "chance": 30}],
     6: [],
     7: [],
@@ -184,7 +187,11 @@ def _roll_bonus(table: List[Dict[str, Any]]) -> List[str]:
     for entry in table:
         if random.randint(1, 100) <= int(entry.get("chance", 0)):
             item = entry["item"]
-            if item in BERRY_MUSHROOM_NAMES:
+            count_range = entry.get("count_range")
+            if count_range:
+                cnt = random.randint(count_range[0], count_range[1])
+                found.extend([item] * cnt)
+            elif item in BERRY_MUSHROOM_NAMES:
                 found.extend([item] * random.choice([1, 2]))
             elif item in STICK_NAMES:
                 found.extend([item] * random.randint(1, 3))
@@ -241,7 +248,7 @@ def location_id_from_game(game) -> int:
         return idx + 1
     cur = str(getattr(game, "current_location", "") or "")
     mapping = {
-        "Лесной": 1, "Ручей": 2, "Лощин": 3, "Просека": 4, "Охотник": 4,
+        "Стартов": 1, "Лесной": 1, "Ручей": 2, "Лощин": 3, "Просека": 4, "Охотник": 4,
         "Яр": 5, "Слизн": 5, "Пещер": 6, "Мохнат": 6, "Святилищ": 7, "Вершин": 7,
     }
     for key, lid in mapping.items():
