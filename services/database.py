@@ -62,7 +62,7 @@ class MemoryPlayersCollection:
         player_id = query.get("_id") if isinstance(query, dict) else None
         if player_id is None:
             return
-        current = self._store.setdefault(player_id, {})
+        current = self._store.setdefault(player_id, {"_id": player_id})
         if "$set" in update:
             current.update(update["$set"])
             self._store[player_id] = current
@@ -144,6 +144,72 @@ def _init_mongo():
 _init_mongo()
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# КЭШ АКТИВНЫХ СЕССИЙ
+# ──────────────────────────────────────────────────────────────────────────────
+games: dict = {}  # {user_id: Game}
+
+
+def _migrate_memory_to_mongo(
+    coll,
+    notes_coll,
+    old_players=None,
+    old_notes=None,
+) -> tuple[int, int]:
+    """Миграция данных, накопленных в in-memory fallback, в реальную MongoDB.
+
+    Возвращает кортеж (migrated_players_count, migrated_notes_count).
+    """
+    migrated_players = 0
+    migrated_notes = 0
+
+    # 1. Миграция сохранённых состояний игроков из MemoryPlayersCollection
+    if isinstance(old_players, MemoryPlayersCollection):
+        for uid, doc in list(old_players._store.items()):
+            try:
+                set_data = {k: v for k, v in doc.items() if k != "_id"}
+                if set_data:
+                    coll.update_one({"_id": uid}, {"$set": set_data}, upsert=True)
+                    migrated_players += 1
+            except Exception as exc:
+                logging.error(f"Ошибка миграции игрока {uid} из памяти в MongoDB: {exc}", exc_info=True)
+
+    # 2. Миграция активных игровых сессий из кэша games
+    for uid, game in list(games.items()):
+        try:
+            data = game.to_document()
+            coll.update_one({"_id": uid}, {"$set": {"game_data": data}}, upsert=True)
+            if not isinstance(old_players, MemoryPlayersCollection) or uid not in getattr(old_players, "_store", {}):
+                migrated_players += 1
+        except Exception as exc:
+            logging.error(f"Ошибка миграции активной игры {uid} из кэша games в MongoDB: {exc}", exc_info=True)
+
+    # 3. Миграция записей каменной плиты из MemoryTabletNotesCollection
+    if isinstance(old_notes, MemoryTabletNotesCollection):
+        for note in getattr(old_notes, "_notes", []):
+            uid = note.get("user_id")
+            if uid and uid != 0:
+                try:
+                    note_data = {k: v for k, v in note.items() if k != "_id"}
+                    notes_coll.update_one(
+                        {"user_id": uid},
+                        {"$set": note_data},
+                        upsert=True,
+                    )
+                    migrated_notes += 1
+                except Exception as exc:
+                    logging.error(f"Ошибка миграции заметки плиты {uid} в MongoDB: {exc}", exc_info=True)
+
+    # 4. Проверка и заполнение каноничных надписей в пустой коллекции плиты
+    try:
+        if notes_coll.count_documents({"user_id": 0}) == 0:
+            notes_coll.insert_many([dict(n) for n in DEFAULT_TABLET_NOTES])
+    except Exception as exc:
+        logging.error(f"Ошибка проверки каноничных надписей плиты при миграции: {exc}", exc_info=True)
+
+    return migrated_players, migrated_notes
+
+
 def _ensure_mongo_connection():
     """Ленивая попытка восстановить подключение к MongoDB, если на старте был временный сбой сети."""
     global mongo_client, players_collection, tablet_notes_collection
@@ -156,21 +222,28 @@ def _ensure_mongo_connection():
             coll = db["players"]
             notes_coll = db["stone_tablet_notes"]
             coll.database.command("ping")
+
+            # Переносим накопленные данные из памяти в базу ДО переключения ссылок
+            old_players = players_collection
+            old_notes = tablet_notes_collection
+            migrated_players, migrated_notes = _migrate_memory_to_mongo(
+                coll=coll,
+                notes_coll=notes_coll,
+                old_players=old_players,
+                old_notes=old_notes,
+            )
+
+            # Переключаем глобальные переменные на реальную MongoDB только после успешной миграции
             mongo_client = client
             players_collection = coll
             tablet_notes_collection = notes_coll
-            if notes_coll.count_documents({"user_id": 0}) == 0:
-                notes_coll.insert_many([dict(n) for n in DEFAULT_TABLET_NOTES])
-            logging.info("MongoDB: связь восстановлена, подключение успешно переключено с memory на MongoDB!")
-        except Exception:
-            pass
 
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# КЭШ АКТИВНЫХ СЕССИЙ
-# ──────────────────────────────────────────────────────────────────────────────
-games: dict = {}  # {user_id: Game}
+            logging.info(
+                f"MongoDB: связь восстановлена, подключение успешно переключено с memory на MongoDB! "
+                f"Мигрировано игроков: {migrated_players}, заметок каменной плиты: {migrated_notes}."
+            )
+        except Exception as exc:
+            logging.warning(f"MongoDB: попытка восстановления подключения не удалась ({exc}). Продолжаем fallback.")
 
 
 # ──────────────────────────────────────────────────────────────────────────────

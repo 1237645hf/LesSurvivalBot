@@ -7,9 +7,14 @@ from unittest.mock import patch, MagicMock
 from game_state import GameState, Game
 from services.database import (
     MemoryPlayersCollection,
+    MemoryTabletNotesCollection,
     save_game,
     load_game,
     is_mongo_connected,
+    _migrate_memory_to_mongo,
+    _ensure_mongo_connection,
+    save_tablet_note,
+    games,
 )
 
 
@@ -152,3 +157,165 @@ async def test_persist_character_name_saves_immediately():
         assert "game_data" in saved_doc
         assert saved_doc["game_data"]["character_name"] == "Таёжник"
         assert saved_doc["game_data"]["is_name_set"] is True
+
+
+def test_migrate_memory_to_mongo_migrates_players_and_notes():
+    """Тест миграции данных из Memory-коллекций и games кэша в MongoDB коллекции."""
+    old_players = MemoryPlayersCollection()
+    old_players.update_one({"_id": 111}, {"$set": {"game_data": {"character_name": "Память_111"}}})
+
+    old_notes = MemoryTabletNotesCollection()
+    old_notes.update_one(
+        {"user_id": 222},
+        {"$set": {"user_id": 222, "author": "Автор_222", "text": "Текст_222"}},
+        upsert=True,
+    )
+
+    active_game = GameState()
+    active_game.character_name = "Активный_333"
+    games[333] = active_game
+
+    try:
+        mock_coll = MagicMock()
+        mock_notes_coll = MagicMock()
+        mock_notes_coll.count_documents.return_value = 0
+
+        p_count, n_count = _migrate_memory_to_mongo(
+            coll=mock_coll,
+            notes_coll=mock_notes_coll,
+            old_players=old_players,
+            old_notes=old_notes,
+        )
+
+        assert p_count == 2
+        assert n_count == 1
+
+        # Проверяем, что update_one вызывался для игрока 111 и игрока 333
+        coll_calls = mock_coll.update_one.call_args_list
+        uids_updated = [call[0][0]["_id"] for call in coll_calls]
+        assert 111 in uids_updated
+        assert 333 in uids_updated
+
+        # Проверяем, что update_one вызывался для заметки 222
+        notes_calls = mock_notes_coll.update_one.call_args_list
+        note_uids = [call[0][0]["user_id"] for call in notes_calls]
+        assert 222 in note_uids
+
+        # Проверяем проверку каноничных записей
+        mock_notes_coll.insert_many.assert_called_once()
+    finally:
+        games.pop(333, None)
+
+
+def test_ensure_mongo_connection_full_reconnect_and_migration():
+    """Тест: при восстановлении сети _ensure_mongo_connection переносит данные и переключает коллекции."""
+    import services.database as db_module
+
+    mem_players = MemoryPlayersCollection()
+    mem_notes = MemoryTabletNotesCollection()
+
+    original_players = db_module.players_collection
+    original_notes = db_module.tablet_notes_collection
+    original_client = db_module.mongo_client
+
+    db_module.players_collection = mem_players
+    db_module.tablet_notes_collection = mem_notes
+
+    try:
+        # Игрок сохраняет прогресс во время fallback
+        game = GameState()
+        game.character_name = "Спасённый_Игрок"
+        game.player_name = "Спасённый_Игрок"
+        game.is_name_set = True
+        save_game(555, game)
+
+        # Игрок оставляет надпись на плите во время fallback
+        save_tablet_note(555, "Спасённый_Игрок", "Мы выжили")
+
+        # Мокируем MongoClient и его коллекции
+        mock_client = MagicMock()
+        mock_db = MagicMock()
+        mock_mongo_players = MagicMock()
+        mock_mongo_notes = MagicMock()
+
+        mock_client.__getitem__.return_value = mock_db
+        mock_db.__getitem__.side_effect = lambda name: {
+            "players": mock_mongo_players,
+            "stone_tablet_notes": mock_mongo_notes,
+        }[name]
+        mock_mongo_players.database.command.return_value = {"ok": 1}
+        mock_mongo_notes.count_documents.return_value = 1
+
+        with patch.dict("os.environ", {"MONGO_URI": "mongodb://mocked:27017"}), \
+             patch("services.database.MongoClient", return_value=mock_client):
+
+            # До вызова мы на Memory-коллекции
+            assert not is_mongo_connected()
+
+            _ensure_mongo_connection()
+
+            # После вызова мы успешно переключились на MongoDB
+            assert is_mongo_connected()
+            assert db_module.players_collection is mock_mongo_players
+            assert db_module.tablet_notes_collection is mock_mongo_notes
+
+            # Проверяем, что данные игрока 555 перенесены в mock_mongo_players
+            saved_calls = [call for call in mock_mongo_players.update_one.call_args_list if call[0][0].get("_id") == 555]
+            assert len(saved_calls) >= 1
+            assert saved_calls[0][0][1]["$set"]["game_data"]["character_name"] == "Спасённый_Игрок"
+
+            # Проверяем, что заметка игрока 555 перенесена в mock_mongo_notes
+            note_calls = [call for call in mock_mongo_notes.update_one.call_args_list if call[0][0].get("user_id") == 555]
+            assert len(note_calls) >= 1
+            assert note_calls[0][0][1]["$set"]["author"] == "Спасённый_Игрок"
+    finally:
+        db_module.players_collection = original_players
+        db_module.tablet_notes_collection = original_notes
+        db_module.mongo_client = original_client
+        games.pop(555, None)
+
+
+def test_ensure_mongo_connection_failure_keeps_fallback_intact():
+    """Тест: если при попытке переподключения Mongo падает, fallback и накопленные данные не повреждаются."""
+    import services.database as db_module
+
+    mem_players = MemoryPlayersCollection()
+    mem_notes = MemoryTabletNotesCollection()
+
+    original_players = db_module.players_collection
+    original_notes = db_module.tablet_notes_collection
+    original_client = db_module.mongo_client
+
+    db_module.players_collection = mem_players
+    db_module.tablet_notes_collection = mem_notes
+
+    try:
+        game = GameState()
+        game.character_name = "Остался_В_Памяти"
+        game.player_name = "Остался_В_Памяти"
+        game.is_name_set = True
+        save_game(666, game)
+
+        mock_client = MagicMock()
+        mock_client.__getitem__.side_effect = Exception("Connection refused")
+
+        with patch.dict("os.environ", {"MONGO_URI": "mongodb://mocked:27017"}), \
+             patch("services.database.MongoClient", return_value=mock_client):
+
+            _ensure_mongo_connection()
+
+            # Должны остаться на fallback
+            assert not is_mongo_connected()
+            assert db_module.players_collection is mem_players
+            assert db_module.tablet_notes_collection is mem_notes
+
+            # Данные в памяти не потеряны
+            loaded = load_game(666)
+            assert loaded is not None
+            assert loaded.character_name == "Остался_В_Памяти"
+    finally:
+        db_module.players_collection = original_players
+        db_module.tablet_notes_collection = original_notes
+        db_module.mongo_client = original_client
+        games.pop(666, None)
+
