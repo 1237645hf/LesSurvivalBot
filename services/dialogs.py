@@ -143,13 +143,51 @@ async def handle_waiting_for_pet_name(
     """Обработать ввод имени питомца. Возвращает True если состояние обработано."""
     if game.story_state != "WAITING_FOR_PET_NAME":
         return False
-    if not text:
-        return True
-
     await bot_ctx["safe_delete_message"](chat_id, message.message_id)
 
-    game.companion_name = text
-    game.equipment["pet"] = text
+    async def _reply_pet_error(err_text: str):
+        prompt = (
+            "🐾 Введи кличку своего питомца:\n"
+            "• Только буквы, цифры, _\n"
+            "• Пробелы запрещены (используй _ вместо пробела)\n"
+            "• Эмодзи запрещены\n"
+            "• Макс. 20 символов\n\n"
+            f"❌ {err_text}"
+        )
+        msg_id = bot_ctx["last_active_msg_id"].get(uid)
+        if msg_id:
+            await bot_ctx["safe_edit_message"](chat_id, msg_id, prompt, None)
+        else:
+            await bot_ctx["update_or_send_message"](chat_id, uid, prompt, None)
+
+    if not text or not text.strip():
+        await _reply_pet_error("Кличка не может быть пустой.")
+        return True
+
+    name = text.strip()
+
+    if "\n" in name or "\r" in name:
+        await _reply_pet_error("Переносы строк запрещены.")
+        return True
+
+    if " " in name:
+        await _reply_pet_error("Пробелы запрещены. Используй _ вместо пробела.")
+        return True
+
+    if _has_emoji(name):
+        await _reply_pet_error("Эмодзи в кличке питомца запрещены.")
+        return True
+
+    if len(name) > 20:
+        await _reply_pet_error(f"Слишком длинная кличка ({len(name)} символов, макс. 20).")
+        return True
+
+    if not _ALLOWED_NAME_RE.match(name):
+        await _reply_pet_error("Разрешены только буквы (русские/латинские), цифры и _.")
+        return True
+
+    game.companion_name = name
+    game.equipment["pet"] = name
     if not game.is_story_flag_set("saved_kitten"):
         game.adjust_narrative_karma("compassion", 2)
     game.set_story_flag("saved_kitten")
@@ -159,11 +197,11 @@ async def handle_waiting_for_pet_name(
         game.story_flags["l1_completed_day"] = getattr(game, "day", 1)
     game.story_state = None
     game.active_story_callback = None
-    game.add_log(f"У вас появился питомец: {text}")
+    game.add_log(f"У вас появился питомец: {name}")
 
     final_text = (
         "Ты смотришь на маленькое существо у себя на руках.\n"
-        f"«{text}», — произносишь ты вслух, и понимаешь что нашёл себе нового друга.\n"
+        f"«{name}», — произносишь ты вслух, и понимаешь что нашёл себе нового друга.\n"
         "Котёнок поднимает голову, будто услышал и запомнил.\n"
         "Уходя от пня, ты чувствуешь, как он начинает тихо, почти не слышно мурчать...\n\n"
         "Вибрация проходит сквозь твою грудь — слабая, но живая.\n"

@@ -12,8 +12,8 @@ from keyboards import get_wolf_battle_kb, get_boar_battle_kb
 def _calc_player_damage(game) -> int:
     """Расчёт урона игрока с учётом оружия и аксессуаров."""
     eq = getattr(game, "equipment", {}) or {}
-    # Проверяем оружие в руках
-    weapon = eq.get("hand_right") or eq.get("hand") or eq.get("hands") or eq.get("hand_left")
+    # Проверяем оружие в правой руке
+    weapon = eq.get("hand_right")
     base_dmg = 5
     if weapon == "Окованный посох":
         base_dmg = random.randint(9, 11)
@@ -370,7 +370,6 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
     # =========================================================================
     has_torch = (
         game.equipment.get("hand_left") == "Факел"
-        or game.equipment.get("hand") == "Факел"
         or game.equipment.get("hand_right") == "Факел"
     )
 

@@ -35,11 +35,10 @@ def get_active_hints(game_state) -> List[str]:
     # Факел в инвентаре
     torch_in_inventory = game_state.inventory.get("Факел", 0) > 0
 
-    # Факел экипирован в руку (поддержка левой, правой или общего слота)
+    # Факел экипирован в руку
     torch_equipped = (
         game_state.equipment.get("hand_left") == "Факел"
         or game_state.equipment.get("hand_right") == "Факел"
-        or game_state.equipment.get("hand") == "Факел"
     )
 
     # Подсказка на крафт: ингредиенты собраны, факел ещё не скрафчен и не показывали подсказку

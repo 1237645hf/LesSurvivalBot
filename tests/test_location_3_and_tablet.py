@@ -201,7 +201,7 @@ def test_slate_armor_hp_defense_and_full_set():
     assert game.armor_defense == 7
     assert game.is_full_slate_set_equipped() is False
 
-    game.equipment["legs"] = "Сланцевые поножи"
+    game.equipment["pants"] = "Сланцевые поножи"
     assert game.max_hp == 145
     assert game.armor_defense == 10
     assert game.is_full_slate_set_equipped() is False
@@ -250,7 +250,7 @@ def test_ridge_with_armor_and_peaceful_cache():
     game.equipment = {
         "head": "Сланцевая маска",
         "torso": "Сланцевый панцирь",
-        "legs": "Сланцевые поножи",
+        "pants": "Сланцевые поножи",
         "boots": "Сланцевые ботинки",
     }
     assert game.is_full_slate_set_equipped() is True
@@ -301,7 +301,7 @@ def test_boar_combat_tactics_and_victory_loot(monkeypatch):
     game.equipment = {
         "head": "Сланцевая маска",
         "torso": "Сланцевый панцирь",
-        "legs": "Сланцевые поножи",
+        "pants": "Сланцевые поножи",
         "boots": "Сланцевые ботинки",
         "hand_right": "Окованный посох",
         "trinket": "Клык волка",

@@ -81,7 +81,6 @@ def test_1_3_torch_burns_at_night_without_extra_bonus():
     game.campfire_active = True
     game.campfire_durability = 10
     game.equipment["hand_left"] = "Факел"
-    game.equipment["hand"] = "Факел"
     game.ap = game.calculate_daily_ap()
     assert game.ap == 6  # 5 базовых + 1 от факела
 
@@ -90,7 +89,6 @@ def test_1_3_torch_burns_at_night_without_extra_bonus():
 
     # Факел сгорел и исчез
     assert game.equipment.get("hand_left") is None
-    assert game.equipment.get("hand") is None
     assert "Факел" not in game.inventory
 
     # Утром AP рассчитывается БЕЗ факела (5 базовых)

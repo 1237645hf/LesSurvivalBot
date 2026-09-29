@@ -198,9 +198,16 @@ logging.info("Бот запускается в режиме Telegram polling")
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Глобальные словари для трекинга состояний (запросы, сообщения)
+# Глобальные словари для трекинга состояний (запросы, сообщения, блокировки)
 last_request_time = {}
 last_active_msg_id = {}
+user_locks: Dict[int, asyncio.Lock] = {}
+
+def get_user_lock(uid: int) -> asyncio.Lock:
+    """Получить per-user asyncio.Lock для защиты от race condition при параллельных кликах."""
+    if uid not in user_locks:
+        user_locks[uid] = asyncio.Lock()
+    return user_locks[uid]
 
 # Регистрация системных команд Telegram для синей кнопки Menu
 # set_my_commands вызывается в run_bot() с await
@@ -858,6 +865,15 @@ async def process_callback(callback: types.CallbackQuery):
     uid = callback.from_user.id
     chat_id = callback.message.chat.id
     data = callback.data or ""
+    user_lock = get_user_lock(uid)
+    if user_lock.locked():
+        try:
+            await callback.answer()
+        except Exception:
+            pass
+        return
+
+    await user_lock.acquire()
     try:
         now = time.time()
         last = last_request_time.get(uid, 0)
@@ -1236,7 +1252,6 @@ async def process_callback(callback: types.CallbackQuery):
         elif data == "campfire_confirm_light":
             has_torch = (
                 game.equipment.get("hand_left") == "Факел"
-                or game.equipment.get("hand") == "Факел"
             )
             has_matches = game.inventory.get("Спички", 0) > 0
             min_ap = 1 if (has_torch or has_matches) else 2
@@ -1575,7 +1590,6 @@ async def process_callback(callback: types.CallbackQuery):
                 else:
                     has_torch = (
                         game.equipment.get("hand_left") == "Факел"
-                        or game.equipment.get("hand") == "Факел"
                     )
                     has_matches = game.inventory.get("Спички", 0) > 0
                     min_ap = 1 if (has_torch or has_matches) else 2
@@ -1896,7 +1910,6 @@ async def process_callback(callback: types.CallbackQuery):
 
             torch_equipped = (
                 game.equipment.get("hand_left") == "Факел"
-                or game.equipment.get("hand") == "Факел"
             )
 
             # Проверка сюжетных триггеров через модуль story/location_stories.py
@@ -1928,11 +1941,16 @@ async def process_callback(callback: types.CallbackQuery):
                 save_game(uid, game)
                 return
             trap_msgs = []
-            # Утро: 40% ломка / 60% успех + лут по таблице локации (еда.txt)
+            # Утро: 40% пуста, 20% ломается, 40% добыча по таблице локации
             for event in process_trap_rollover(game):
                 loc_id = event.get("location_id")
                 if event.get("broken"):
                     msg = f"Ловушка на локации {loc_id}: сломалась, добычи нет."
+                    game.add_log(msg)
+                    trap_msgs.append(msg)
+                    continue
+                if event.get("empty"):
+                    msg = f"Ловушка на локации {loc_id}: пуста, ничего не попалось."
                     game.add_log(msg)
                     trap_msgs.append(msg)
                     continue
@@ -1992,7 +2010,6 @@ async def process_callback(callback: types.CallbackQuery):
         elif data == "action_light_campfire":
             has_torch = (
                 game.equipment.get("hand_left") == "Факел"
-                or game.equipment.get("hand") == "Факел"
             )
             has_matches = game.inventory.get("Спички", 0) > 0
             min_ap = 1 if (has_torch or has_matches) else 2
@@ -2058,11 +2075,15 @@ async def process_callback(callback: types.CallbackQuery):
             await callback.answer("Ошибка обработки кнопки. Попробуй ещё раз или /start", show_alert=True)
         except Exception as e:
             pass
+    finally:
+        user_lock.release()
 
 @dp.message(F.text & ~F.text.startswith("/"))
 async def process_text_message(message: Message):
     uid = message.from_user.id
     chat_id = message.chat.id
+    user_lock = get_user_lock(uid)
+    await user_lock.acquire()
     try:
         raw_text = message.text.strip() if message.text else ""
         text = raw_text[:80] if raw_text else ""
@@ -2118,6 +2139,8 @@ async def process_text_message(message: Message):
             await message.answer("Я не смог обработать это сообщение. Попробуйте ещё раз.")
         except Exception as e:
             pass
+    finally:
+        user_lock.release()
 
 
 

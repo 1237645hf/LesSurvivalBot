@@ -69,7 +69,6 @@ def has_torch(game) -> bool:
         game.inventory.get("Факел", 0) > 0
         or game.equipment.get("hand_left") == "Факел"
         or game.equipment.get("hand_right") == "Факел"
-        or game.equipment.get("hand") == "Факел"
     )
 
 
@@ -311,7 +310,6 @@ def handle_craft(data, game, uid):
                 if game.inventory["Факел"] <= 0:
                     del game.inventory["Факел"]
                 game.equipment["hand_left"] = "Факел"
-                game.equipment["hand"] = "Факел"
                 game.ap += 1
                 game.add_log("Вы взяли факел в левую руку (+1 ⚡ AP пока факел в руке). Счётчик исследований активирован.")
                 text = game.get_ui()

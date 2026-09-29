@@ -96,9 +96,7 @@ def handle_story(data: str, game, uid: int):
 
     elif data == "wolf_torch":
         has_torch_in_hand = (
-            game.equipment.get("hand") == "Факел"
-            or game.equipment.get("hands") == "Факел"
-            or game.equipment.get("hand_left") == "Факел"
+            game.equipment.get("hand_left") == "Факел"
             or game.equipment.get("hand_right") == "Факел"
         )
 

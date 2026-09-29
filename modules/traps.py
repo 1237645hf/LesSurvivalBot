@@ -3,7 +3,7 @@ modules/traps.py — Охотничьи ловушки (источник пра�
 
 - Разблокировка с L4; после открытия — установка на L1–L7.
 - 1 ловушка на локацию.
-- Утро (после сна): 40% ломка / 60% успех + лут из TRAP_LOOT_TABLE.
+- Утро (после сна): 40% пуста / 20% ломается / 40% добыча по TRAP_LOOT_TABLE.
 """
 
 from typing import Dict, List, Optional, Any
@@ -205,6 +205,7 @@ def process_trap_rollover(game_state) -> List[Dict]:
             results.append({
                 "location_id": int(loc_id),
                 "broken": True,
+                "empty": False,
                 "animal": None,
                 "loot": {},
             })
@@ -212,8 +213,17 @@ def process_trap_rollover(game_state) -> List[Dict]:
             results.append({
                 "location_id": int(loc_id),
                 "broken": False,
+                "empty": False,
                 "animal": rolled["pending_animal"],
                 "loot": dict(rolled.get("pending_loot") or {}),
+            })
+        else:
+            results.append({
+                "location_id": int(loc_id),
+                "broken": False,
+                "empty": True,
+                "animal": None,
+                "loot": {},
             })
     return results
 

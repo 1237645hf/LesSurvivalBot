@@ -223,7 +223,7 @@ class GameState:
             if isinstance(item, dict):
                 equipment_bonus += int(item.get("ap_bonus", item.get("ap_modifier", 0)))
         # Пока факел экипирован в руке — он даёт +1 AP
-        if self.equipment.get("hand_left") == "Факел" or self.equipment.get("hand") == "Факел":
+        if self.equipment.get("hand_left") == "Факел":
             equipment_bonus += 1
         # Добавляем отдельный бонус от поля equipment_ap_bonus (если есть)
         equipment_bonus += int(getattr(self, "equipment_ap_bonus", 0))
@@ -350,7 +350,6 @@ class GameState:
 
         has_torch = (
             self.equipment.get("hand_left") == "Факел"
-            or self.equipment.get("hand") == "Факел"
         )
         has_matches = self.inventory.get("Спички", 0) > 0
 
@@ -469,13 +468,10 @@ class GameState:
 
         # 3. Факел в руке ночью сгорает
         torch_in_hand = (
-            self.equipment.get("hand") == "Факел"
-            or self.equipment.get("hand_left") == "Факел"
+            self.equipment.get("hand_left") == "Факел"
             or self.equipment.get("hand_right") == "Факел"
         )
         if torch_in_hand:
-            if self.equipment.get("hand") == "Факел":
-                self.equipment["hand"] = None
             if self.equipment.get("hand_left") == "Факел":
                 self.equipment["hand_left"] = None
             if self.equipment.get("hand_right") == "Факел":
@@ -811,7 +807,6 @@ class GameState:
         equipped_hands = {
             self.equipment.get("hand_left"),
             self.equipment.get("hand_right"),
-            self.equipment.get("hand"),
         }
 
         # Разделяем на расходники/еду (сортируются по рангу от 5 к 1) и остальные предметы
@@ -884,7 +879,7 @@ class GameState:
         else:
             flask_str = "Пусто"
 
-        left_item = self.equipment.get("hand_left") or self.equipment.get("hand")
+        left_item = self.equipment.get("hand_left")
         if left_item == "Факел":
             left_emoji = get_item_emoji("Факел")
             left_label = f"{left_emoji} Левая рука:"
@@ -953,7 +948,7 @@ class GameState:
         bonus_thirst = 0
         bonus_ap = 0
 
-        if self.equipment.get("hand_left") == "Факел" or self.equipment.get("hand") == "Факел":
+        if self.equipment.get("hand_left") == "Факел":
             bonus_ap += 1
         bonus_ap += int(getattr(self, "equipment_ap_bonus", 0) or 0)
 
@@ -1030,11 +1025,10 @@ class GameState:
 
     def is_full_slate_set_equipped(self) -> bool:
         eq = getattr(self, "equipment", {}) or {}
-        has_pants = eq.get("pants") == "Сланцевые поножи" or eq.get("legs") == "Сланцевые поножи"
         return (
             eq.get("head") == "Сланцевая маска"
             and eq.get("torso") == "Сланцевый панцирь"
-            and has_pants
+            and eq.get("pants") == "Сланцевые поножи"
             and eq.get("boots") == "Сланцевые ботинки"
         )
 
@@ -1045,7 +1039,7 @@ class GameState:
             count += 1
         if eq.get("torso") == "Сланцевый панцирь":
             count += 1
-        if eq.get("pants") == "Сланцевые поножи" or eq.get("legs") == "Сланцевые поножи":
+        if eq.get("pants") == "Сланцевые поножи":
             count += 1
         if eq.get("boots") == "Сланцевые ботинки":
             count += 1
