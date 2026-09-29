@@ -306,3 +306,31 @@ def test_return_to_location_2_after_completion():
     cb_datas = [b.callback_data for row in kb.inline_keyboard for b in row]
     assert "location_enter_3" in cb_datas
     assert "location_enter_1" in cb_datas
+
+
+def test_thorns_break_idempotent_on_resume():
+    """Повторный вызов l2_thorns_break (при load_game с active_story_callback) не наносит повторный урон."""
+    game = GameState()
+    game.hp = 100
+    game.equipment = {
+        "head": "Сланцевая маска",
+        "torso": "Сланцевый панцирь",
+        "pants": "Сланцевые поножи",
+        "boots": "Сланцевые ботинки",
+    }
+
+    # Первый прорыв
+    text1, kb1 = handle_location_2_ruchey("l2_thorns_break", game, 101)
+    assert game.hp == 74
+    assert game.is_story_flag_set("l2_thorns_cleared") is True
+    assert game.equipment.get("boots") == "Отремонтированные ботинки"
+
+    # Имитируем повторный вызов при перезапуске/загрузке с active_story_callback = "l2_thorns_break"
+    text2, kb2 = handle_location_2_ruchey("l2_thorns_break", game, 101)
+    # Здоровье НЕ должно повторно уменьшаться!
+    assert game.hp == 74
+    # Отремонтированные ботинки остаются целыми
+    assert game.equipment.get("boots") == "Отремонтированные ботинки"
+    assert "тропинка через колючки свободна" in text2.lower()
+    assert kb2.inline_keyboard[0][0].callback_data == "l2_dam_entrance"
+

@@ -706,6 +706,25 @@ class GameState:
         game.torch_research_count = int(data.get("torch_research_count", 0))
         game.wolf_battle = dict(data["wolf_battle"]) if data.get("wolf_battle") else None
         game.active_story_callback = data.get("active_story_callback")
+
+        # Авто-исцеление (auto-heal) старых повреждённых сейвов:
+        if isinstance(game.story_flags, dict):
+            # 1. L1: если l1_started стоял, но ветка не завершена и нет активного сюжетного окна -> сбросить l1_started
+            if game.story_flags.get("l1_started") and not game.story_flags.get("l1_completed") and not game.active_story_callback:
+                game.story_flags.pop("l1_started", None)
+
+            # 2. L1.5: если l1_5_triggered стоял, но логово не открыто и нет активного окна -> сбросить l1_5_triggered
+            if game.story_flags.get("l1_5_triggered") and not game.wolf_lair_unlocked and not game.active_story_callback:
+                game.story_flags.pop("l1_5_triggered", None)
+
+            # 3. L3: если l3_story_started стоял, но убежище не открыто и нет активного окна -> сбросить l3_story_started
+            if game.story_flags.get("l3_story_started") and not game.story_flags.get("l3_shelter_unlocked") and not game.active_story_callback:
+                game.story_flags.pop("l3_story_started", None)
+
+            # 4. L3.7: если l3_7_triggered стоял, но солонец не открыт, гребень не завершён и нет активного окна -> сбросить l3_7_triggered
+            if game.story_flags.get("l3_7_triggered") and "Солонец (Секач)" not in getattr(game, "unlocked_locations", []) and not game.story_flags.get("l3_ridge_completed") and not game.active_story_callback:
+                game.story_flags.pop("l3_7_triggered", None)
+
         return game
     
     def reset_navigate(self):

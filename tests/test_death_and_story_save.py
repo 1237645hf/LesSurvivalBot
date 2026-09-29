@@ -288,3 +288,48 @@ def test_wolf_battle_screen_no_restart_after_defeat():
     # Должен перенаправить на l1_5_aftermath
     assert "Тяжёлый удар посоха окончательно сбивает старого волка" in text
 
+
+def test_boar_battle_active_story_callback_lifecycle():
+    """Тест 13: В бою с Секачом (L3) active_story_callback всегда равен boar_battle_screen на всех ходах."""
+    game = GameState()
+    game.hp = 100
+    start_battle(game, "ancient_boar")
+    assert game.active_story_callback == "boar_battle_screen"
+
+    # Ход 0 (стартовый таран)
+    text0, kb0 = apply_action("boar_battle_attack", game, "ancient_boar")
+    assert game.active_story_callback == "boar_battle_screen"
+    assert "Секач" in text0 or "СОЛОНЕЦ" in text0
+
+    # Следующий ход (уворот)
+    text1, kb1 = apply_action("boar_battle_dodge", game, "ancient_boar")
+    assert game.active_story_callback == "boar_battle_screen"
+
+    # Сериализация и восстановление
+    doc = game.to_document()
+    assert doc["active_story_callback"] == "boar_battle_screen"
+    assert doc["wolf_battle"]["enemy_id"] == "ancient_boar"
+
+    restored = GameState.from_document(doc)
+    assert restored.active_story_callback == "boar_battle_screen"
+    assert restored.wolf_battle["enemy_id"] == "ancient_boar"
+
+
+def test_boar_battle_no_wolf_desync_on_wolf_battle_screen():
+    """Тест 14: Если игрок дрался с Секачом, wolf_battle_screen не превращает бой в бой со Старым волком."""
+    game = GameState()
+    game.hp = 100
+    start_battle(game, "ancient_boar")
+    # Имитируем рассинхрон или ошибочный вызов wolf_battle_screen
+    game.active_story_callback = "wolf_battle_screen"
+
+    text, kb = handle_story("wolf_battle_screen", game, 101)
+    # Должен отрисоваться бой с Секачом, а не со Старым волком
+    assert "СОЛОНЕЦ СЕКАЧА" in text or "Секач" in text
+    assert "Старый волк" not in text
+    # Кнопки должны относиться к кабану (boar_battle_), а не к волку
+    button_cbs = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+    assert any("boar_battle" in cb for cb in button_cbs)
+    assert not any("wolf_battle" in cb for cb in button_cbs)
+
+

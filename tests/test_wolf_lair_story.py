@@ -485,3 +485,29 @@ def test_combat_module_engine_and_enemies():
     assert game.wolf_battle is None
     assert "сломя голову выбегаешь" in text_flee
 
+
+def test_wolf_torch_equipped_only_and_idempotent():
+    """wolf_torch работает только при наличии факела в экипировке и не дублирует карму при перезаходе."""
+    game = GameState()
+    # Факел только в руке, в инвентаре нет
+    game.equipment["hand_left"] = "Факел"
+    assert "Факел" not in game.inventory
+
+    text1, kb1 = handle_story("wolf_torch", game, 101)
+    assert game.story_state == "after_fight"
+    assert "Факел" not in game.inventory
+    karma_intervention = game.narrative_karma.get("intervention", 0)
+    karma_compassion = game.narrative_karma.get("compassion", 0)
+    assert karma_intervention == 3
+    assert karma_compassion == -2
+
+    # Повторный вызов wolf_torch при load_game (active_story_callback)
+    text2, kb2 = handle_story("wolf_torch", game, 101)
+    assert game.story_state == "after_fight"
+    # Карма не должна задваиваться
+    assert game.narrative_karma.get("intervention", 0) == karma_intervention
+    assert game.narrative_karma.get("compassion", 0) == karma_compassion
+    assert "Факел" not in game.inventory
+    assert kb2.inline_keyboard[0][0].callback_data == "peek_den"
+
+

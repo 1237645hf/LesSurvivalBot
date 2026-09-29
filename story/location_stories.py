@@ -38,41 +38,7 @@ from game_math import (
 
 def handle_location_1_forest_start(data: str, game, uid: int):
     """Сюжетные разветвления для Локации 1: Лесной старт."""
-    text = None
-    kb = None
-
-    if data == "forest_start":
-        game.story_state = "wolf_encounter"
-        game.add_log("Ты слышишь рычание в кустах... Это волк!")
-        text = (
-            "Тёмный лес замер. Из густых кустов на тебя смотрят два горящих глаза.\n"
-            "Волк делает шаг навстречу. В твоей руке сжимается факел."
-        )
-        kb = wolf_kb
-
-    elif data == "wolf_leave":
-        game.story_state = None
-        game.add_log("Ты тихо отступил, не связываясь с волком.")
-        text = game.get_ui() if hasattr(game, "get_ui") else "Ты отступил."
-        kb = get_main_kb(game)
-
-    elif data == "wolf_torch":
-        has_torch = game.inventory.get("Факел", 0) > 0
-        if has_torch:
-            game.inventory["Факел"] -= 1
-            game.story_state = "wolf_fled"
-            game.add_log("Ты взмахнул факелом! Волк испугался и убежал.")
-            text = (
-                "Ты резко взмахиваешь факелом. Яркие искры брызжут в сторону зверя.\n"
-                "Волк испуганно визжит и скрывается в чаще."
-            )
-            kb = peek_kb
-        else:
-            game.add_log("У тебя нет факела!")
-            text = "У тебя нет горящего факела! Волк рычит сильнее."
-            kb = wolf_kb
-
-    return text, kb
+    return handle_story(data, game, uid)
 
 
 def handle_story(data: str, game, uid: int):
@@ -135,24 +101,18 @@ def handle_story(data: str, game, uid: int):
             or game.equipment.get("hand_left") == "Факел"
             or game.equipment.get("hand_right") == "Факел"
         )
-        has_torch_in_inv = game.inventory.get("Факел", 0) > 0
 
-        if not has_torch_in_hand and not has_torch_in_inv:
-            game.add_log("У тебя нет факела!")
+        if not has_torch_in_hand and game.story_state != "after_fight":
+            game.add_log("У тебя нет факела в руке!")
             text = game.get_ui()
             kb = get_main_kb(game)
             return text, kb
 
-        if not has_torch_in_hand and has_torch_in_inv:
-            game.inventory["Факел"] = max(0, game.inventory.get("Факел", 0) - 1)
-            game.equipment["hand_left"] = "Факел"
-            game.equipment["hand"] = "Факел"
-            game.equipment["hands"] = "Факел"
-
-        game.adjust_narrative_karma("intervention", 3)
-        game.adjust_narrative_karma("compassion", -2)
-        game.adjust_narrative_karma("pragmatism", 3)
-        game.story_state = "after_fight"
+        if game.story_state != "after_fight":
+            game.adjust_narrative_karma("intervention", 3)
+            game.adjust_narrative_karma("compassion", -2)
+            game.adjust_narrative_karma("pragmatism", 3)
+            game.story_state = "after_fight"
         text = (
             "Ты поднимаешь факел повыше. Пламя трещит громче.\n"
             "Волк резко оборачивается, глаза вспыхивают жёлтым в свете огня.\n"
@@ -262,10 +222,7 @@ def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool)
         # Триггер Локации 3 (Скромная Лощина: обнаружение печи и убежища)
         # Условие: не сразу в первый день, а после сна на локации (день > дня входа или общий день >= 5)
         # на 2-е исследование этого дня.
-        if (
-            not game.is_story_flag_set("l3_shelter_unlocked")
-            and not game.is_story_flag_set("l3_story_started")
-        ):
+        if not game.is_story_flag_set("l3_shelter_unlocked"):
             l3_entered = game.story_flags.get("l3_entered_day")
             if l3_entered is None:
                 game.story_flags["l3_entered_day"] = getattr(game, "day", 1)
@@ -282,7 +239,7 @@ def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool)
         elif (
             game.is_story_flag_set("l3_shelter_unlocked")
             and not game.is_story_flag_set("l3_ridge_completed")
-            and not game.is_story_flag_set("l3_7_triggered")
+            and "Солонец (Секач)" not in (getattr(game, "unlocked_locations", []) or [])
         ):
             game.set_story_flag("l3_7_triggered", True)
             return "l3_7_morning", "🐗 С каменистого гребня доносится глухой хруст..."
@@ -299,7 +256,7 @@ def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool)
         if (
             getattr(game, "day", 1) >= 3
             and torch_count >= 4
-            and not game.is_story_flag_set("l1_started")
+            and not game.is_story_flag_set("l1_completed")
         ):
             return "forest_start", "🔦 Ты замечаешь странные следы и слышишь глухое рычание..."
 
@@ -307,7 +264,6 @@ def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool)
     if (
         game.is_story_flag_set("l1_completed")
         and not getattr(game, "wolf_lair_unlocked", False)
-        and not game.is_story_flag_set("l1_5_triggered")
     ):
         l1_day = game.story_flags.get("l1_completed_day", 1)
         if game.day >= l1_day + 4:
@@ -433,9 +389,13 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
         return apply_action(data, game, "old_wolf")
 
     elif data == "wolf_battle_screen":
-        if getattr(game, "wolf_battle", None) and game.wolf_battle.get("wolf_hp", 0) > 0 and getattr(game, "hp", 100) > 0:
+        battle = getattr(game, "wolf_battle", None)
+        if battle and battle.get("wolf_hp", 0) > 0 and getattr(game, "hp", 100) > 0:
+            cur_enemy = battle.get("enemy_id", "old_wolf")
+            if cur_enemy == "ancient_boar":
+                return get_battle_text(game, "ancient_boar"), get_battle_kb(game, "ancient_boar")
             return get_wolf_battle_text(game, "old_wolf"), get_wolf_battle_kb()
-        if game.is_story_flag_set("wolf_lair_defeated") or not getattr(game, "wolf_battle", None):
+        if game.is_story_flag_set("wolf_lair_defeated") or not battle:
             if not game.is_story_flag_set("wolf_spared") and not game.is_story_flag_set("wolf_killed"):
                 return handle_l1_wolf_lair("l1_5_aftermath", game, uid)
             game.active_story_callback = None
@@ -470,16 +430,23 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
         ])
 
     elif data == "l1_5_spare":
-        consumables = [
-            item for item, count in game.inventory.items()
-            if count > 0 and is_item_consumable(item) and get_item_type(item) in ("food", "berry", "mushroom")
-        ]
-        consumables.sort(key=lambda it: (get_item_rank(it), it))
-        if consumables:
-            food_item = consumables[0]
-            game.inventory[food_item] -= 1
-            if game.inventory[food_item] <= 0:
-                del game.inventory[food_item]
+        if not game.is_story_flag_set("spared_wolf"):
+            consumables = [
+                item for item, count in game.inventory.items()
+                if count > 0 and is_item_consumable(item) and get_item_type(item) in ("food", "berry", "mushroom")
+            ]
+            consumables.sort(key=lambda it: (get_item_rank(it), it))
+            if consumables:
+                food_item = consumables[0]
+                game.inventory[food_item] -= 1
+                if game.inventory[food_item] <= 0:
+                    del game.inventory[food_item]
+                game.story_flags["spared_wolf_food"] = food_item
+            game.set_story_flag("spared_wolf")
+            game.adjust_narrative_karma("compassion", 5)
+
+        food_item = game.story_flags.get("spared_wolf_food")
+        if food_item:
             text = (
                 "Ты опускаешь посох, делаешь предупреждающий жест и не приближаешься, давая волку пространство.\n"
                 "Свободной рукой ты достаёшь из рюкзака съестное и бросаешь к его лапам.\n"
@@ -493,16 +460,15 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
                 "У тебя нет с собой еды, но зверь видит, что ты не станешь его добивать.\n"
                 "Волк с трудом поднимается и медленно отползает в темноту глубины норы. Путь открыт."
             )
-        game.set_story_flag("spared_wolf")
-        game.adjust_narrative_karma("compassion", 5)
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="➡️ Шагнуть в расщелину", callback_data="l1_6_passage")]
         ])
 
     elif data == "l1_5_kill":
         text = "Ты покидаешь пещеру с уверенностью, что на тебя этой ночью никто не нападёт."
-        game.set_story_flag("killed_wolf")
-        game.adjust_narrative_karma("pragmatism", 5)
+        if not game.is_story_flag_set("killed_wolf"):
+            game.set_story_flag("killed_wolf")
+            game.adjust_narrative_karma("pragmatism", 5)
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="➡️ Шагнуть в расщелину", callback_data="l1_6_passage")]
         ])
@@ -570,8 +536,10 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
     if kb == get_main_kb(game) or data in ("l1_5_leave", "l1_7_finish", "location_enter_1", "back") or getattr(game, "hp", 100) <= 0:
         game.active_story_callback = None
     elif text is not None:
-        if getattr(game, "wolf_battle", None) and getattr(game, "hp", 100) > 0 and game.wolf_battle.get("wolf_hp", 0) > 0:
-            game.active_story_callback = "wolf_battle_screen"
+        battle = getattr(game, "wolf_battle", None)
+        if battle and getattr(game, "hp", 100) > 0 and battle.get("wolf_hp", 0) > 0:
+            cur_enemy = battle.get("enemy_id", "old_wolf")
+            game.active_story_callback = "boar_battle_screen" if cur_enemy == "ancient_boar" else "wolf_battle_screen"
         else:
             game.active_story_callback = data
 
@@ -997,6 +965,16 @@ def handle_location_2_ruchey(data: str, game, uid: int):
 
     # 3. Прорыв сквозь терновник
     elif data == "l2_thorns_break":
+        if game.is_story_flag_set("l2_thorns_cleared"):
+            text = (
+                "Ты стоишь на бетонной площадке плотины у проломанного прохода.\n"
+                "Тропинка через колючки свободна — больше прорываться не придётся!"
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🚪 Войти в здание водосброса", callback_data="l2_dam_entrance")]
+            ])
+            return text, kb
+
         slate_count = get_l2_slate_armor_count(game)
         thorn_damage = get_l2_thorn_damage(slate_count)
 
@@ -1224,8 +1202,10 @@ def handle_location_2_ruchey(data: str, game, uid: int):
         game.set_story_flag("l2_completed", True)
 
         # Карма за решение головоломки за 1 или 2 захода (максимум 1 ошибка)
-        if getattr(game, "l2_puzzle_attempt", 0) <= 1:
-            game.adjust_narrative_karma("observation", 2)
+        if not game.is_story_flag_set("l2_bridge_karma_awarded"):
+            game.set_story_flag("l2_bridge_karma_awarded")
+            if getattr(game, "l2_puzzle_attempt", 0) <= 1:
+                game.adjust_narrative_karma("observation", 2)
 
         text = (
             "Раздаётся оглушительный лязг многотонных противовесов. "
@@ -1303,7 +1283,6 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🗣 Позвать хозяина", callback_data="l3_2_call")],
             [InlineKeyboardButton(text="🔍 Осмотреть убежище", callback_data="l3_3_inspect")],
-            [InlineKeyboardButton(text="↩️ Не трогать и уйти", callback_data="back")],
         ])
 
     elif data == "l3_2_call":
@@ -1583,9 +1562,11 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
         ])
 
     elif data in ("l3_start_boar_battle", "boar_battle_screen"):
-        if data == "l3_start_boar_battle" or not getattr(game, "wolf_battle", None):
+        battle = getattr(game, "wolf_battle", None)
+        if data == "l3_start_boar_battle" or not battle:
             return start_battle(game, "ancient_boar")
-        return get_battle_text(game, "ancient_boar"), get_battle_kb(game, "ancient_boar")
+        cur_enemy = battle.get("enemy_id", "ancient_boar")
+        return get_battle_text(game, cur_enemy), get_battle_kb(game, cur_enemy)
 
     elif data.startswith("boar_battle_"):
         return apply_action(data, game, "ancient_boar")

@@ -115,7 +115,7 @@ def start_battle(game, enemy_id: str = "old_wolf") -> Tuple[str, InlineKeyboardM
         "boar_status": "⚡ Мчится на таран!" if is_charging else "",
         "last_log": start_log,
     }
-    game.active_story_callback = "wolf_battle_screen" if enemy_id == "old_wolf" else "boar_battle_screen"
+    game.active_story_callback = enemy.get("screen_callback", "wolf_battle_screen" if enemy_id == "old_wolf" else "boar_battle_screen")
     text = get_battle_text(game, enemy_id)
     kb = get_battle_kb(game, enemy_id)
     return text, kb
@@ -129,6 +129,7 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
         battle = game.wolf_battle
     enemy_id = battle.get("enemy_id", enemy_id)
     enemy = get_enemy(enemy_id)
+    screen_cb = enemy.get("screen_callback", "wolf_battle_screen" if enemy_id == "old_wolf" else "boar_battle_screen")
 
     # Нормализуем имя действия
     clean_action = action
@@ -157,6 +158,7 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
         # ПЕРВЫЙ ХОД (Стартовый таран врасплох)
         if battle.get("turn_count", 0) == 0:
             battle["turn_count"] = 1
+            game.active_story_callback = screen_cb
             ram_dmg = 44
             strike_dmg = 18
             game.hp = max(0, game.hp - ram_dmg)
@@ -209,7 +211,7 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
                 battle["is_enraged"] = True
                 log_lines.append("🔥 ФАЗА 2: НЕИСТОВСТВО! Секач в ярости!")
 
-            game.active_story_callback = "boar_battle_screen"
+            game.active_story_callback = screen_cb
             battle["last_log"] = "\n".join(log_lines)
             return get_battle_text(game, enemy_id), get_battle_kb(game, enemy_id)
 
@@ -229,7 +231,7 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
             else:
                 log_lines = ["⚡ Ты ушёл в сторону, но Секач не шёл на таран."]
 
-            game.active_story_callback = "boar_battle_screen"
+            game.active_story_callback = screen_cb
             battle["last_log"] = "\n".join(log_lines)
             return get_battle_text(game, enemy_id), get_battle_kb(game, enemy_id)
 
@@ -321,7 +323,7 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
                 battle["is_enraged"] = True
                 log_lines.append("🔥 ФАЗА 2: НЕИСТОВСТВО! Секач в ярости!")
 
-            game.active_story_callback = "boar_battle_screen"
+            game.active_story_callback = screen_cb
             battle["last_log"] = "\n".join(log_lines)
             return get_battle_text(game, enemy_id), get_battle_kb(game, enemy_id)
 
@@ -359,7 +361,7 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
                 text = get_death_text(game, f"🐗 Секач пробил твою защиту смертельным ударом (−{taken} HP).")
                 return text, get_death_kb()
 
-            game.active_story_callback = "boar_battle_screen"
+            game.active_story_callback = screen_cb
             battle["last_log"] = "\n".join(log_lines)
             return get_battle_text(game, enemy_id), get_battle_kb(game, enemy_id)
 
@@ -420,7 +422,7 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
                 kb = get_death_kb()
                 return text, kb
 
-        game.active_story_callback = "wolf_battle_screen"
+        game.active_story_callback = screen_cb
         battle["last_log"] = "\n".join(log_lines)
         text = get_battle_text(game, enemy_id)
         kb = get_wolf_battle_kb()
@@ -471,7 +473,7 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
                 kb = get_death_kb()
                 return text, kb
 
-        game.active_story_callback = "wolf_battle_screen"
+        game.active_story_callback = screen_cb
         battle["last_log"] = "\n".join(log_lines)
         text = get_battle_text(game, enemy_id)
         kb = get_wolf_battle_kb()
@@ -493,4 +495,5 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
         return text, kb
 
     # Фоллбэк
+    game.active_story_callback = screen_cb
     return get_battle_text(game, enemy_id), get_battle_kb(game, enemy_id)

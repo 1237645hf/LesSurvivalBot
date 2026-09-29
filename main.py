@@ -1650,7 +1650,6 @@ async def process_callback(callback: types.CallbackQuery):
 
         elif data == "back":
             game.story_state = None
-            game.active_story_callback = None
             if "drop_item_name" in game.story_flags:
                 del game.story_flags["drop_item_name"]
             game.story_flags.pop("fuel_item", None)
@@ -1663,8 +1662,15 @@ async def process_callback(callback: types.CallbackQuery):
             game.nav_stack = list(CANONICAL_STACKS.get(target, ["main"]))
 
             if target == "main":
-                text = game.get_ui()
-                kb = get_main_kb(game)
+                if getattr(game, "active_story_callback", None):
+                    text, kb = handle_story(game.active_story_callback, game, uid)
+                    if text is None:
+                        game.active_story_callback = None
+                        text = game.get_ui()
+                        kb = get_main_kb(game)
+                else:
+                    text = game.get_ui()
+                    kb = get_main_kb(game)
             elif target == "inventory":
                 text = game.get_inventory_text()
                 kb = inventory_inline_kb

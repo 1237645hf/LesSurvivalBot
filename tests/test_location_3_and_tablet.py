@@ -290,8 +290,13 @@ def test_ridge_with_armor_and_peaceful_cache():
     assert game.narrative_karma.get("compassion", 0) == 2
 
 
-def test_boar_combat_tactics_and_victory_loot():
+def test_boar_combat_tactics_and_victory_loot(monkeypatch):
     """Тест боевой системы с Секачом: паттерн уворотов (1-нет, 2-да, 3-да, 4-нет, 5-да), крит x2 и добыча."""
+    def mock_randint(a, b):
+        if (a, b) == (1, 100):
+            return 99  # Шанс стана не срабатывает случайно
+        return b
+    monkeypatch.setattr("random.randint", mock_randint)
     game = GameState()
     game.equipment = {
         "head": "Сланцевая маска",
