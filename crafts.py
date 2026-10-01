@@ -17,6 +17,10 @@ CRAFT_RECIPES = {
     "Сланцевая тарелка": [("Сланцевый слиток", 1)],
     "Охотничья ловушка": [("Ветка", 4), ("Кусок коры", 2), ("Кожа", 1), ("Кость", 1)],
     "Окованный посох": [("Крепкий посох", 1), ("Сланцевый слиток", 1), ("Кусок коры", 2)],
+    "Кожаный капюшон": [("Кожа", 2), ("Кусок коры", 1)],
+    "Кожаный нагрудник": [("Кожа", 4), ("Сланцевый слиток", 1), ("Ветка", 2)],
+    "Кожаные поножи": [("Кожа", 3), ("Кусок коры", 2)],
+    "Кожаные сапоги": [("Кожа", 2), ("Кусок коры", 1)],
 }
 
 CRAFT_YIELDS = {
@@ -225,6 +229,10 @@ CRAFT_ICONS = {
     "Сланцевая тарелка": "🍽️",
     "Охотничья ловушка": "🪤",
     "Окованный посох": "🦯",
+    "Кожаный капюшон": "🧢",
+    "Кожаный нагрудник": "🦺",
+    "Кожаные поножи": "👖",
+    "Кожаные сапоги": "🥾",
 }
 
 
@@ -475,11 +483,93 @@ def handle_craft(data, game, uid):
             if game.inventory["Клык волка"] <= 0:
                 del game.inventory["Клык волка"]
             game.equipment["trinket"] = "Клык волка"
-            game.add_log("Вы надели амулет «Клык волка» (+3 к урону в бою).")
+            game.add_log("Вы надели амулет «Клык волка» (+1 к урону в бою).")
             text = game.get_ui()
             kb = get_main_kb(game)
         else:
             game.add_log("В инвентаре нет клыка волка.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Схема кожаной брони":
+        if game.inventory.get("Схема кожаной брони", 0) > 0:
+            game.inventory["Схема кожаной брони"] -= 1
+            if game.inventory["Схема кожаной брони"] <= 0:
+                del game.inventory["Схема кожаной брони"]
+            unlocked = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
+            for arm in ("Кожаный капюшон", "Кожаный нагрудник", "Кожаные поножи", "Кожаные сапоги"):
+                if arm not in unlocked:
+                    unlocked.append(arm)
+            game.unlocked_crafts = unlocked
+            game.set_story_flag("leather_armor_unlocked", True)
+            game.add_log("Открыт крафт кожаной брони.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет схемы кожаной брони.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Кожаный капюшон":
+        if game.inventory.get("Кожаный капюшон", 0) > 0:
+            old_item = game.equipment.get("head")
+            if old_item and old_item not in ("⚪ Грязная кепка", "Грязная кепка", "Пусто"):
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory["Кожаный капюшон"] -= 1
+            if game.inventory["Кожаный капюшон"] <= 0:
+                del game.inventory["Кожаный капюшон"]
+            game.equipment["head"] = "Кожаный капюшон"
+            game.add_log("Вы надели кожаный капюшон.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет кожаного капюшона.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Кожаный нагрудник":
+        if game.inventory.get("Кожаный нагрудник", 0) > 0:
+            old_item = game.equipment.get("torso")
+            if old_item and old_item not in ("⚪ Потасканная куртка", "Потасканная куртка", "Пусто"):
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory["Кожаный нагрудник"] -= 1
+            if game.inventory["Кожаный нагрудник"] <= 0:
+                del game.inventory["Кожаный нагрудник"]
+            game.equipment["torso"] = "Кожаный нагрудник"
+            game.add_log("Вы надели кожаный нагрудник.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет кожаного нагрудника.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Кожаные поножи":
+        if game.inventory.get("Кожаные поножи", 0) > 0:
+            old_item = game.equipment.get("pants")
+            if old_item and old_item not in ("⚪ Рваные штаны", "Рваные штаны", "Пусто"):
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory["Кожаные поножи"] -= 1
+            if game.inventory["Кожаные поножи"] <= 0:
+                del game.inventory["Кожаные поножи"]
+            game.equipment["pants"] = "Кожаные поножи"
+            game.add_log("Вы надели кожаные поножи.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет кожаных поножей.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Кожаные сапоги":
+        if game.inventory.get("Кожаные сапоги", 0) > 0:
+            old_item = game.equipment.get("boots")
+            if old_item and old_item not in ("⚪ Стоптанные ботинки", "Стоптанные ботинки", "Пусто"):
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory["Кожаные сапоги"] -= 1
+            if game.inventory["Кожаные сапоги"] <= 0:
+                del game.inventory["Кожаные сапоги"]
+            game.equipment["boots"] = "Кожаные сапоги"
+            game.add_log("Вы надели кожаные сапоги.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет кожаных сапог.")
             text = game.get_ui()
             kb = get_main_kb(game)
     return text, kb

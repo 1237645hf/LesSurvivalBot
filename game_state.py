@@ -227,6 +227,9 @@ class GameState:
         # Пока факел экипирован в руке — он даёт +1 AP
         if self.equipment.get("hand_left") == "Факел":
             equipment_bonus += 1
+        # Поножи дают +1 AP
+        if self.equipment.get("pants") in ("Кожаные поножи", "Сланцевые поножи"):
+            equipment_bonus += 1
         # Добавляем отдельный бонус от поля equipment_ap_bonus (если есть)
         equipment_bonus += int(getattr(self, "equipment_ap_bonus", 0))
 
@@ -950,30 +953,36 @@ class GameState:
 
         # Общие бонусы снаряжения в порядке хотбара: ❤️ 🍖 💧 ⚡
         bonus_lines = []
-        bonus_hp = 0
+        bonus_hp = self.max_hp - 100
         bonus_hunger = 0
         bonus_thirst = 0
         bonus_ap = 0
 
         if self.equipment.get("hand_left") == "Факел":
             bonus_ap += 1
+        if self.equipment.get("pants") in ("Кожаные поножи", "Сланцевые поножи"):
+            bonus_ap += 1
         bonus_ap += int(getattr(self, "equipment_ap_bonus", 0) or 0)
 
         for item_data in self.equipment.values():
             if isinstance(item_data, dict):
-                bonus_hp += int(item_data.get("hp_bonus", item_data.get("hp_modifier", 0)))
                 bonus_hunger += int(item_data.get("hunger_bonus", 0))
                 bonus_thirst += int(item_data.get("thirst_bonus", 0))
                 bonus_ap += int(item_data.get("ap_bonus", item_data.get("ap_modifier", 0)))
 
+        stat_parts = []
         if bonus_hp != 0:
-            bonus_lines.append(f"• ❤️ HP: {bonus_hp:+d}")
+            stat_parts.append(f"❤️ HP {bonus_hp:+d}")
         if bonus_hunger != 0:
-            bonus_lines.append(f"• 🍖 Сытость: {bonus_hunger:+d}")
+            stat_parts.append(f"🍖 Сытость {bonus_hunger:+d}")
         if bonus_thirst != 0:
-            bonus_lines.append(f"• 💧 Жажда: {bonus_thirst:+d}")
+            stat_parts.append(f"💧 Жажда {bonus_thirst:+d}")
         if bonus_ap != 0:
-            bonus_lines.append(f"• ⚡ AP: {bonus_ap:+d}")
+            stat_parts.append(f"⚡ AP {bonus_ap:+d}")
+        if self.armor_defense > 0:
+            stat_parts.append(f"🛡 Защита +{self.armor_defense}")
+
+        stat_line = ", ".join(stat_parts)
 
         slate_items = {
             "head": "Сланцевая маска",
@@ -982,21 +991,48 @@ class GameState:
             "boots": "Сланцевые ботинки",
         }
         slate_count = sum(1 for slot, name in slate_items.items() if self.equipment.get(slot) == name)
-        if slate_count > 0 or getattr(self, "is_story_flag_set", lambda f: False)("l2_thorns_seen"):
-            bonus_lines.append(f"• 🛡 Защита от шипов: {slate_count}/4")
-        if self.armor_defense > 0:
-            bonus_lines.append(f"• 🛡 Общая защита: +{self.armor_defense}")
-        if self.max_hp > 100:
-            bonus_lines.append(f"• ❤️ Макс. здоровье: {self.max_hp} (+{self.max_hp - 100} HP)")
+
+        leather_items = {
+            "head": "Кожаный капюшон",
+            "torso": "Кожаный нагрудник",
+            "pants": "Кожаные поножи",
+            "boots": "Кожаные сапоги",
+        }
+        leather_count = sum(1 for slot, name in leather_items.items() if self.equipment.get(slot) == name)
+
+        set_block_lines = []
+        if slate_count > 0:
+            set_block_lines.append(f"КОМПЛЕКТ: {slate_count} из 4")
+            if self.is_full_slate_set_equipped():
+                set_block_lines.append("• 🛡 Иммунитет к оглушению")
+            if slate_count > 0 or getattr(self, "is_story_flag_set", lambda f: False)("l2_thorns_seen"):
+                set_block_lines.append(f"• 🛡 Защита от шипов: {slate_count}/4")
+        elif leather_count > 0:
+            set_block_lines.append(f"КОМПЛЕКТ: {leather_count} из 4")
+            if self.is_full_leather_set_equipped():
+                set_block_lines.append("• 🏃 Уворот: 35%")
+                set_block_lines.append("• 🧪 Защита от кислоты")
+            else:
+                if self.dodge_chance > 0:
+                    set_block_lines.append(f"• 🏃 Уворот: +{self.dodge_chance}%")
+                if self.equipment.get("torso") == "Кожаный нагрудник":
+                    set_block_lines.append("• 🧪 Защита от кислоты")
+
         if right_item and right_item in ITEMS:
             r_eff = ITEMS[right_item].get("effects", {})
             if "stun_chance" in r_eff:
-                bonus_lines.append(f"• 💫 Шанс оглушения: +{r_eff['stun_chance']}%")
+                set_block_lines.append(f"• 💫 Шанс оглушения: +{r_eff['stun_chance']}%")
 
-        if not bonus_lines:
+        content_sections = []
+        if stat_line:
+            content_sections.append(stat_line)
+        if set_block_lines:
+            content_sections.append("\n".join(set_block_lines))
+
+        if not content_sections:
             bonus_block = "📊 ОБЩИЕ БОНУСЫ СНАРЯЖЕНИЯ:\n• Бонусы отсутствуют."
         else:
-            bonus_block = "📊 ОБЩИЕ БОНУСЫ СНАРЯЖЕНИЯ:\n" + "\n".join(bonus_lines)
+            bonus_block = "📊 ОБЩИЕ БОНУСЫ СНАРЯЖЕНИЯ:\n" + "\n\n".join(content_sections)
         blocks.append(bonus_block)
 
         body = "\n\n".join(blocks)
@@ -1005,29 +1041,37 @@ class GameState:
     @property
     def max_hp(self) -> int:
         bonus = 0
-        slate_hp = {
+        armor_hp = {
             "Сланцевая маска": 8,
             "Сланцевый панцирь": 25,
             "Сланцевые поножи": 12,
             "Сланцевые ботинки": 5,
+            "Кожаный капюшон": 5,
+            "Кожаный нагрудник": 16,
+            "Кожаные поножи": 8,
+            "Кожаные сапоги": 4,
         }
         for item in (getattr(self, "equipment", {}) or {}).values():
-            if item in slate_hp:
-                bonus += slate_hp[item]
+            if item in armor_hp:
+                bonus += armor_hp[item]
         return 100 + bonus
 
     @property
     def armor_defense(self) -> int:
         defense = 0
-        slate_def = {
+        armor_def = {
             "Сланцевая маска": 2,
             "Сланцевый панцирь": 5,
             "Сланцевые поножи": 3,
             "Сланцевые ботинки": 2,
+            "Кожаный капюшон": 1,
+            "Кожаный нагрудник": 3,
+            "Кожаные поножи": 2,
+            "Кожаные сапоги": 1,
         }
         for item in (getattr(self, "equipment", {}) or {}).values():
-            if item in slate_def:
-                defense += slate_def[item]
+            if item in armor_def:
+                defense += armor_def[item]
         return defense
 
     def is_full_slate_set_equipped(self) -> bool:
@@ -1038,6 +1082,30 @@ class GameState:
             and eq.get("pants") == "Сланцевые поножи"
             and eq.get("boots") == "Сланцевые ботинки"
         )
+
+    def is_full_leather_set_equipped(self) -> bool:
+        eq = getattr(self, "equipment", {}) or {}
+        return (
+            eq.get("head") == "Кожаный капюшон"
+            and eq.get("torso") == "Кожаный нагрудник"
+            and eq.get("pants") == "Кожаные поножи"
+            and eq.get("boots") == "Кожаные сапоги"
+        )
+
+    @property
+    def dodge_chance(self) -> int:
+        """Шанс уворота в процентах (0..100%)."""
+        leather_dodge = {
+            "Кожаный капюшон": 5,
+            "Кожаный нагрудник": 15,
+            "Кожаные поножи": 8,
+            "Кожаные сапоги": 7,
+        }
+        dodge = 0
+        for item in (getattr(self, "equipment", {}) or {}).values():
+            if item in leather_dodge:
+                dodge += leather_dodge[item]
+        return dodge
 
     def count_slate_pieces_equipped(self) -> int:
         eq = getattr(self, "equipment", {}) or {}

@@ -960,7 +960,7 @@ def test_11_3_character_screen_no_default_cat_and_frames():
     # Если факел в руке — появляется бонус +1 AP
     game.equipment["hand_left"] = "Факел"
     char_text_torch = game.get_character_text()
-    assert "• ⚡ AP: +1" in char_text_torch
+    assert "⚡ AP +1" in char_text_torch or "• ⚡ AP: +1" in char_text_torch
 
 
 def test_11_4_item_card_torch_and_frames():
@@ -1023,7 +1023,7 @@ def test_12_unified_emojis_torch_and_navigation():
     game.equipment["hand_left"] = "Факел"
     char_text = game.get_character_text()
     assert "🔦 Левая рука:\n⚪ Факел\n⚡ AP: +1" in char_text
-    assert "• ⚡ AP: +1" in char_text
+    assert "⚡ AP +1" in char_text or "• ⚡ AP: +1" in char_text
 
     # 4. Локационные эмодзи
     assert LOCATION_EMOJIS[1] == "🌲"

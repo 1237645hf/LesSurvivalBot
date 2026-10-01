@@ -24,7 +24,7 @@ def _calc_player_damage(game) -> int:
 
     # Бонус от амулета "Клык волка"
     if eq.get("trinket") == "Клык волка":
-        base_dmg += 3
+        base_dmg += 1
 
     return base_dmg
 
