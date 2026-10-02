@@ -119,8 +119,28 @@ def get_item_card_actions_kb(item_name: str, game=None):
         keyboard.append([InlineKeyboardButton(text="📿 Надеть амулет", callback_data="use_item_Клык волка")])
     elif item_name == "Охотничья ловушка":
         keyboard.append([InlineKeyboardButton(text="🪤 Установить ловушку", callback_data="use_item_Охотничья ловушка")])
+    elif item_name == "Приманка для слизней":
+        keyboard.append([InlineKeyboardButton(text="🍯 Установить приманку", callback_data="use_item_Приманка для слизней")])
+    elif item_name == "Старый фонарь":
+        keyboard.append([InlineKeyboardButton(text="🔦 Взять в левую руку", callback_data="use_item_Старый фонарь")])
+    elif item_name == "Костяной амулет охотника":
+        keyboard.append([InlineKeyboardButton(text="🧿 Надеть амулет", callback_data="use_item_Костяной амулет охотника")])
     elif is_item_consumable(item_name):
         keyboard.append([InlineKeyboardButton(text="🍽️ Съесть / Применить", callback_data=f"use_consumable_{item_name}")])
+
+    if game and game.equipment.get("pants") == "Кожаные поножи":
+        from modules.items import ITEMS
+        it_info = ITEMS.get(item_name, {})
+        is_healing = (
+            item_name == "Янтарное зелье"
+            or it_info.get("effects", {}).get("hp", 0) > 0
+            or it_info.get("type") in ("potion", "food", "medicine")
+        )
+        if is_healing:
+            if getattr(game, "pants_pocket", None) == item_name:
+                keyboard.append([InlineKeyboardButton(text="👝 Извлечь из футляра", callback_data="pocket_remove")])
+            else:
+                keyboard.append([InlineKeyboardButton(text="👝 Вложить в футляр на поножах", callback_data=f"pocket_insert_{item_name}")])
 
     keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -164,8 +184,14 @@ def get_bottle_actions_kb():
 
 def get_main_kb(game):
     # Ряд 1: Исследовать + Костёр/Печь (справа)
+    explore_text = "🔍 Исследовать"
+    if game and getattr(game, "equipment", {}).get("hand_left") == "Старый фонарь":
+        dur = int(getattr(game, "lantern_durability", 20) or 0)
+        max_dur = int(getattr(game, "lantern_max_durability", 20) or 20)
+        explore_text = f"🔦 Исследовать ({dur}/{max_dur})"
+
     row1 = [
-        InlineKeyboardButton(text="🔍 Исследовать", callback_data="action_1"),
+        InlineKeyboardButton(text=explore_text, callback_data="action_1"),
     ]
     is_stove = getattr(game, "is_stove", False)
     if is_stove:
@@ -190,6 +216,15 @@ def get_main_kb(game):
         kb_rows.append([
             InlineKeyboardButton(text="📜 Каменная плита", callback_data="tablet_notes_view")
         ])
+    if "Яр Слизней" in str(getattr(game, "current_location", "")):
+        if getattr(game, "slug_bait_active", False):
+            kb_rows.append([
+                InlineKeyboardButton(text="🍯 Приманка для слизней (Активна)", callback_data="l5_bait_menu")
+            ])
+        elif game.inventory.get("Приманка для слизней", 0) > 0:
+            kb_rows.append([
+                InlineKeyboardButton(text="🍯 Установить приманку", callback_data="use_item_Приманка для слизней")
+            ])
     if game.weather in {"rain", "storm"}:
         rain_btns = [
             InlineKeyboardButton(text="🌧️ Пить дождь", callback_data="action_collect_water")
@@ -424,6 +459,22 @@ def get_trap_buttons_kb(game):
     traps = getattr(game, "traps", {}) or {}
     for loc_id in range(1, 8):
         loc_name = location_names.get(loc_id, f"Локация {loc_id}")
+        if loc_id == 5:
+            if getattr(game, "slug_bait_active", False):
+                kb.inline_keyboard.append([
+                    InlineKeyboardButton(
+                        text=f"🍯 {loc_name} (приманка активна)",
+                        callback_data="l5_bait_menu"
+                    )
+                ])
+            else:
+                kb.inline_keyboard.append([
+                    InlineKeyboardButton(
+                        text=f"🍯 {loc_name} (только приманка)",
+                        callback_data="trap_place_5"
+                    )
+                ])
+            continue
         trap = traps.get(loc_id)
         if trap and trap.get("is_active"):
             kb.inline_keyboard.append([
@@ -448,6 +499,15 @@ def get_trap_buttons_kb(game):
             ])
     kb.inline_keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back")])
     return kb
+
+
+def get_l5_bait_menu_kb():
+    """Меню управления приманкой в Яру Слизней."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⚔️ Устроить засаду!", callback_data="l5_slug_ambush")],
+        [InlineKeyboardButton(text="🚫 Снять приманку", callback_data="l5_bait_remove")],
+        [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
+    ])
 
 
 inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[

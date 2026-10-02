@@ -459,32 +459,17 @@ def test_leather_armor_schema_craft_and_equipment():
 
 
 def test_location_5_entry_requirement():
-    """Вход на локацию 5 блокируется без полного кожаного сета и разрешается при полном сете."""
+    """Вход на локацию 5 открывает сюжет «То, что лес не отпустил» без искусственных блокировок."""
     from story.location_stories import handle_location_5_slug_pit
 
     game = GameState()
-    game.current_location = "Просека Охотников"
+    game.current_location = "Яр Слизней"
 
-    # Без экипировки
-    text_blocked, kb_blocked = handle_location_5_slug_pit("slug_pit_start", game, 101)
-    assert "Скрафти и надень все 4 элемента кожаной брони" in text_blocked
-    assert any("Скрафти и надень все 4 элемента кожаной брони" in log for log in game.event_log)
-    assert game.current_location == "Просека Охотников"
-
-    # С неполным комплектом (только нагрудник и сапоги)
-    game.equipment["torso"] = "Кожаный нагрудник"
-    game.equipment["boots"] = "Кожаные сапоги"
-    text_blocked2, _ = handle_location_5_slug_pit("slug_pit_start", game, 101)
-    assert "Скрафти и надень все 4 элемента кожаной брони" in text_blocked2
-
-    # С полным комплектом из 4 частей
-    game.equipment["head"] = "Кожаный капюшон"
-    game.equipment["torso"] = "Кожаный нагрудник"
-    game.equipment["pants"] = "Кожаные поножи"
-    game.equipment["boots"] = "Кожаные сапоги"
-    text_ok, kb_ok = handle_location_5_slug_pit("slug_pit_start", game, 101)
-    assert "Яр Слизней — это не место для слабых духом" in text_ok
-    assert game.story_state == "slug_encounter"
+    # Вход в локацию 5
+    text, kb = handle_location_5_slug_pit("slug_pit_start", game, 101)
+    assert "Яр Слизней" in text or "зеленоватая взвесь" in text or "туман" in text
+    assert game.story_state == "l5_1a"
+    assert kb is not None
 
 
 def test_l4_slug_battle_full_cycle_and_mushroom_consumption():

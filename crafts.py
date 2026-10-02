@@ -21,11 +21,17 @@ CRAFT_RECIPES = {
     "Кожаный нагрудник": [("Кожа", 4), ("Сланцевый слиток", 1), ("Ветка", 2)],
     "Кожаные поножи": [("Кожа", 3), ("Кусок коры", 2)],
     "Кожаные сапоги": [("Кожа", 2), ("Кусок коры", 1)],
+    "Зарядить фонарь": [("Старый фонарь", 1), ("Янтарное ядро", 2)],
+    "Пузырёк": [("Сланцевый слиток", 1)],
+    "Янтарное зелье": [("Пузырёк", 3), ("Янтарное ядро", 1), ("Болотная ягода", 1)],
+    "Приманка для слизней": [("Ягода", 10)],
 }
 
 CRAFT_YIELDS = {
     "Древесный уголь": 3,
     "Сланцевая тарелка": 2,
+    "Пузырёк": 5,
+    "Янтарное зелье": 3,
 }
 
 
@@ -55,6 +61,13 @@ def _check_ingredient(game, name: str, need: int) -> bool:
         return (game.inventory.get("Ветка", 0) + game.inventory.get("Палка", 0) + game.inventory.get("Палки", 0)) >= need
     if name in ("Сланец", "Сланцевая пластина"):
         return (game.inventory.get("Сланец", 0) + game.inventory.get("Сланцевая пластина", 0)) >= need
+    if name in ("Болотная ягода", "Ягода"):
+        if game.inventory.get(name, 0) >= need:
+            return True
+        total_berries = sum(game.inventory.get(b, 0) for b in ("Лесная ягода", "Красная ягода", "Фиолетовая ягода", "Болотная ягода", "Горная ягода", "Ягода"))
+        return total_berries >= need
+    if name == "Старый фонарь":
+        return game.inventory.get("Старый фонарь", 0) >= need or game.equipment.get("hand_left") == "Старый фонарь"
     return game.inventory.get(name, 0) >= need
 
 
@@ -92,6 +105,17 @@ def can_craft(game, recipe_name: str) -> bool:
         return False
     if recipe_name == "Костёр" and has_campfire(game):
         return False
+    if recipe_name == "Приманка для слизней":
+        if getattr(game, "current_location", None) != "Яр Слизней":
+            return False
+    if recipe_name == "Зарядить фонарь":
+        has_lantern = (
+            game.equipment.get("hand_left") == "Старый фонарь"
+            or game.inventory.get("Старый фонарь", 0) > 0
+        )
+        has_cores = game.inventory.get("Янтарное ядро", 0) >= 2
+        not_full = int(getattr(game, "lantern_durability", 20) or 0) < 20
+        return has_lantern and has_cores and not_full
     return all(_check_ingredient(game, n, q) for n, q in ingredients)
 
 
@@ -100,6 +124,17 @@ def craft_mark(game, recipe_name: str) -> str:
         return "❌ (уже есть)"
     if recipe_name == "Костёр" and has_campfire(game):
         return "❌ (уже есть)"
+    if recipe_name == "Приманка для слизней" and getattr(game, "current_location", None) != "Яр Слизней":
+        return "❌ (только в Яру Слизней)"
+    if recipe_name == "Зарядить фонарь":
+        has_lantern = (
+            game.equipment.get("hand_left") == "Старый фонарь"
+            or game.inventory.get("Старый фонарь", 0) > 0
+        )
+        if not has_lantern:
+            return "❌ (нет фонаря)"
+        if int(getattr(game, "lantern_durability", 20) or 0) >= 20:
+            return "❌ (уже заряжен)"
     ingredients = CRAFT_RECIPES.get(recipe_name, [])
     ok, total = _count_ready(game, ingredients)
     if total == 0:
@@ -118,6 +153,26 @@ def do_craft(game, recipe_name: str):
         return False, "У вас уже есть факел! Нельзя иметь больше одного факела одновременно."
     if recipe_name == "Костёр" and has_campfire(game):
         return False, "У вас уже есть костёр! Нельзя создать второй."
+    if recipe_name == "Зарядить фонарь":
+        has_lantern = (
+            game.equipment.get("hand_left") == "Старый фонарь"
+            or game.inventory.get("Старый фонарь", 0) > 0
+        )
+        if not has_lantern:
+            return False, "У вас нет старого фонаря для зарядки!"
+        if game.inventory.get("Янтарное ядро", 0) < 2:
+            return False, "Не хватает янтарных ядер (нужно 2 шт.)!"
+        if int(getattr(game, "lantern_durability", 20) or 0) >= 20:
+            return False, "Фонарь уже полностью заправлен (20/20)!"
+        game.inventory["Янтарное ядро"] -= 2
+        if game.inventory["Янтарное ядро"] <= 0:
+            del game.inventory["Янтарное ядро"]
+        game.lantern_durability = 20
+        game.add_log("Вы заправили старый фонарь чистым янтарным маслом (20/20 исследований).")
+        return True, "Старый фонарь успешно заправлен янтарным маслом (20/20)!"
+    if recipe_name == "Приманка для слизней":
+        if getattr(game, "current_location", None) != "Яр Слизней":
+            return False, "Приманку для слизней можно изготовить только находясь в Яру Слизней!"
     if not can_craft(game, recipe_name):
         missing = []
         for n, q in ingredients:
@@ -133,6 +188,10 @@ def do_craft(game, recipe_name: str):
                 have = game.inventory.get("Ветка", 0) + game.inventory.get("Палка", 0) + game.inventory.get("Палки", 0)
                 if have < q:
                     missing.append(f"Ветки {have}/{q}")
+            elif n in ("Болотная ягода", "Ягода"):
+                have = sum(game.inventory.get(b, 0) for b in ("Лесная ягода", "Красная ягода", "Фиолетовая ягода", "Болотная ягода", "Горная ягода", "Ягода"))
+                if have < q:
+                    missing.append(f"Ягоды {have}/{q}")
             else:
                 have = game.inventory.get(n, 0)
                 if have < q:
@@ -186,6 +245,17 @@ def do_craft(game, recipe_name: str):
                     rem -= take
                     if game.inventory[sl_name] <= 0:
                         del game.inventory[sl_name]
+        elif n in ("Болотная ягода", "Ягода"):
+            for b_name in ("Болотная ягода", "Лесная ягода", "Красная ягода", "Фиолетовая ягода", "Горная ягода", "Ягода"):
+                if rem <= 0:
+                    break
+                have = game.inventory.get(b_name, 0)
+                if have > 0:
+                    take = min(have, rem)
+                    game.inventory[b_name] -= take
+                    rem -= take
+                    if game.inventory[b_name] <= 0:
+                        del game.inventory[b_name]
         else:
             game.inventory[n] -= q
             if game.inventory[n] <= 0:
@@ -228,11 +298,15 @@ CRAFT_ICONS = {
     "Сланцевый слиток": "🧱",
     "Сланцевая тарелка": "🍽️",
     "Охотничья ловушка": "🪤",
+    "Приманка для слизней": "🍯",
     "Окованный посох": "🦯",
     "Кожаный капюшон": "🧢",
     "Кожаный нагрудник": "🦺",
     "Кожаные поножи": "👖",
     "Кожаные сапоги": "🥾",
+    "Зарядить фонарь": "🔦",
+    "Пузырёк": "🧪",
+    "Янтарное зелье": "🍹",
 }
 
 
@@ -570,6 +644,61 @@ def handle_craft(data, game, uid):
             kb = get_main_kb(game)
         else:
             game.add_log("В инвентаре нет кожаных сапог.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Костяной амулет охотника":
+        if game.inventory.get("Костяной амулет охотника", 0) > 0:
+            old_item = game.equipment.get("trinket")
+            if old_item:
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory["Костяной амулет охотника"] -= 1
+            if game.inventory["Костяной амулет охотника"] <= 0:
+                del game.inventory["Костяной амулет охотника"]
+            game.equipment["trinket"] = "Костяной амулет охотника"
+            game.add_log("Вы надели костяной амулет охотника (+5 к увороту, чуткое чутьё при исследовании).")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет костяного амулета охотника.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Старый фонарь":
+        if game.inventory.get("Старый фонарь", 0) > 0:
+            old_item = game.equipment.get("hand_left")
+            if old_item:
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory["Старый фонарь"] -= 1
+            if game.inventory["Старый фонарь"] <= 0:
+                del game.inventory["Старый фонарь"]
+            game.equipment["hand_left"] = "Старый фонарь"
+            dur = int(getattr(game, "lantern_durability", 20) or 0)
+            max_dur = int(getattr(game, "lantern_max_durability", 20) or 20)
+            game.add_log(f"Вы взяли старый фонарь в левую руку [🔦 {dur}/{max_dur}] (+2 ⚡ AP пока фонарь в руке).")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет старого фонаря.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Приманка для слизней":
+        if game.inventory.get("Приманка для слизней", 0) <= 0:
+            game.add_log("В инвентаре нет приманки для слизней.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        elif getattr(game, "current_location", None) != "Яр Слизней":
+            game.add_log("Приманку для слизней можно установить только в Яру Слизней.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        elif getattr(game, "slug_bait_active", False):
+            game.add_log("В Яру Слизней уже установлена активная приманка.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.inventory["Приманка для слизней"] -= 1
+            if game.inventory["Приманка для слизней"] <= 0:
+                del game.inventory["Приманка для слизней"]
+            game.slug_bait_active = True
+            game.add_log("Вы установили приманку для слизней в Яру Слизней. Сладкий ягодный дух растекается по лощине.")
             text = game.get_ui()
             kb = get_main_kb(game)
     return text, kb

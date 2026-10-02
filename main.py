@@ -177,6 +177,7 @@ from story.location_stories import (
     handle_location_3_slate_hollow,
     handle_location_4_hunters_glade,
     handle_location_5_slug_pit,
+    start_slug_pack_battle,
     handle_location_6_furry_cave,
     handle_location_7_sanctuary_peak,
     ending_text,
@@ -343,6 +344,9 @@ def use_consumable(item, game):
     if "🍽️" in item:
         game.inventory["Сланцевая тарелка"] = game.inventory.get("Сланцевая тарелка", 0) + 1
         game.add_log(f"Использовано: {item}. {result} Ты доел, и тарелка снова свободна.")
+    elif item == "Янтарное зелье":
+        game.inventory["Пузырёк"] = game.inventory.get("Пузырёк", 0) + 1
+        game.add_log(f"Использовано: {item}. {result} Сланцевый пузырёк остался цел и вернулся в рюкзак.")
     else:
         game.add_log(f"Использовано: {item}. {result}")
     return game.get_ui()
@@ -1135,33 +1139,41 @@ async def process_callback(callback: types.CallbackQuery):
 
         elif data.startswith("trap_place_"):
             location_id = int(data.replace("trap_place_", ""))
-            traps = getattr(game, "traps", {}) or {}
-            existing = traps.get(location_id)
-            if existing and existing.get("is_active"):
-                text = f"✅ На локации {location_id} уже взведена ловушка.\nРезультат будет утром после сна."
-                kb = get_trap_buttons_kb(game)
-            elif game.inventory.get("Охотничья ловушка", 0) <= 0:
+            if location_id == 5:
                 text = (
-                    "❌ <b>У тебя нет охотничьей ловушки!</b>\n\n"
-                    "Скрафти её в меню <b>🔨 Крафт</b> из веток, коры, кости и кожи."
+                    "❌ <b>В Яру Слизней обычная охотничья ловушка бесполезна!</b>\n\n"
+                    "Едкая слизь мгновенно разъедает деревянные сторожки и пружины. "
+                    "Здесь используется только <b>Приманка для слизней</b> (крафтится из 10 ягод)."
                 )
                 kb = get_trap_buttons_kb(game)
             else:
-                game.inventory["Охотничья ловушка"] -= 1
-                if game.inventory["Охотничья ловушка"] <= 0:
-                    del game.inventory["Охотничья ловушка"]
-                game.traps[location_id] = {
-                    "location_id": location_id,
-                    "is_active": True,
-                    "is_broken": False,
-                    "placed_day": game.day,
-                }
-                game.add_log(f"Охотничья ловушка установлена на локации {location_id}.")
-                text = (
-                    f"🪤 <b>Ловушка установлена на локации {location_id}!</b>\n\n"
-                    "Сторожок взведён. Проверь улов следующим утром после сна."
-                )
-                kb = get_trap_buttons_kb(game)
+                traps = getattr(game, "traps", {}) or {}
+                existing = traps.get(location_id)
+                if existing and existing.get("is_active"):
+                    text = f"✅ На локации {location_id} уже взведена ловушка.\nРезультат будет утром после сна."
+                    kb = get_trap_buttons_kb(game)
+                elif game.inventory.get("Охотничья ловушка", 0) <= 0:
+                    text = (
+                        "❌ <b>У тебя нет охотничьей ловушки!</b>\n\n"
+                        "Скрафти её в меню <b>🔨 Крафт</b> из веток, коры, кости и кожи."
+                    )
+                    kb = get_trap_buttons_kb(game)
+                else:
+                    game.inventory["Охотничья ловушка"] -= 1
+                    if game.inventory["Охотничья ловушка"] <= 0:
+                        del game.inventory["Охотничья ловушка"]
+                    game.traps[location_id] = {
+                        "location_id": location_id,
+                        "is_active": True,
+                        "is_broken": False,
+                        "placed_day": game.day,
+                    }
+                    game.add_log(f"Охотничья ловушка установлена на локации {location_id}.")
+                    text = (
+                        f"🪤 <b>Ловушка установлена на локации {location_id}!</b>\n\n"
+                        "Сторожок взведён. Проверь улов следующим утром после сна."
+                    )
+                    kb = get_trap_buttons_kb(game)
         elif data.startswith("trap_replace_"):
             location_id = int(data.replace("trap_replace_", ""))
             if game.inventory.get("Охотничья ловушка", 0) <= 0:
@@ -1636,6 +1648,29 @@ async def process_callback(callback: types.CallbackQuery):
             text = format_item_card(item)
             kb = get_item_card_actions_kb(item, game)
 
+        elif data.startswith("pocket_insert_"):
+            item = data.removeprefix("pocket_insert_")
+            if game.inventory.get(item, 0) > 0 and game.equipment.get("pants") == "Кожаные поножи":
+                old_p = getattr(game, "pants_pocket", None)
+                if old_p:
+                    game.inventory[old_p] = game.inventory.get(old_p, 0) + 1
+                game.inventory[item] -= 1
+                if game.inventory[item] <= 0:
+                    del game.inventory[item]
+                game.pants_pocket = item
+                game.add_log(f"Вы вложили {item} в специальный футляр на кожаных поножах.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+
+        elif data == "pocket_remove":
+            old_p = getattr(game, "pants_pocket", None)
+            if old_p:
+                game.inventory[old_p] = game.inventory.get(old_p, 0) + 1
+                game.pants_pocket = None
+                game.add_log(f"Вы извлекли {old_p} из футляра на поножах.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+
         elif data == "inv_use":
             # Перенаправляем устаревший inv_use в подробный осмотр
             items_in_inv = [item for item, c in game.inventory.items() if c > 0]
@@ -2068,7 +2103,7 @@ async def process_callback(callback: types.CallbackQuery):
                 text = game.get_ui()
                 kb = get_main_kb(game)
         
-        elif data.startswith("slug_") or data.startswith("pit_"):
+        elif data.startswith("slug_") or data.startswith("pit_") or data.startswith("l5_"):
             text, kb = handle_location_5_slug_pit(data, game, uid)
             if text is None:
                 text = game.get_ui()
@@ -2135,6 +2170,9 @@ async def process_callback(callback: types.CallbackQuery):
             torch_equipped = (
                 game.equipment.get("hand_left") == "Факел"
             )
+            lantern_equipped = (
+                game.equipment.get("hand_left") == "Старый фонарь"
+            )
 
             # Проверка сюжетных триггеров через модуль story/location_stories.py
             story_event, story_log = check_forest_research_story_trigger(game, loc_id, torch_equipped)
@@ -2142,10 +2180,29 @@ async def process_callback(callback: types.CallbackQuery):
                 if story_log:
                     game.add_log(story_log)
                 text, kb = handle_story(story_event, game, uid)
+            elif loc_id == 5 and getattr(game, "slug_bait_active", False) and random.random() < 0.5:
+                if lantern_equipped:
+                    cur_d = int(getattr(game, "lantern_durability", 20) or 0)
+                    if cur_d > 0:
+                        cur_d -= 1
+                        game.lantern_durability = cur_d
+                game.add_log("🍯 Сладкий запах приманки привлёк скопление слизней! Они выползают из расщелин!")
+                text, kb = start_slug_pack_battle(game, count=random.randint(1, 6))
             else:
-                found_list = roll_find(loc_id, game.inventory)
+                has_amulet = (game.equipment.get("trinket") == "Костяной амулет охотника")
+                found_list = roll_find(loc_id, game.inventory, extra_roll=has_amulet)
                 msg = apply_finds_to_inventory(game, found_list)
-                if torch_equipped:
+                if lantern_equipped:
+                    cur_d = int(getattr(game, "lantern_durability", 20) or 0)
+                    if cur_d > 0:
+                        cur_d -= 1
+                        game.lantern_durability = cur_d
+                    max_d = int(getattr(game, "lantern_max_durability", 20) or 20)
+                    if cur_d == 0:
+                        game.add_log(f"🔦 {msg} [Фонарь погас (0/{max_d}) — требуется заправить через крафт]")
+                    else:
+                        game.add_log(f"🔦 {msg} [Фонарь: {cur_d}/{max_d}]")
+                elif torch_equipped:
                     game.add_log(f"🔦 {msg}")
                 else:
                     game.add_log(msg)

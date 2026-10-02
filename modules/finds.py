@@ -110,6 +110,9 @@ RESOURCE_SOFT_CAPS: Dict[str, Tuple[int, int]] = {
     "Кость": (20, 35),
     "Кожа": (25, 40),
     "Слизь": (50, 75),
+    "Янтарное ядро": (15, 25),
+    "Пузырёк": (20, 30),
+    "Янтарное зелье": (10, 20),
     "Сланец": (20, 35),
     "Сланцевая пластина": (7, 17),
     "Глина": (15, 25),
@@ -257,12 +260,13 @@ def location_id_from_game(game) -> int:
     return 1
 
 
-def roll_find(location_id: int, inventory: Optional[Dict[str, int]] = None) -> List[str]:
+def roll_find(location_id: int, inventory: Optional[Dict[str, int]] = None, extra_roll: bool = False) -> List[str]:
     """3 броска при исследовании:
     Бросок A: таблица локации (1 предмет по шансам; ягоды/грибы 1-2 шт.).
     Бросок B: второй независимый бросок по таблице локации (всегда делается; ягоды/грибы 1-2 шт.).
     Бросок C: ~30% шанс на ветки/палки, количество 1, 2 или 3 с равной вероятностью.
     + Бонусный бросок (кора, глина).
+    + Дополнительный бросок при экипированном амулете охотника (extra_roll=True).
     + Soft cap по виду предмета ко всему итоговому списку после A+B+C+bonus.
     """
     location_id = int(location_id)
@@ -284,6 +288,15 @@ def roll_find(location_id: int, inventory: Optional[Dict[str, int]] = None) -> L
             raw_drops.extend([item_b] * random.choice([1, 2]))
         else:
             raw_drops.append(item_b)
+
+    # Дополнительный бросок амулета
+    if extra_roll:
+        item_extra = _roll_single_item(table)
+        if item_extra:
+            if item_extra in BERRY_MUSHROOM_NAMES:
+                raw_drops.extend([item_extra] * random.choice([1, 2]))
+            else:
+                raw_drops.append(item_extra)
 
     # Бросок C (~40% шанс на палки, 1..4 шт.)
     if random.randint(1, 100) <= 40:

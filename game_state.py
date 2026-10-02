@@ -104,6 +104,14 @@ class GameState:
     campfire_durability: int = 0
     campfire_max_durability: int = 10
 
+    # Состояние Фонаря
+    lantern_durability: int = 20
+    lantern_max_durability: int = 20
+
+    # Футляр на поножах и приманка для слизней
+    pants_pocket: Optional[str] = None
+    slug_bait_active: bool = False
+
     # Вода во фляге (макс 10 делений)
     flask_water: int = 10
     rain_bottles: List[int] = field(default_factory=list)
@@ -227,6 +235,8 @@ class GameState:
         # Пока факел экипирован в руке — он даёт +1 AP
         if self.equipment.get("hand_left") == "Факел":
             equipment_bonus += 1
+        elif self.equipment.get("hand_left") == "Старый фонарь":
+            equipment_bonus += 2
         # Поножи дают +1 AP
         if self.equipment.get("pants") in ("Кожаные поножи", "Сланцевые поножи"):
             equipment_bonus += 1
@@ -507,6 +517,11 @@ class GameState:
         w_name = weather_names.get(self.weather, self.weather)
         self.add_log(f"{w_icon} Утро дня {self.day}. Погода: {w_name}.", "sleep")
 
+        # 8. Уничтожение приманки для слизней за ночь
+        if getattr(self, "slug_bait_active", False):
+            self.slug_bait_active = False
+            self.add_log("За ночь лесные слизни без остатка сожрали приманку в Яру Слизней.", "sleep")
+
         return self.ap
 
     
@@ -608,6 +623,10 @@ class GameState:
             "campfire_active": bool(getattr(self, "campfire_active", False)),
             "campfire_durability": int(getattr(self, "campfire_durability", 0)),
             "campfire_max_durability": int(getattr(self, "campfire_max_durability", 10)),
+            "lantern_durability": int(getattr(self, "lantern_durability", 20)),
+            "lantern_max_durability": int(getattr(self, "lantern_max_durability", 20)),
+            "pants_pocket": getattr(self, "pants_pocket", None),
+            "slug_bait_active": bool(getattr(self, "slug_bait_active", False)),
             "flask_water": int(getattr(self, "flask_water", 10)),
             "rain_bottles": list(getattr(self, "rain_bottles", [])),
             "unlocked_crafts": list(getattr(self, "unlocked_crafts", ["Костёр", "Факел"])),
@@ -700,6 +719,10 @@ class GameState:
         game.campfire_max_durability = int(getattr(game, "campfire_max_durability", 10) or 10)
         if game.campfire_durability <= 0:
             game.campfire_active = False
+        game.lantern_durability = int(data.get("lantern_durability", getattr(game, "lantern_durability", 20)) or 20)
+        game.lantern_max_durability = int(data.get("lantern_max_durability", getattr(game, "lantern_max_durability", 20)) or 20)
+        game.pants_pocket = data.get("pants_pocket", getattr(game, "pants_pocket", None))
+        game.slug_bait_active = bool(data.get("slug_bait_active", getattr(game, "slug_bait_active", False)))
         game.flask_water = int(getattr(game, "flask_water", 10) or 10)
         game.rain_bottles = [int(x) for x in data.get("rain_bottles", [])]
         game.locations_unlocked = bool(data.get("locations_unlocked", False))
@@ -894,6 +917,12 @@ class GameState:
             left_emoji = get_item_emoji("Факел")
             left_label = f"{left_emoji} Левая рука:"
             left_val = "⚪ Факел\n⚡ AP: +1"
+        elif left_item == "Старый фонарь":
+            left_emoji = get_item_emoji("Старый фонарь")
+            left_label = f"{left_emoji} Левая рука:"
+            dur = int(getattr(self, "lantern_durability", 20) or 0)
+            max_d = int(getattr(self, "lantern_max_durability", 20) or 20)
+            left_val = f"⚪ Старый фонарь [{dur}/{max_d}]\n⚡ AP: +2"
         elif left_item:
             left_emoji = get_item_emoji(left_item)
             left_label = f"{left_emoji} Левая рука:"
@@ -942,9 +971,23 @@ class GameState:
             elif slot_key == "hand_right":
                 val = right_val
             elif slot_key in starting_clothes:
-                val = self.equipment.get(slot_key) or starting_clothes[slot_key]
+                item_val = self.equipment.get(slot_key) or starting_clothes[slot_key]
+                if slot_key == "pants" and item_val == "Кожаные поножи":
+                    pocket_item = getattr(self, "pants_pocket", None)
+                    pocket_str = f"\n👝 Футляр: {pocket_item}" if pocket_item else "\n👝 Футляр: пусто"
+                    val = f"{item_val}{pocket_str}"
+                else:
+                    val = item_val
             elif slot_key == "flask":
                 val = flask_str
+            elif slot_key == "trinket":
+                tr = self.equipment.get("trinket")
+                if tr == "Костяной амулет охотника":
+                    val = "⚪ Костяной амулет охотника\n🏃 Уворот: +5% | 🔍 Чуткий поиск"
+                elif tr == "Клык волка":
+                    val = "⚪ Клык волка\n⚔️ Урон +1"
+                else:
+                    val = tr or "Пусто"
             elif slot_key == "pet":
                 val = pet_str
             else:
@@ -960,6 +1003,8 @@ class GameState:
 
         if self.equipment.get("hand_left") == "Факел":
             bonus_ap += 1
+        elif self.equipment.get("hand_left") == "Старый фонарь":
+            bonus_ap += 2
         if self.equipment.get("pants") in ("Кожаные поножи", "Сланцевые поножи"):
             bonus_ap += 1
         bonus_ap += int(getattr(self, "equipment_ap_bonus", 0) or 0)
@@ -1105,6 +1150,8 @@ class GameState:
         for item in (getattr(self, "equipment", {}) or {}).values():
             if item in leather_dodge:
                 dodge += leather_dodge[item]
+        if self.equipment.get("trinket") == "Костяной амулет охотника":
+            dodge += 5
         return dodge
 
     def count_slate_pieces_equipped(self) -> int:
