@@ -17,6 +17,7 @@ services/dialogs.py — Обработка текстовых диалоговы
 """
 
 import logging
+from typing import Optional, Tuple, Dict, Any, List
 from aiogram import types
 
 from game_state import Game
@@ -607,4 +608,310 @@ async def process_text_input(
         except Exception as exc:
             logging.exception(f"Ошибка в диалог-обработчике {handler.__name__} для {uid}: {exc}")
     return False
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ПРИВЕТСТВИЕ И СТАРТОВЫЙ ЭКРАН
+# ──────────────────────────────────────────────────────────────────────────────
+GUIDE_TEXT = (
+    "Добро пожаловать в лес выживания!\n\n"
+    "Краткий гайд:\n"
+    "❤️ Здоровье\n"
+    "🍖 Сытость\n"
+    "💧 Жажда\n"
+    "⚡ Действия на день\n\n"
+    "Карма поможет выбраться.\n\n"
+    "Попробуй выжить, друг мой..."
+)
+
+
+def format_start_character_text(game: Any) -> str:
+    hero_name = getattr(game, "character_name", None) or "Выживший"
+    day = getattr(game, "day", 1)
+    hp = getattr(game, "hp", 100)
+    hunger = getattr(game, "hunger", 100)
+    thirst = getattr(game, "thirst", 100)
+    ap = getattr(game, "ap", 0)
+    return (
+        "Ты медленно открываешь глаза среди вековых деревьев и холодного тумана. "
+        "В голове пустота, в памяти — лишь неясные обрывки прошлого... Но тело помнит тропы этого леса.\n\n"
+        f"👤 Выживший: **{hero_name}**\n"
+        f"📅 День в лесу: **{day}**\n"
+        f"❤️ Здоровье: **{hp}/100**\n"
+        f"🍖 Сытость: **{hunger}/100**\n"
+        f"💧 Жажда: **{thirst}/100**\n"
+        f"⚡ Энергия: **{ap} AP**"
+    )
+
+
+def check_character_name_required(game: Any) -> Optional[str]:
+    """Проверяет, требуется ли ввод имени персонажа перед продолжением игры."""
+    if game is None:
+        return None
+    if getattr(game, "story_state", None) == "WAITING_FOR_CHARACTER_NAME" or not getattr(game, "is_name_set", False):
+        return (
+            "📛 Сначала введи имя своего персонажа:\n"
+            "• Только буквы, цифры, _\n"
+            "• Пробелы запрещены (используй _ вместо пробела)\n"
+            "• Эмодзи запрещены\n"
+            "• Макс. 20 символов"
+        )
+    return None
+
+
+def is_session_callback(data: str) -> bool:
+    """Проверяет, относится ли callback к старту/перезапуску игры."""
+    return data in (
+        "new_game",
+        "start_new_game",
+        "confirm_new_game",
+        "start_new_game_confirmed",
+        "cancel_new_game",
+        "load_game",
+    )
+
+
+def handle_session_callback(
+    data: str,
+    game: Any,
+    uid: int,
+    games_dict: Optional[dict] = None,
+) -> Tuple[Optional[str], Optional[Any]]:
+    """Обрабатывает callback-и старта новой игры, подтверждения, отмены и загрузки.
+
+    Все импорты клавиатур и зависимостей выполняются локально внутри функции.
+    """
+    from services.database import load_game, save_game
+    from keyboards import (
+        get_confirm_new_game_kb,
+        get_start_new_game_kb,
+        get_start_resume_kb,
+    )
+
+    if data in ("new_game", "start_new_game"):
+        existing = load_game(uid)
+        if existing is None and games_dict is not None:
+            existing = games_dict.get(uid)
+        elif existing is None and game:
+            existing = game
+        if existing is not None and getattr(existing, "is_name_set", False):
+            hero_name = existing.character_name or "Выживший"
+            day = getattr(existing, "day", 1)
+            text = (
+                "⚠️ **Внимание!** Вы собираетесь начать с чистого листа.\n"
+                f"Персонаж **{hero_name}** ({day}-й день) и весь накопленный инвентарь будут безвозвратно удалены!\n\n"
+                "Вы уверены?"
+            )
+            kb = get_confirm_new_game_kb()
+            return text, kb
+
+        new_game = Game()
+        if games_dict is not None:
+            games_dict[uid] = new_game
+        new_game.story_state = "WAITING_FOR_CHARACTER_NAME"
+        save_game(uid, new_game)
+        text = (
+            "📛 Введи имя своего персонажа:\n"
+            "• Только буквы, цифры, _\n"
+            "• Пробелы запрещены (используй _ вместо пробела)\n"
+            "• Эмодзи запрещены\n"
+            "• Макс. 20 символов"
+        )
+        return text, None
+
+    elif data == "confirm_new_game":
+        existing = load_game(uid)
+        if existing is None and games_dict is not None:
+            existing = games_dict.get(uid)
+        elif existing is None and game:
+            existing = game
+        hero_name = (existing.character_name if existing else None) or "Выживший"
+        day = getattr(existing, "day", 1) if existing else 1
+        text = (
+            "⚠️ **Внимание!** Вы собираетесь начать с чистого листа.\n"
+            f"Персонаж **{hero_name}** ({day}-й день) и весь накопленный инвентарь будут безвозвратно удалены!\n\n"
+            "Вы уверены?"
+        )
+        kb = get_confirm_new_game_kb()
+        return text, kb
+
+    elif data == "start_new_game_confirmed":
+        new_game = Game()
+        if games_dict is not None:
+            games_dict[uid] = new_game
+        new_game.story_state = "WAITING_FOR_CHARACTER_NAME"
+        save_game(uid, new_game)
+        text = (
+            "📛 Введи имя своего персонажа:\n"
+            "• Только буквы, цифры, _\n"
+            "• Пробелы запрещены (используй _ вместо пробела)\n"
+            "• Эмодзи запрещены\n"
+            "• Макс. 20 символов"
+        )
+        return text, None
+
+    elif data == "cancel_new_game":
+        existing = load_game(uid)
+        if existing is None and games_dict is not None:
+            existing = games_dict.get(uid)
+        elif existing is None and game:
+            existing = game
+        if existing and getattr(existing, "is_name_set", False):
+            hero_name = existing.character_name or "Выживший"
+            text = format_start_character_text(existing)
+            kb = get_start_resume_kb(hero_name)
+        else:
+            text = GUIDE_TEXT
+            kb = get_start_new_game_kb()
+        return text, kb
+
+    elif data == "load_game":
+        loaded = load_game(uid)
+        if loaded is None and games_dict is not None:
+            loaded = games_dict.get(uid)
+        if loaded is None:
+            text = "Сохранение не найдено. Начните новую игру!"
+            kb = get_start_new_game_kb()
+            return text, kb
+
+        if loaded.story_state == "WAITING_FOR_CHARACTER_NAME" or not getattr(loaded, "is_name_set", False):
+            text = (
+                "📛 Введи имя своего персонажа:\n"
+                "• Только буквы, цифры, _\n"
+                "• Пробелы запрещены (используй _ вместо пробела)\n"
+                "• Эмодзи запрещены\n"
+                "• Макс. 20 символов"
+            )
+            return text, None
+
+        if games_dict is not None:
+            games_dict[uid] = loaded
+
+        if getattr(loaded, "hp", 100) <= 0:
+            loaded.hp = 0
+            loaded.active_story_callback = None
+            save_game(uid, loaded)
+            from game_state import get_death_text
+            from keyboards import get_death_kb
+            text = get_death_text(loaded)
+            kb = get_death_kb()
+            return text, kb
+
+        from story.location_stories import handle_story
+        if getattr(loaded, "story_state", None) == "WAITING_FOR_PET_NAME" or getattr(loaded, "active_story_callback", None) in ("pet_take", "waiting_pet_name"):
+            has_named_pet = loaded.is_story_flag_set("has_pet") and bool(
+                loaded.equipment.get("pet") or (getattr(loaded, "companion_name", "") not in (None, "", "Кот", "Котёнок"))
+            )
+            if has_named_pet:
+                loaded.active_story_callback = None
+                loaded.story_state = None
+                save_game(uid, loaded)
+            else:
+                res_text, res_kb = handle_story("waiting_pet_name", loaded, uid)
+                if res_text is not None:
+                    save_game(uid, loaded)
+                    return res_text, res_kb
+
+        if getattr(loaded, "active_story_callback", None):
+            cb = loaded.active_story_callback
+            res_text, res_kb = handle_story(cb, loaded, uid)
+            if res_text is not None:
+                save_game(uid, loaded)
+                return res_text, res_kb
+
+        from keyboards import get_main_kb
+        text = loaded.get_ui()
+        kb = get_main_kb(loaded)
+        return text, kb
+
+    return None, None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# КАМЕННАЯ ПЛИТА (ЗАПИСИ ВЫЖИВШИХ)
+# ──────────────────────────────────────────────────────────────────────────────
+def format_tablet_notes_text(
+    notes: list, page: int = 1, page_size: int = 5, notice: Optional[str] = None
+) -> Tuple[str, int]:
+    """Форматирует страницу записей каменной плиты."""
+    total_notes = len(notes)
+    total_pages = max(1, (total_notes + page_size - 1) // page_size)
+    page = max(1, min(page, total_pages))
+
+    start = (page - 1) * page_size
+    page_notes = notes[start:start + page_size]
+
+    lines = []
+    if notice:
+        lines.append(f"{notice}\n")
+    lines.append("━━━━━━━━━━━━━━━━━━━━")
+    lines.append("📜 КАМЕННАЯ ПЛИТА У ПЕЧИ")
+    lines.append("━━━━━━━━━━━━━━━━━━━━\n")
+    lines.append("На гладкой поверхности сланца высечены слова тех, кто проходил здесь до тебя:\n")
+
+    for i, note in enumerate(page_notes, start=start + 1):
+        txt = note.get("text", "")
+        author = note.get("author", "Бродяга (неизвестен)")
+        lines.append(f"{i}. «{txt}»\n   — {author}\n")
+
+    lines.append("━━━━━━━━━━━━━━━━━━━━")
+    lines.append(f"📖 Страница {page} из {total_pages}")
+
+    return "\n".join(lines), total_pages
+
+
+def is_tablet_callback(data: str) -> bool:
+    """Проверяет, относится ли callback к каменной плите."""
+    return data in ("tablet_notes_view", "tablet_notes_edit") or data.startswith("tablet_page:")
+
+
+def handle_tablet_callback(
+    data: str,
+    game: Any,
+    uid: int,
+) -> Tuple[Optional[str], Optional[Any]]:
+    """Обрабатывает просмотр, пагинацию и переход к редактированию надписи на каменной плите.
+
+    Все импорты клавиатур и зависимостей выполняются локально внутри функции.
+    """
+    from keyboards import get_tablet_notes_kb, get_tablet_edit_kb
+    from services.database import get_tablet_notes
+
+    if data == "tablet_notes_view":
+        if game:
+            game.story_state = None
+            game.nav_stack = ["main", "tablet_notes"]
+        all_notes = get_tablet_notes()
+        text, total_pages = format_tablet_notes_text(all_notes, page=1, page_size=5)
+        kb = get_tablet_notes_kb(1, total_pages)
+        return text, kb
+
+    elif data.startswith("tablet_page:"):
+        parts = data.split(":")
+        p = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 1
+        if game:
+            game.story_state = None
+            game.nav_stack = ["main", "tablet_notes"]
+        all_notes = get_tablet_notes()
+        text, total_pages = format_tablet_notes_text(all_notes, page=p, page_size=5)
+        kb = get_tablet_notes_kb(p, total_pages)
+        return text, kb
+
+    elif data == "tablet_notes_edit":
+        if game:
+            game.story_state = "WAITING_FOR_TABLET_NOTE"
+        edit_text = (
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "✏️ НАДПИСЬ НА КАМЕННОЙ ПЛИТЕ\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            "Напиши в чат короткое послание, которое увидят другие выжившие.\n\n"
+            "⚠️ Ограничение: не более 50 символов!\n\n"
+            "(Напиши текст сообщением в чат или нажми «Отмена»)\n"
+            "━━━━━━━━━━━━━━━━━━━━"
+        )
+        kb = get_tablet_edit_kb()
+        return edit_text, kb
+
+    return None, None
+
 

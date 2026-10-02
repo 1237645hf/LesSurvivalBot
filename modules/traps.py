@@ -6,8 +6,9 @@ modules/traps.py — Охотничьи ловушки (источник пра�
 - Утро (после сна): 40% пуста / 20% ломается / 40% добыча по TRAP_LOOT_TABLE.
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 import random
+from keyboards import get_trap_buttons_kb
 
 
 TRAP_UNLOCK_LOCATION = 4
@@ -232,3 +233,79 @@ def apply_trap_loot_to_inventory(game_state, loot: Dict[str, int]) -> None:
     inv = game_state.inventory
     for item, qty in (loot or {}).items():
         inv[item] = inv.get(item, 0) + int(qty)
+
+
+def is_traps_callback(data: str) -> bool:
+    """Проверяет, относится ли callback к механике ловушек."""
+    return data.startswith(("trap_place_", "trap_replace_", "trap_status_"))
+
+
+def handle_traps_callback(data: str, game: Any, uid: Optional[int] = None) -> Tuple[str, Any]:
+    """Обработка callback-запросов управления охотничьими ловушками (установка, замена, статус)."""
+    if data.startswith("trap_place_"):
+        location_id = int(data.replace("trap_place_", ""))
+        if location_id == 5:
+            text = (
+                "❌ <b>В Яру Слизней обычная охотничья ловушка бесполезна!</b>\n\n"
+                "Едкая слизь мгновенно разъедает деревянные сторожки и пружины. "
+                "Здесь используется только <b>Приманка для слизней</b> (крафтится из 10 ягод)."
+            )
+        else:
+            traps = getattr(game, "traps", {}) or {}
+            existing = traps.get(location_id)
+            if existing and existing.get("is_active"):
+                text = f"✅ На локации {location_id} уже взведена ловушка.\nРезультат будет утром после сна."
+            elif game.inventory.get("Охотничья ловушка", 0) <= 0:
+                text = (
+                    "❌ <b>У тебя нет охотничьей ловушки!</b>\n\n"
+                    "Скрафти её в меню <b>🔨 Крафт</b> из веток, коры, кости и кожи."
+                )
+            else:
+                game.inventory["Охотничья ловушка"] -= 1
+                if game.inventory["Охотничья ловушка"] <= 0:
+                    del game.inventory["Охотничья ловушка"]
+                if not hasattr(game, "traps") or game.traps is None:
+                    game.traps = {}
+                game.traps[location_id] = {
+                    "location_id": location_id,
+                    "is_active": True,
+                    "is_broken": False,
+                    "placed_day": getattr(game, "day", 1),
+                }
+                game.add_log(f"Охотничья ловушка установлена на локации {location_id}.")
+                text = (
+                    f"🪤 <b>Ловушка установлена на локации {location_id}!</b>\n\n"
+                    "Сторожок взведён. Проверь улов следующим утром после сна."
+                )
+    elif data.startswith("trap_replace_"):
+        location_id = int(data.replace("trap_replace_", ""))
+        if game.inventory.get("Охотничья ловушка", 0) <= 0:
+            text = (
+                "❌ <b>У тебя нет новой охотничьей ловушки для замены!</b>\n\n"
+                "Скрафти новую ловушку в меню <b>🔨 Крафт</b>."
+            )
+        else:
+            game.inventory["Охотничья ловушка"] -= 1
+            if game.inventory["Охотничья ловушка"] <= 0:
+                del game.inventory["Охотничья ловушка"]
+            if not hasattr(game, "traps") or game.traps is None:
+                game.traps = {}
+            game.traps[location_id] = {
+                "location_id": location_id,
+                "is_active": True,
+                "is_broken": False,
+                "placed_day": getattr(game, "day", 1),
+            }
+            game.add_log(f"Сломанная ловушка на локации {location_id} заменена на новую.")
+            text = f"🔨 <b>Ты заменил сломанную ловушку на локации {location_id}!</b>\nСторожок снова насторожен."
+    elif data.startswith("trap_status_"):
+        location_id = int(data.replace("trap_status_", ""))
+        text = (
+            f"✅ <b>Ловушка на локации {location_id} активна.</b>\n\n"
+            "Она насторожена на звериной тропе. Возвращайся утром после сна, чтобы проверить добычу."
+        )
+    else:
+        text = "Неизвестное действие с ловушкой."
+
+    kb = get_trap_buttons_kb(game)
+    return text, kb

@@ -330,3 +330,167 @@ def apply_finds_to_inventory(game, found: List[str]) -> str:
         else:
             parts.append(item)
     return "Нашёл: " + ", ".join(parts)
+
+
+LOCATION_EMOJIS: Dict[int, str] = {
+    1: "🌲",
+    2: "🏞️",
+    3: "🏔️",
+    4: "🏹",
+    5: "🍄",
+    6: "⛰️",
+    7: "🔮",
+}
+
+
+def is_explore_callback(data: str) -> bool:
+    """Проверяет, относится ли callback к исследованию или сбору воды."""
+    return data in ("action_1", "action_fill_rain_bottle", "action_collect_water")
+
+
+async def handle_explore_callback(
+    data: str,
+    game: Any,
+    uid: int,
+    callback: Optional[Any] = None,
+) -> Tuple[Optional[str], Optional[Any]]:
+    """Обрабатывает исследование локации (action_1) и сбор дождевой воды (action_fill_rain_bottle, action_collect_water).
+
+    Все импорты клавиатур, сюжетных триггеров и игровых состояний выполняются
+    локально внутри функции для предотвращения циклических зависимостей.
+    """
+    from keyboards import get_main_kb, get_death_kb
+    from game_state import get_death_text
+    from story.location_stories import (
+        check_forest_research_story_trigger,
+        handle_story,
+        start_slug_pack_battle,
+    )
+
+    if data == "action_1":
+        if game.ap <= 0:
+            ap_warning = "Не хватает очков действий! Нужно поспать (Отдых)."
+            game.add_log(ap_warning)
+            if callback:
+                await callback.answer(ap_warning, show_alert=True)
+            text = game.get_ui()
+            kb = get_main_kb(game)
+            return text, kb
+
+        deltas = game.consume_action(action_type="search", base_hunger=2, base_thirst=4)
+        loc_id = location_id_from_game(game)
+        loc_emoji = LOCATION_EMOJIS.get(loc_id, "🌲")
+
+        parts = []
+        if deltas.get("delta_hunger"):
+            parts.append(f"Сытость {deltas['delta_hunger']}")
+        if deltas.get("delta_thirst"):
+            parts.append(f"Жажда {deltas['delta_thirst']}")
+        hp_delta = deltas.get("delta_hp", 0)
+        if hp_delta:
+            hp_reasons = []
+            if deltas.get("hunger_damage_to_hp"):
+                hp_reasons.append("голодание")
+            if deltas.get("thirst_damage_to_hp"):
+                hp_reasons.append("обезвоживание")
+            reason = f" ({', '.join(hp_reasons)})" if hp_reasons else ""
+            parts.append(f"HP {hp_delta}{reason}")
+
+        res_str = ", ".join(parts) if parts else "без изменений"
+        game.add_log(f"{loc_emoji} Исследование: {res_str}")
+
+        if game.hp <= 0:
+            game.hp = 0
+            game.active_story_callback = None
+            text = get_death_text(game, "💀 Ты умер от голода и истощения.")
+            kb = get_death_kb()
+            return text, kb
+
+        torch_equipped = (
+            game.equipment.get("hand_left") == "Факел"
+        )
+        lantern_equipped = (
+            game.equipment.get("hand_left") == "Старый фонарь"
+        )
+
+        # Проверка сюжетных триггеров через модуль story/location_stories.py
+        story_event, story_log = check_forest_research_story_trigger(game, loc_id, torch_equipped)
+        if story_event:
+            if story_log:
+                game.add_log(story_log)
+            text, kb = handle_story(story_event, game, uid)
+        elif loc_id == 5 and getattr(game, "slug_bait_active", False) and random.random() < 0.5:
+            if lantern_equipped:
+                cur_d = int(getattr(game, "lantern_durability", 20) or 0)
+                if cur_d > 0:
+                    cur_d -= 1
+                    game.lantern_durability = cur_d
+            game.add_log("🍯 Сладкий запах приманки привлёк скопление слизней! Они выползают из расщелин!")
+            text, kb = start_slug_pack_battle(game, count=random.randint(1, 6))
+        else:
+            has_amulet = (game.equipment.get("trinket") == "Костяной амулет охотника")
+            found_list = roll_find(loc_id, game.inventory, extra_roll=has_amulet)
+            msg = apply_finds_to_inventory(game, found_list)
+            if lantern_equipped:
+                cur_d = int(getattr(game, "lantern_durability", 20) or 0)
+                if cur_d > 0:
+                    cur_d -= 1
+                    game.lantern_durability = cur_d
+                max_d = int(getattr(game, "lantern_max_durability", 20) or 20)
+                if cur_d == 0:
+                    game.add_log(f"🔦 {msg} [Фонарь погас (0/{max_d}) — требуется заправить через крафт]")
+                else:
+                    game.add_log(f"🔦 {msg} [Фонарь: {cur_d}/{max_d}]")
+            elif torch_equipped:
+                game.add_log(f"🔦 {msg}")
+            else:
+                game.add_log(msg)
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        return text, kb
+
+    elif data == "action_fill_rain_bottle":
+        if game.weather not in {"rain", "storm"}:
+            game.add_log("⚠️ Дождь уже закончился.")
+        elif game.ap < 1:
+            game.add_log("⚠️ Не хватает очков действий (требуется 1 ⚡ AP)!")
+        else:
+            has_empty = game.inventory.get("Пустая бутылка", 0) > 0
+            bottles = getattr(game, "rain_bottles", [])
+            partial_idx = next((i for i, w in enumerate(bottles) if w < 20), None)
+
+            if partial_idx is not None:
+                game.consume_action(1)
+                gained = random.randint(2, 4)
+                new_val = min(20, bottles[partial_idx] + gained)
+                actual_add = new_val - bottles[partial_idx]
+                bottles[partial_idx] = new_val
+                game.add_log(f"🌧️ Ты подставил бутылку под дождь и набрал +{actual_add} делений влаги ({new_val}/20).")
+            elif has_empty:
+                game.consume_action(1)
+                gained = random.randint(2, 4)
+                game.inventory["Пустая бутылка"] -= 1
+                if game.inventory["Пустая бутылка"] <= 0:
+                    del game.inventory["Пустая бутылка"]
+                game.inventory["Бутылка дождевой воды"] = game.inventory.get("Бутылка дождевой воды", 0) + 1
+                bottles.append(gained)
+                game.rain_bottles = bottles
+                game.add_log(f"🌧️ Ты наполнил пустую бутылку дождевой водой (+{gained} деления, {gained}/20).")
+            else:
+                game.add_log("У тебя нет подходящей пустой ёмкости для сбора дождевой воды.")
+        text = game.get_ui()
+        kb = get_main_kb(game)
+        return text, kb
+
+    elif data == "action_collect_water":
+        if game.weather in {"rain", "storm"}:
+            game.thirst = min(100, game.thirst + 20)
+            game.add_log("🌧️ Ты подставил ладони под дождь и напился свежей воды (+20 жажды).")
+        else:
+            game.add_log("⚠️ Дождь уже закончился.")
+        text = game.get_ui()
+        kb = get_main_kb(game)
+        return text, kb
+
+    return None, None
+

@@ -368,10 +368,25 @@ def get_craft_menu_kb(game):
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
+def is_craft_callback(data: str) -> bool:
+    """Проверяет, относится ли callback к меню крафта, рецептам или использованию экипируемых предметов."""
+    return data in ("inv_craft", "inv_recipes") or data.startswith("craft_") or data.startswith("use_item_")
+
+
 def handle_craft(data, game, uid):
     text = None
     kb = None
-    if data.startswith("craft_"):
+    if data == "inv_craft":
+        game.push_screen("craft")
+        text = get_craft_menu_text(game)
+        kb = get_craft_menu_kb(game)
+        return text, kb
+    elif data == "inv_recipes":
+        game.push_screen("recipes")
+        text = get_craft_menu_text(game)
+        kb = get_craft_menu_kb(game)
+        return text, kb
+    elif data.startswith("craft_"):
         recipe = data.removeprefix("craft_")
         ok, msg = do_craft(game, recipe)
         if ok:
@@ -700,5 +715,8 @@ def handle_craft(data, game, uid):
             game.slug_bait_active = True
             game.add_log("Вы установили приманку для слизней в Яру Слизней. Сладкий ягодный дух растекается по лощине.")
             text = game.get_ui()
-            kb = get_main_kb(game)
+    if text is None:
+        from keyboards import inventory_inline_kb
+        text = game.get_inventory_text()
+        kb = inventory_inline_kb
     return text, kb

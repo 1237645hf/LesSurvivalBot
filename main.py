@@ -21,7 +21,16 @@ from game_math import (
     get_thirst_base_cost,
     calculate_ap_by_hp,
 )
-from game_state import GameState, Game, get_death_text
+from game_state import (
+    GameState,
+    Game,
+    get_death_text,
+    PARENT_SCREEN,
+    CANONICAL_STACKS,
+    get_settings_text,
+    handle_back_navigation,
+    resolve_back_screen,
+)
 from modules.hints import get_active_hints
 from modules.traps import (
     HUNTABLE_ANIMALS,
@@ -37,8 +46,17 @@ from modules.traps import (
     process_trap_rollover,
     apply_trap_loot_to_inventory,
     traps_unlocked,
+    is_traps_callback,
+    handle_traps_callback,
 )
-from modules.finds import roll_find, apply_finds_to_inventory, location_id_from_game
+from modules.finds import (
+    roll_find,
+    apply_finds_to_inventory,
+    location_id_from_game,
+    LOCATION_EMOJIS,
+    is_explore_callback,
+    handle_explore_callback,
+)
 from modules.cooking import (
     COOKING_RECIPES,
     cook_item,
@@ -46,6 +64,9 @@ from modules.cooking import (
     format_recipe_card,
     get_recipe_max_count,
     cook_portions,
+    get_campfire_text,
+    is_campfire_callback,
+    handle_campfire_callback,
 )
 from modules.items import (
     get_item_effects,
@@ -54,6 +75,22 @@ from modules.items import (
     format_item_card,
     get_item_rank_marker,
     get_item_display_name,
+    ITEM_DESCRIPTIONS,
+    get_inspectable_items,
+    get_usable_items,
+    use_consumable,
+    is_inventory_callback,
+    handle_inventory_callback,
+)
+from services.dialogs import (
+    GUIDE_TEXT,
+    format_start_character_text,
+    format_tablet_notes_text,
+    check_character_name_required,
+    is_session_callback,
+    handle_session_callback,
+    is_tablet_callback,
+    handle_tablet_callback,
 )
 
 # Готовка: единый источник — modules/cooking.py (еда.txt). CAMPFIRE_RECIPES удалён.
@@ -79,17 +116,6 @@ def format_resource_log_text(deltas: dict) -> str:
         reason = f" ({', '.join(hp_reasons)})" if hp_reasons else ""
         parts.append(f"HP {hp_delta:+d}{reason}")
     return ", ".join(parts)
-
-
-LOCATION_EMOJIS = {
-    1: "🌲",
-    2: "🏞️",
-    3: "🏔️",
-    4: "🏹",
-    5: "🍄",
-    6: "⛰️",
-    7: "🔮",
-}
 
 
 # Предметы, для которых при находке назначается случайное количество (1-3)
@@ -161,6 +187,7 @@ from keyboards import (
     get_trap_buttons_kb,
 )
 from crafts import (
+    is_craft_callback,
     handle_craft,
     do_craft,
     can_craft,
@@ -227,30 +254,6 @@ from services.database import (
 )
 
 
-ITEM_DESCRIPTIONS = {
-    "Спички": "Нужны для розжига и создания факела.",
-    "Ветка": "Подходит для крафта простых предметов.",
-    "Факел": "Освещает путь и помогает пережить опасные встречи.",
-    "Сланцевая пластина": "Ключевой материал для снаряжения у ручья.",
-    "Сланевый шлем": "Защищает голову от опасностей локации.",
-    "Сланевая броня": "Защищает грудь в путешествии.",
-}
-
-
-def get_inspectable_items(game):
-    return [
-        item for item, count in game.inventory.items()
-        if count > 0 and item in ITEM_DESCRIPTIONS
-    ]
-
-
-def get_usable_items(game):
-    return [
-        item for item, count in game.inventory.items()
-        if count > 0 and is_item_consumable(item)
-    ]
-
-
 def get_callback_answer(callback):
     data = callback.data or ""
     game = games.get(callback.from_user.id)
@@ -265,136 +268,9 @@ def get_callback_answer(callback):
     return None, False
 
 
-def use_consumable(item, game):
-    """Использовать предмет с учётом динамических коэффициентов.
-
-    Источник правды по эффектам — modules/items.py (get_item_effects).
-    """
-    if item == "Вода":
-        hunger_mult = get_resource_multiplier(game, "hunger")
-        water_cost = 1 + max(0, (30 - game.hunger) // 10)
-        if game.inventory.get("Вода", 0) < water_cost:
-            return f"Нужно воды: {water_cost}. В инвентаре недостаточно воды."
-        game.inventory["Вода"] -= water_cost
-        if game.inventory["Вода"] <= 0:
-            del game.inventory["Вода"]
-        thirst_restore = 10 * get_resource_multiplier(game, "thirst")
-        game.thirst = min(100, game.thirst + thirst_restore)
-        result = f"Жажда восстановлена на {int(thirst_restore)}. Потрачено воды: {water_cost}."
-    else:
-        effects = get_item_effects(item)
-
-        if not effects and "зель" in item.lower():
-            effects = {"hp": 25}
-        if not effects and item == "Еда":
-            effects = {"hunger": 30}
-
-        if not effects:
-            return None
-
-        restore_parts = []
-
-        if "hunger" in effects:
-            hunger_mult = get_resource_multiplier(game, "hunger")
-            hunger_val = int(effects["hunger"] * hunger_mult)
-            game.hunger = min(100, game.hunger + hunger_val)
-            restore_parts.append(f"Голод утолен ({hunger_val} ед.)")
-
-        if "thirst" in effects:
-            thirst_mult = get_resource_multiplier(game, "thirst")
-            thirst_val = int(effects["thirst"] * thirst_mult)
-            game.thirst = min(100, game.thirst + thirst_val)
-            restore_parts.append(f"Жажда восстановлена ({thirst_val} ед.)")
-
-        if "hp" in effects:
-            hp_val = effects["hp"]
-            game.hp = min(100, game.hp + hp_val)
-            if hp_val >= 0:
-                restore_parts.append(f"Здоровье восстановлено ({hp_val} ед.)")
-            else:
-                restore_parts.append(f"Получен урон ({abs(hp_val)} ед.)")
-
-        if "poison" in effects and effects["poison"]:
-            poison_val = effects["poison"]
-            game.hp = max(0, game.hp - poison_val)
-            restore_parts.append(f"Отравление ({poison_val} урона)")
-
-        # Проверка негативных эффектов (расстройство желудка, токсины, паразиты)
-        neg = get_item_negative_effects(item)
-        if neg:
-            chance = int(neg.get("chance", 0))
-            if random.randint(1, 100) <= chance:
-                neg_effects = neg.get("effects", {})
-                if "thirst" in neg_effects:
-                    game.thirst = max(0, game.thirst + neg_effects["thirst"])
-                if "hp" in neg_effects:
-                    game.hp = max(0, game.hp + neg_effects["hp"])
-                msg = neg.get("log_message") or neg.get("description")
-                restore_parts.append(f"⚠️ {msg}")
-
-        if not restore_parts:
-            return None
-
-        result = " ".join(restore_parts)
-
-        game.inventory[item] -= 1
-        if game.inventory[item] <= 0:
-            del game.inventory[item]
-
-    if "🍽️" in item:
-        game.inventory["Сланцевая тарелка"] = game.inventory.get("Сланцевая тарелка", 0) + 1
-        game.add_log(f"Использовано: {item}. {result} Ты доел, и тарелка снова свободна.")
-    elif item == "Янтарное зелье":
-        game.inventory["Пузырёк"] = game.inventory.get("Пузырёк", 0) + 1
-        game.add_log(f"Использовано: {item}. {result} Сланцевый пузырёк остался цел и вернулся в рюкзак.")
-    else:
-        game.add_log(f"Использовано: {item}. {result}")
-    return game.get_ui()
-
-# ──────────────────────────────────────────────────────────────────────────────
-# ПРИВЕТСТВИЕ
-# ──────────────────────────────────────────────────────────────────────────────
-GUIDE_TEXT = (
-    "Добро пожаловать в лес выживания!\n\n"
-    "Краткий гайд:\n"
-    "❤️ Здоровье\n"
-    "🍖 Сытость\n"
-    "💧 Жажда\n"
-    "⚡ Действия на день\n\n"
-    "Карма поможет выбраться.\n\n"
-    "Попробуй выжить, друг мой..."
-)
-
 # ──────────────────────────────────────────────────────────────────────────────
 # КАМЕННАЯ ПЛИТА (ЗАПИСИ ВЫЖИВШИХ)
 # ──────────────────────────────────────────────────────────────────────────────
-def format_tablet_notes_text(notes: list, page: int = 1, page_size: int = 5, notice: Optional[str] = None) -> tuple[str, int]:
-    total_notes = len(notes)
-    total_pages = max(1, (total_notes + page_size - 1) // page_size)
-    page = max(1, min(page, total_pages))
-
-    start = (page - 1) * page_size
-    page_notes = notes[start:start + page_size]
-
-    lines = []
-    if notice:
-        lines.append(f"{notice}\n")
-    lines.append("━━━━━━━━━━━━━━━━━━━━")
-    lines.append("📜 КАМЕННАЯ ПЛИТА У ПЕЧИ")
-    lines.append("━━━━━━━━━━━━━━━━━━━━\n")
-    lines.append("На гладкой поверхности сланца высечены слова тех, кто проходил здесь до тебя:\n")
-
-    for i, note in enumerate(page_notes, start=start + 1):
-        txt = note.get("text", "")
-        author = note.get("author", "Бродяга (неизвестен)")
-        lines.append(f"{i}. «{txt}»\n   — {author}\n")
-
-    lines.append("━━━━━━━━━━━━━━━━━━━━")
-    lines.append(f"📖 Страница {page} из {total_pages}")
-
-    return "\n".join(lines), total_pages
-
-
 async def render_tablet_view(chat_id: int, uid: int, page: int = 1, bot_ctx: Optional[dict] = None, notice: Optional[str] = None):
     game = games.get(uid)
     if game:
@@ -563,127 +439,6 @@ async def update_or_send_message(chat_id: int, uid: int, text: str, reply_markup
 def format_game_text(text: str, game=None) -> str:
     """Полный текст сообщения без обрезки и искажения строк."""
     return text
-
-
-def get_settings_text(game=None):
-    return (
-        "⚙️ **Настройки**\n\n"
-        "Интерфейс игры работает в стандартном полноразмерном режиме Telegram.\n"
-        "Обрезка сообщений отключена для сохранения всех слотов и описаний."
-    )
-
-
-def get_campfire_text(game=None, action_header: Optional[str] = None) -> str:
-    """Формирует живое описание костра или печи с рамками сверху и снизу."""
-    durability = int(getattr(game, "campfire_durability", 0) or 0)
-    is_stove = getattr(game, "is_stove", False) if game else False
-    max_d = 30 if is_stove else int(getattr(game, "campfire_max_durability", 10) or 10)
-    ratio = durability / max_d if max_d > 0 else 0
-
-    if is_stove:
-        title = "🧱 ПЕЧЬ"
-        if ratio >= 0.8:
-            narrative = "Каменная печь раскалена докрасна и наполняет укрытие густым жаром. Угли пышут мощным теплом."
-        elif ratio >= 0.5:
-            narrative = "В печи ровно гудит пламя. Каменные стенки накопили жар, угли держат тепло."
-        elif ratio >= 0.2:
-            narrative = "Огонь в печи стихает, на дне топки тлеют серые угли. Пора подбросить топлива."
-        elif durability > 0:
-            narrative = "Печь почти остыла, в золе едва теплятся последние искры."
-        else:
-            narrative = "Печь полностью остыла. Очаг можно растопить заново."
-    else:
-        title = "🔥 КОСТЁР"
-        if ratio >= 0.8:
-            narrative = "Костёр ярко пылает и озаряет лагерь. Жаркие угли согревают всё вокруг, треск сучьев отгоняет лесную тьму."
-        elif ratio >= 0.5:
-            narrative = "Костёр уверенно потрескивает, ровное пламя дарит тепло и уют. Огонь стабилен, но со временем потребует дров."
-        elif ratio >= 0.3:
-            narrative = "Пламя заметно ослабло, костёр начинает угасать. Дым стелется по земле, пора подбросить веток."
-        elif durability > 0:
-            narrative = "Костёр едва тлеет, остались лишь тусклые угли. Ещё немного — и лагерь погрузится в ледяной мрак."
-        else:
-            narrative = "Костёр потух. Вокруг лишь холодный пепел."
-
-    body = [title, narrative]
-    if action_header:
-        body.append(f"{action_header}\nОгонь: {durability}/{max_d}")
-    else:
-        body.append(f"Огонь: {durability}/{max_d}")
-
-    content = "\n\n".join(body)
-    return f"━━━━━━━━━━━━━━━━━━━\n{content}\n━━━━━━━━━━━━━━━━━━━"
-
-
-# Дерево родителей для гарантированной навигации «↩️ Назад» (Блок 2)
-PARENT_SCREEN = {
-    # Поддерево инвентаря
-    "inventory": "main",
-    "inspect": "inventory",
-    "item_card": "inspect",
-    "craft": "inventory",
-    "recipes": "inventory",
-    "drop": "inventory",
-    "drop_qty": "inventory",
-    "character": "inventory",
-    # Поддерево костра
-    "campfire": "main",
-    "campfire_fuel": "campfire",
-    "fuel_qty": "campfire_fuel",
-    "campfire_recipes": "campfire",
-    "recipe_card": "campfire_recipes",
-    # Прочие экраны
-    "locations": "main",
-    "l1_dome": "locations",
-    "wolf_lair": "locations",
-    "wolf_battle": "wolf_lair",
-    "combat": "wolf_lair",
-    "settings": "main",
-    "tablet_notes": "main",
-    "traps": "inventory",
-}
-
-CANONICAL_STACKS = {
-    "main": ["main"],
-    "inventory": ["main", "inventory"],
-    "inspect": ["main", "inventory", "inspect"],
-    "item_card": ["main", "inventory", "inspect", "item_card"],
-    "craft": ["main", "inventory", "craft"],
-    "drop": ["main", "inventory", "drop"],
-    "character": ["main", "inventory", "character"],
-    "traps": ["main", "inventory", "traps"],
-    "campfire": ["main", "campfire"],
-    "campfire_fuel": ["main", "campfire", "campfire_fuel"],
-    "fuel_qty": ["main", "campfire", "campfire_fuel", "fuel_qty"],
-    "campfire_recipes": ["main", "campfire", "campfire_recipes"],
-    "recipe_card": ["main", "campfire", "campfire_recipes", "recipe_card"],
-    "locations": ["main", "locations"],
-    "l1_dome": ["main", "locations", "l1_dome"],
-    "wolf_lair": ["main", "locations", "wolf_lair"],
-    "wolf_battle": ["main", "locations", "wolf_lair", "wolf_battle"],
-    "combat": ["main", "locations", "wolf_lair", "combat"],
-    "settings": ["main", "settings"],
-    "tablet_notes": ["main", "tablet_notes"],
-}
-
-
-def format_start_character_text(game) -> str:
-    hero_name = getattr(game, "character_name", None) or "Выживший"
-    day = getattr(game, "day", 1)
-    hp = getattr(game, "hp", 100)
-    hunger = getattr(game, "hunger", 100)
-    thirst = getattr(game, "thirst", 100)
-    ap = getattr(game, "ap", 0)
-    return (
-        "Ты медленно открываешь глаза среди вековых деревьев и холодного тумана. "
-        "В голове пустота, в памяти — лишь неясные обрывки прошлого... Но тело помнит тропы этого леса.\n\n"
-        f"👤 Выживший: **{hero_name}**\n"
-        f"📅 День в лесу: **{day}**\n"
-        f"❤️ Здоровье: **{hp}/100**\n"
-        f"🍖 Сытость: **{hunger}/100**\n"
-        f"💧 Жажда: **{thirst}/100**\n"
-        f"⚡ Энергия: **{ap} AP**"
-    )
 
 
 def is_in_active_story(game: Optional[Game]) -> bool:
@@ -929,6 +684,56 @@ async def cmd_settings(message: Message):
     await update_or_send_message(chat_id, uid, get_settings_text(game), get_settings_kb(game))
     save_game(uid, game)
 
+def handle_sleep_action(game: Any) -> tuple[str, Any]:
+    """Обрабатывает сон персонажа, смену дня, проверки смерти и ловушек."""
+    game.sleep_and_turn_day()
+    cur_loc = str(getattr(game, "current_location", "") or "")
+    if "Просека" in cur_loc:
+        if not hasattr(game, "story_flags") or game.story_flags is None:
+            game.story_flags = {}
+        game.story_flags["l4_sleep_count"] = game.story_flags.get("l4_sleep_count", 0) + 1
+    if game.hp <= 0:
+        game.hp = 0
+        game.active_story_callback = None
+        return get_death_text(game, "💀 Ты не проснулся от истощения."), get_death_kb()
+    trap_msgs = []
+    # Утро: 40% пуста, 20% ломается, 40% добыча по таблице локации
+    for event in process_trap_rollover(game):
+        loc_id = event.get("location_id")
+        if event.get("broken"):
+            msg = f"Ловушка на локации {loc_id}: сломалась, добычи нет."
+            game.add_log(msg)
+            trap_msgs.append(msg)
+            continue
+        if event.get("empty"):
+            msg = f"Ловушка на локации {loc_id}: пуста, ничего не попалось."
+            game.add_log(msg)
+            trap_msgs.append(msg)
+            continue
+        animal = event.get("animal")
+        loot = event.get("loot") or {}
+        if loot:
+            apply_trap_loot_to_inventory(game, loot)
+            loot_txt = ", ".join(f"{k}×{v}" for k, v in loot.items())
+            msg = f"Ловушка на локации {loc_id}: {animal} (+{loot_txt})"
+            game.add_log(msg)
+            trap_msgs.append(msg)
+        elif animal:
+            msg = f"Ловушка на локации {loc_id}: {animal}"
+            game.add_log(msg)
+            trap_msgs.append(msg)
+        trap = getattr(game, "traps", {}).get(loc_id)
+        if trap:
+            trap["pending_animal"] = None
+            trap["pending_loot"] = None
+    if trap_msgs:
+        text = game.get_ui() + "\n" + "\n".join(trap_msgs)
+    else:
+        text = game.get_ui()
+    kb = get_main_kb(game)
+    return text, kb
+
+
 @dp.callback_query()
 async def process_callback(callback: types.CallbackQuery):
     uid = callback.from_user.id
@@ -967,131 +772,9 @@ async def process_callback(callback: types.CallbackQuery):
         game = _ensure_game(uid)
         if game and callback.message:
             game.last_message_id = callback.message.message_id
-        if data in ("new_game", "start_new_game"):
-            existing = load_game(uid)
-            if existing is None:
-                existing = games.get(uid)
-            if existing is not None and getattr(existing, "is_name_set", False):
-                hero_name = existing.character_name or "Выживший"
-                day = getattr(existing, "day", 1)
-                text = (
-                    "⚠️ **Внимание!** Вы собираетесь начать с чистого листа.\n"
-                    f"Персонаж **{hero_name}** ({day}-й день) и весь накопленный инвентарь будут безвозвратно удалены!\n\n"
-                    "Вы уверены?"
-                )
-                kb = get_confirm_new_game_kb()
-                await update_or_send_message(chat_id, uid, text, kb)
-                return
-            game = Game()
-            games[uid] = game
-            game.story_state = "WAITING_FOR_CHARACTER_NAME"
-            save_game(uid, game)
-            text = (
-                "📛 Введи имя своего персонажа:\n"
-                "• Только буквы, цифры, _\n"
-                "• Пробелы запрещены (используй _ вместо пробела)\n"
-                "• Эмодзи запрещены\n"
-                "• Макс. 20 символов"
-            )
-            await update_or_send_message(chat_id, uid, text, None)
-            return
-        if data == "load_game":
-            game = load_game(uid)
-            if game is None:
-                game = games.get(uid)
-            if game is None:
-                text = "Сохранение не найдено. Начните новую игру!"
-                kb = get_start_new_game_kb()
-                await update_or_send_message(chat_id, uid, text, kb)
-                return
-            if game.story_state == "WAITING_FOR_CHARACTER_NAME" or not getattr(game, "is_name_set", False):
-                text = (
-                    "📛 Введи имя своего персонажа:\n"
-                    "• Только буквы, цифры, _\n"
-                    "• Пробелы запрещены (используй _ вместо пробела)\n"
-                    "• Эмодзи запрещены\n"
-                    "• Макс. 20 символов"
-                )
-                await update_or_send_message(chat_id, uid, text, None)
-                return
-            games[uid] = game
 
-            if getattr(game, "hp", 100) <= 0:
-                game.hp = 0
-                game.active_story_callback = None
-                save_game(uid, game)
-                text = get_death_text(game)
-                kb = get_death_kb()
-                await update_or_send_message(chat_id, uid, text, kb)
-                return
-
-            if getattr(game, "story_state", None) == "WAITING_FOR_PET_NAME" or getattr(game, "active_story_callback", None) in ("pet_take", "waiting_pet_name"):
-                has_named_pet = game.is_story_flag_set("has_pet") and bool(
-                    game.equipment.get("pet") or (getattr(game, "companion_name", "") not in (None, "", "Кот", "Котёнок"))
-                )
-                if has_named_pet:
-                    game.active_story_callback = None
-                    game.story_state = None
-                    save_game(uid, game)
-                else:
-                    res_text, res_kb = handle_story("waiting_pet_name", game, uid)
-                    if res_text is not None:
-                        save_game(uid, game)
-                        await update_or_send_message(chat_id, uid, res_text, res_kb)
-                        return
-
-            if getattr(game, "active_story_callback", None):
-                cb = game.active_story_callback
-                res_text, res_kb = handle_story(cb, game, uid)
-                if res_text is not None:
-                    save_game(uid, game)
-                    await update_or_send_message(chat_id, uid, res_text, res_kb)
-                    return
-
-            text = game.get_ui()
-            kb = get_main_kb(game)
-            await update_or_send_message(chat_id, uid, text, kb)
-            return
-        if data == "confirm_new_game":
-            existing = load_game(uid)
-            if existing is None:
-                existing = games.get(uid)
-            hero_name = (existing.character_name if existing else None) or "Выживший"
-            day = getattr(existing, "day", 1) if existing else 1
-            text = (
-                "⚠️ **Внимание!** Вы собираетесь начать с чистого листа.\n"
-                f"Персонаж **{hero_name}** ({day}-й день) и весь накопленный инвентарь будут безвозвратно удалены!\n\n"
-                "Вы уверены?"
-            )
-            kb = get_confirm_new_game_kb()
-            await update_or_send_message(chat_id, uid, text, kb)
-            return
-        if data == "start_new_game_confirmed":
-            game = Game()
-            games[uid] = game
-            game.story_state = "WAITING_FOR_CHARACTER_NAME"
-            save_game(uid, game)
-            text = (
-                "📛 Введи имя своего персонажа:\n"
-                "• Только буквы, цифры, _\n"
-                "• Пробелы запрещены (используй _ вместо пробела)\n"
-                "• Эмодзи запрещены\n"
-                "• Макс. 20 символов"
-            )
-            await update_or_send_message(chat_id, uid, text, None)
-            return
-
-        if data == "cancel_new_game":
-            existing = load_game(uid)
-            if existing is None:
-                existing = games.get(uid)
-            if existing and getattr(existing, "is_name_set", False):
-                hero_name = existing.character_name or "Выживший"
-                text = format_start_character_text(existing)
-                kb = get_start_resume_kb(hero_name)
-            else:
-                text = GUIDE_TEXT
-                kb = get_start_new_game_kb()
+        if is_session_callback(data):
+            text, kb = handle_session_callback(data, game, uid, games)
             await update_or_send_message(chat_id, uid, text, kb)
             return
 
@@ -1104,14 +787,8 @@ async def process_callback(callback: types.CallbackQuery):
             )
             return
 
-        if game.story_state == "WAITING_FOR_CHARACTER_NAME" or not getattr(game, "is_name_set", False):
-            prompt = (
-                "📛 Сначала введи имя своего персонажа:\n"
-                "• Только буквы, цифры, _\n"
-                "• Пробелы запрещены (используй _ вместо пробела)\n"
-                "• Эмодзи запрещены\n"
-                "• Макс. 20 символов"
-            )
+        prompt = check_character_name_required(game)
+        if prompt:
             await update_or_send_message(chat_id, uid, prompt, None)
             return
 
@@ -1127,7 +804,11 @@ async def process_callback(callback: types.CallbackQuery):
         text = None
         kb = None
 
-        if data in ("menu_character", "inv_character", "character_screen"):
+        if data == "noop":
+            await callback.answer()
+            return
+
+        elif data in ("menu_character", "inv_character", "character_screen"):
             game.push_screen("character")
             text = game.get_character_text()
             kb = character_inline_kb
@@ -1137,1206 +818,40 @@ async def process_callback(callback: types.CallbackQuery):
             text = "Куда направиться?"
             kb = get_locations_kb(game)
 
-        elif data.startswith("trap_place_"):
-            location_id = int(data.replace("trap_place_", ""))
-            if location_id == 5:
-                text = (
-                    "❌ <b>В Яру Слизней обычная охотничья ловушка бесполезна!</b>\n\n"
-                    "Едкая слизь мгновенно разъедает деревянные сторожки и пружины. "
-                    "Здесь используется только <b>Приманка для слизней</b> (крафтится из 10 ягод)."
-                )
-                kb = get_trap_buttons_kb(game)
-            else:
-                traps = getattr(game, "traps", {}) or {}
-                existing = traps.get(location_id)
-                if existing and existing.get("is_active"):
-                    text = f"✅ На локации {location_id} уже взведена ловушка.\nРезультат будет утром после сна."
-                    kb = get_trap_buttons_kb(game)
-                elif game.inventory.get("Охотничья ловушка", 0) <= 0:
-                    text = (
-                        "❌ <b>У тебя нет охотничьей ловушки!</b>\n\n"
-                        "Скрафти её в меню <b>🔨 Крафт</b> из веток, коры, кости и кожи."
-                    )
-                    kb = get_trap_buttons_kb(game)
-                else:
-                    game.inventory["Охотничья ловушка"] -= 1
-                    if game.inventory["Охотничья ловушка"] <= 0:
-                        del game.inventory["Охотничья ловушка"]
-                    game.traps[location_id] = {
-                        "location_id": location_id,
-                        "is_active": True,
-                        "is_broken": False,
-                        "placed_day": game.day,
-                    }
-                    game.add_log(f"Охотничья ловушка установлена на локации {location_id}.")
-                    text = (
-                        f"🪤 <b>Ловушка установлена на локации {location_id}!</b>\n\n"
-                        "Сторожок взведён. Проверь улов следующим утром после сна."
-                    )
-                    kb = get_trap_buttons_kb(game)
-        elif data.startswith("trap_replace_"):
-            location_id = int(data.replace("trap_replace_", ""))
-            if game.inventory.get("Охотничья ловушка", 0) <= 0:
-                text = (
-                    "❌ <b>У тебя нет новой охотничьей ловушки для замены!</b>\n\n"
-                    "Скрафти новую ловушку в меню <b>🔨 Крафт</b>."
-                )
-                kb = get_trap_buttons_kb(game)
-            else:
-                game.inventory["Охотничья ловушка"] -= 1
-                if game.inventory["Охотничья ловушка"] <= 0:
-                    del game.inventory["Охотничья ловушка"]
-                game.traps[location_id] = {
-                    "location_id": location_id,
-                    "is_active": True,
-                    "is_broken": False,
-                    "placed_day": game.day,
-                }
-                game.add_log(f"Сломанная ловушка на локации {location_id} заменена на новую.")
-                text = f"🔨 <b>Ты заменил сломанную ловушку на локации {location_id}!</b>\nСторожок снова насторожен."
-                kb = get_trap_buttons_kb(game)
-        elif data.startswith("trap_status_"):
-            location_id = int(data.replace("trap_status_", ""))
-            text = (
-                f"✅ <b>Ловушка на локации {location_id} активна.</b>\n\n"
-                "Она насторожена на звериной тропе. Возвращайся утром после сна, чтобы проверить добычу."
-            )
-            kb = get_trap_buttons_kb(game)
         elif data == "location_enter_1":
             game.current_location = "Стартовый лес"
             game.reset_nav()
             game.add_log("Ты вернулся в Стартовый лес.")
             text = game.get_ui()
             kb = get_main_kb(game)
-        elif data == "location_enter_2":
-            game.current_location = "Ручей со змеями"
-            text, kb = handle_location_2_ruchey("location_enter_2", game, uid)
-        elif data == "location_enter_3":
-            game.current_location = "Скромная лощина"
-            text, kb = handle_location_3_slate_hollow("location_enter_3", game, uid)
-        elif data == "tablet_notes_view":
-            await render_tablet_view(chat_id, uid, page=1)
-            await callback.answer()
-            return
-        elif data.startswith("tablet_page:"):
-            parts = data.split(":")
-            p = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 1
-            await render_tablet_view(chat_id, uid, page=p)
-            await callback.answer()
-            return
-        elif data == "tablet_notes_edit":
-            game.story_state = "WAITING_FOR_TABLET_NOTE"
-            save_game(uid, game)
-            edit_text = (
-                "━━━━━━━━━━━━━━━━━━━━\n"
-                "✏️ НАДПИСЬ НА КАМЕННОЙ ПЛИТЕ\n"
-                "━━━━━━━━━━━━━━━━━━━━\n\n"
-                "Напиши в чат короткое послание, которое увидят другие выжившие.\n\n"
-                "⚠️ Ограничение: не более 50 символов!\n\n"
-                "(Напиши текст сообщением в чат или нажми «Отмена»)\n"
-                "━━━━━━━━━━━━━━━━━━━━"
-            )
-            kb = get_tablet_edit_kb()
-            await safe_edit_message(chat_id, callback.message.message_id, edit_text, kb)
-            await callback.answer()
-            return
-        elif data == "noop":
-            await callback.answer()
-            return
-        elif data == "location_enter_4":
-            unlocked = getattr(game, "unlocked_locations", []) or []
-            if "Просека охотников" not in unlocked and "Просека Охотников" not in unlocked:
-                unlocked.append("Просека охотников")
-                unlocked.append("Просека Охотников")
-                game.unlocked_locations = unlocked
-            game.current_location = "Просека охотников"
-            text, kb = handle_location_4_hunters_glade("hunters_glade_start", game, uid)
-        elif data == "location_enter_5":
-            game.current_location = "Яр слизней"
-            text, kb = handle_location_5_slug_pit("slug_pit_start", game, uid)
-        elif data == "location_enter_6":
-            game.current_location = "Мохнатая пещера"
-            text, kb = handle_location_6_furry_cave("furry_cave_start", game, uid)
-        elif data == "location_enter_7":
-            game.current_location = "Святилище"
-            text, kb = handle_location_7_sanctuary_peak("sanctuary_peak_start", game, uid)
-        elif data == "sanctuary_resolve":
-            text, kb = handle_location_7_sanctuary_peak(data, game, uid)
-        elif data == "action_2":
-            game.push_screen("inventory")
-            text = game.get_inventory_text()
-            kb = inventory_inline_kb
 
-        elif data == "inv_character":
-            game.push_screen("character")
-            text = game.get_character_text()
-            kb = character_inline_kb
+        elif is_tablet_callback(data):
+            text, kb = handle_tablet_callback(data, game, uid)
 
-        elif data.startswith("cook_qty:"):
-            parts = data.split(":", 2)
-            recipe_id = parts[1]
-            qty_mode = parts[2]
-            if not game.campfire_active or game.campfire_durability <= 0:
-                await callback.answer("🔥 Костёр погас! Разведите его снова.", show_alert=True)
-                return
-            max_c = get_recipe_max_count(game, recipe_id)
-            if max_c <= 0:
-                await callback.answer("⚠️ Недостаточно ингредиентов!", show_alert=True)
-                return
-            to_cook = max_c if qty_mode == "all" else 1
-            cooked, message = cook_portions(game, recipe_id, to_cook)
-            if cooked <= 0:
-                await callback.answer(f"⚠️ {message}", show_alert=True)
-                return
-            game.story_state = None
-            game.story_flags.pop("cook_recipe_id", None)
-            game.add_log(message)
-            game.nav_stack = ["main", "campfire"]
-            save_game(uid, game)
-            header = f"✅ {message}"
-            text = get_campfire_text(game, action_header=header)
-            kb = get_campfire_kb(game)
-            await safe_edit_message(chat_id, callback.message.message_id, text, kb)
-            await callback.answer()
-            return
-        elif data.startswith("cook_exec_") or (data.startswith("cook_") and not data.startswith("cook_recipe_view_") and not data.startswith("cook_qty:")):
-            recipe_id = data.removeprefix("cook_exec_")
-            if not game.campfire_active or game.campfire_durability <= 0:
-                await callback.answer("🔥 Костёр погас! Разведите его снова.", show_alert=True)
-                return
-            cooked, message = cook_portions(game, recipe_id, 1)
-            if cooked <= 0:
-                await callback.answer(f"⚠️ {message}", show_alert=True)
-                return
-            game.story_state = None
-            game.story_flags.pop("cook_recipe_id", None)
-            game.add_log(message)
-            game.nav_stack = ["main", "campfire"]
-            save_game(uid, game)
-            header = f"✅ {message}"
-            text = get_campfire_text(game, action_header=header)
-            kb = get_campfire_kb(game)
-            await safe_edit_message(chat_id, callback.message.message_id, text, kb)
-            await callback.answer()
-            return
-        elif data.startswith("cook_recipe_view_"):
-            recipe_id = data.removeprefix("cook_recipe_view_")
-            game.push_screen("recipe_card")
-            game.story_state = "WAITING_FOR_COOK_COUNT"
-            game.story_flags["cook_recipe_id"] = recipe_id
-            max_count = get_recipe_max_count(game, recipe_id)
-            text = format_recipe_card(recipe_id, game)
-            kb = get_campfire_recipe_view_kb(recipe_id, max_count)
-            await safe_edit_message(chat_id, callback.message.message_id, text, kb)
-            await callback.answer()
-            return
-        elif data == "inv_craft":
-            game.push_screen("craft")
-            text = get_craft_menu_text(game)
-            kb = get_craft_menu_kb(game)
+        elif is_traps_callback(data):
+            text, kb = handle_traps_callback(data, game, uid)
 
-        elif data == "campfire_confirm_light":
-            has_torch = (
-                game.equipment.get("hand_left") == "Факел"
-            )
-            has_matches = game.inventory.get("Спички", 0) > 0
-            min_ap = 1 if (has_torch or has_matches) else 2
+        elif is_inventory_callback(data):
+            text, kb = await handle_inventory_callback(data, game, uid, callback)
 
-            if game.inventory.get("Костёр", 0) < 1:
-                game.add_log("⚠️ Нет костра в инвентаре.")
-                await callback.answer("⚠️ Нет костра в инвентаре!", show_alert=True)
-                text = game.get_ui()
-                kb = get_main_kb(game)
-            elif game.ap < min_ap:
-                warning_msg = f"⚠️ Не хватает очков действий (требуется {min_ap} ⚡)!"
-                game.add_log(warning_msg)
-                await callback.answer(warning_msg, show_alert=True)
-                text = game.get_ui()
-                kb = get_main_kb(game)
-            else:
-                campfire_result = game.light_campfire()
-                if not campfire_result.get("lit"):
-                    warning_msg = f"⚠️ Не хватает очков действий (требуется {min_ap} ⚡)!"
-                    game.add_log(warning_msg)
-                    await callback.answer(warning_msg, show_alert=True)
-                    text = game.get_ui()
-                    kb = get_main_kb(game)
-                else:
-                    game.inventory["Костёр"] -= 1
-                    if game.inventory["Костёр"] <= 0:
-                        del game.inventory["Костёр"]
-                    game.add_log("🔥 Костёр успешно разведён (10/10)! Кнопка костра теперь доступна на главном экране.")
-                    text = game.get_ui()
-                    kb = get_main_kb(game)
+        elif is_campfire_callback(data):
+            text, kb = await handle_campfire_callback(data, game, uid, callback)
 
-        elif data == "inv_recipes":
-            game.push_screen("recipes")
-            text = get_craft_menu_text(game)
-            kb = get_craft_menu_kb(game)
+        elif is_craft_callback(data):
+            text, kb = handle_craft(data, game, uid)
 
-        elif data in ("campfire_screen", "menu_campfire"):
-            # Меню костра (основное)
-            game.push_screen("campfire")
-            text = get_campfire_text(game)
-            kb = get_campfire_kb(game)
-        elif data == "campfire_add_fuel_menu":
-            game.push_screen("campfire_fuel")
-            inv = getattr(game, "inventory", {}) or {}
-            sticks = inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)
-            bark = inv.get("Кусок коры", 0) + inv.get("Кора", 0)
-            coal = inv.get("Древесный уголь", 0)
-            is_stove = getattr(game, "is_stove", False)
-            if sticks <= 0 and bark <= 0 and coal <= 0:
-                text = "⚠️ В инвентаре нет подходящего топлива!\nНужны палки/ветки, кора или древесный уголь."
-                kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                    [types.InlineKeyboardButton(text="↩️ Назад", callback_data="back")]
-                ])
-            else:
-                cur_d = getattr(game, "campfire_durability", 0)
-                max_d = 30 if is_stove else getattr(game, "campfire_max_durability", 10)
-                title = "🧱 ПЕЧЬ" if is_stove else "🔥 КОСТЁР"
-                text = f"{title} ({cur_d}/{max_d})\nВыберите топливо для поддержания огня:"
-                kb = get_campfire_fuel_kb(game)
-
-        elif data == "stove_rekindle":
-            ok, msg = game.rekindle_stove()
-            if not ok:
-                await callback.answer(f"⚠️ {msg}", show_alert=True)
-                return
-            save_game(uid, game)
-            await callback.answer("🔥 Печь растоплена!", show_alert=True)
-            text = get_campfire_text(game, action_header="🔥 Печь растоплена (+1 к огню)")
-            kb = get_campfire_kb(game)
-            await safe_edit_message(chat_id, callback.message.message_id, text, kb)
-            return
-
-        elif data.startswith("fuel_menu:"):
-            fuel_type = data.removeprefix("fuel_menu:")
-            inv = getattr(game, "inventory", {}) or {}
-            is_stove = getattr(game, "is_stove", False)
-            cur_max = 30 if is_stove else int(getattr(game, "campfire_max_durability", 10) or 10)
-            needed = max(0, cur_max - game.campfire_durability)
-            if not game.campfire_active or game.campfire_durability <= 0:
-                if is_stove:
-                    await callback.answer("🧱 Печь остыла! Растопите её заново.", show_alert=True)
-                else:
-                    await callback.answer("🔥 Костёр уже погас! Разведите его заново.", show_alert=True)
-                text = get_campfire_text(game)
-                kb = get_campfire_kb(game)
-            elif needed <= 0:
-                await callback.answer("Очаг и так пылает сильным жаром", show_alert=True)
-                text = get_campfire_text(game)
-                kb = get_campfire_kb(game)
-            elif fuel_type == "sticks":
-                sticks = inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)
-                if sticks <= 0:
-                    await callback.answer("⚠️ В инвентаре нет палок/веток!", show_alert=True)
-                    return
-                game.push_screen("fuel_qty")
-                game.story_state = "WAITING_FOR_FUEL_COUNT"
-                game.story_flags["fuel_item"] = "sticks"
-                cur = game.campfire_durability
-                max_d = cur_max
-                max_can_add = min(sticks, needed)
-                text = (
-                    "🪵 Палки (1 палка = +1 к огню)\n\n"
-                    f"Сейчас огонь: {cur}/{max_d}\n"
-                    f"В инвентаре: {sticks} палок\n"
-                    f"Чтобы дойти до {max_d}/{max_d}, нужно: {needed} палок\n"
-                    f"Сейчас можешь подкинуть максимум {max_can_add} палок (станет {cur + max_can_add}/{max_d}).\n\n"
-                    "Выбери кнопку или напиши число в чат.\n\n"
-                    "💬 Или напиши в чат число, сколько подкинуть."
-                )
-                kb = get_fuel_quantity_kb("sticks", game)
-            elif fuel_type == "coal":
-                coal = inv.get("Древесный уголь", 0)
-                if coal <= 0:
-                    await callback.answer("⚠️ В инвентаре нет древесного угля!", show_alert=True)
-                    return
-                game.push_screen("fuel_qty")
-                game.story_state = "WAITING_FOR_FUEL_COUNT"
-                game.story_flags["fuel_item"] = "coal"
-                cur = game.campfire_durability
-                max_d = cur_max
-                text = (
-                    "⚫ Древесный уголь (1 шт. = +3 к огню)\n\n"
-                    f"Сейчас огонь: {cur}/{max_d}\n"
-                    f"В инвентаре: {coal} угля\n"
-                    f"Подкидывание 1 куска угля добавит +3 к огню.\n\n"
-                    "Выбери кнопку или напиши число в чат.\n\n"
-                    "💬 Или напиши в чат число, сколько подкинуть."
-                )
-                kb = get_fuel_quantity_kb("coal", game)
-            else:
-                bark = inv.get("Кусок коры", 0) + inv.get("Кора", 0)
-                if bark < 2:
-                    await callback.answer(f"⚠️ Нужно чётное число коры, минимум 2 (в наличии: {bark} шт.)", show_alert=True)
-                    return
-                game.push_screen("fuel_qty")
-                game.story_state = "WAITING_FOR_FUEL_COUNT"
-                game.story_flags["fuel_item"] = "bark"
-                cur = game.campfire_durability
-                max_d = cur_max
-                max_bark = min((bark // 2) * 2, needed * 2)
-                max_fire = max_bark // 2
-                text = (
-                    "🧱 Кора (2 коры = +1 к огню, кидаем только парами!)\n\n"
-                    f"Сейчас огонь: {cur}/{max_d}\n"
-                    f"В инвентаре: {bark} коры (пар: {bark // 2})\n"
-                    f"Чтобы дойти до {max_d}/{max_d}, нужно: +{needed} огня = {needed * 2} коры\n"
-                    f"Сейчас можешь подкинуть максимум {max_bark} коры → +{max_fire} к огню (станет {cur + max_fire}/{max_d}).\n\n"
-                    "Выбери кнопку или напиши чётное число в чат.\n\n"
-                    "💬 Или напиши в чат число, сколько подкинуть."
-                )
-                kb = get_fuel_quantity_kb("bark", game)
-
-        elif data.startswith("feed_fuel_action:") or data.startswith("feed_fuel:"):
-            game.story_state = None
-            game.story_flags.pop("fuel_item", None)
-            if data.startswith("feed_fuel_action:"):
-                parts = data.split(":", 2)
-                fuel_kind = parts[1]  # sticks, bark or coal
-                action_mode = parts[2]  # 1, 2, max, custom
-            else:
-                parts = data.split(":", 2)
-                raw_item = parts[1]
-                action_mode = parts[2]
-                if "уголь" in raw_item.lower():
-                    fuel_kind = "coal"
-                elif "кор" in raw_item.lower():
-                    fuel_kind = "bark"
-                else:
-                    fuel_kind = "sticks"
-
-            inv = getattr(game, "inventory", {}) or {}
-            is_stove = getattr(game, "is_stove", False)
-            cur_max = 30 if is_stove else int(getattr(game, "campfire_max_durability", 10) or 10)
-            needed = max(0, cur_max - game.campfire_durability)
-
-            if not game.campfire_active or game.campfire_durability <= 0:
-                if is_stove:
-                    await callback.answer("🧱 Печь остыла! Растопите её заново.", show_alert=True)
-                else:
-                    await callback.answer("🔥 Костёр уже погас! Разведите его заново.", show_alert=True)
-                text = get_campfire_text(game)
-                kb = get_campfire_kb(game)
-            elif needed <= 0:
-                await callback.answer("Очаг и так пылает сильным жаром", show_alert=True)
-                text = get_campfire_text(game)
-                kb = get_campfire_kb(game)
-            elif action_mode == "custom":
-                game.story_state = "WAITING_FOR_FUEL_COUNT"
-                game.story_flags["fuel_item"] = fuel_kind
-                if fuel_kind == "bark":
-                    bark = inv.get("Кусок коры", 0) + inv.get("Кора", 0)
-                    text = f"🧱 Введите количество коры для костра в чат:\n(Доступно: {bark} шт., 2 коры = +1 к огню, минимум 2)"
-                elif fuel_kind == "coal":
-                    coal = inv.get("Древесный уголь", 0)
-                    text = f"⚫ Введите количество угля в чат:\n(Доступно: {coal} шт., 1 уголь = +3 к огню)"
-                else:
-                    sticks = inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)
-                    text = f"🪵 Введите количество палок для костра в чат:\n(Доступно: {sticks} шт., нужно до максимума: {needed} шт.)"
-                kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                    [types.InlineKeyboardButton(text="↩️ Назад", callback_data="back")]
-                ])
-            elif fuel_kind == "coal":
-                coal_avail = inv.get("Древесный уголь", 0)
-                if coal_avail <= 0:
-                    await callback.answer("⚠️ В инвентаре нет древесного угля!", show_alert=True)
-                    return
-                to_use = 1 if action_mode == "1" else min(coal_avail, max(1, (needed + 2) // 3))
-                inv["Древесный уголь"] -= to_use
-                if inv["Древесный уголь"] <= 0:
-                    del inv["Древесный уголь"]
-                fire_added = to_use * 3
-                game.campfire_durability += fire_added
-                game.nav_stack = ["main", "campfire"]
-                max_d = 30 if is_stove else game.campfire_max_durability
-                game.add_log(f"⚫ Подкинуто: Древесный уголь ×{to_use} (+{fire_added} 🔥). Огонь: {game.campfire_durability}/{max_d}.")
-                action_header = f"⚫ Подкинуто: Древесный уголь ×{to_use} (+{fire_added} огня)"
-                text = get_campfire_text(game, action_header=action_header)
-                kb = get_campfire_kb(game)
-                save_game(uid, game)
-            elif fuel_kind == "bark":
-                bark_avail = inv.get("Кусок коры", 0) + inv.get("Кора", 0)
-                if bark_avail < 2:
-                    await callback.answer("⚠️ Нужно чётное число коры, минимум 2", show_alert=True)
-                    return
-                if action_mode in ("2", "1"):
-                    count = 2
-                else:
-                    count = bark_avail
-                spent = (count // 2) * 2
-                spent = min(spent, (bark_avail // 2) * 2, needed * 2)
-                if spent == 0:
-                    await callback.answer("⚠️ Нужно чётное число коры, минимум 2", show_alert=True)
-                    return
-                to_deduct = spent
-                for k in ("Кусок коры", "Кора"):
-                    if to_deduct <= 0:
-                        break
-                    have = inv.get(k, 0)
-                    take = min(have, to_deduct)
-                    inv[k] -= take
-                    if inv[k] <= 0:
-                        del inv[k]
-                    to_deduct -= take
-                fire_added = spent // 2
-                game.campfire_durability += fire_added
-                game.nav_stack = ["main", "campfire"]
-                max_d = 30 if is_stove else game.campfire_max_durability
-                game.add_log(f"🧱 Подкинуто: Кора ×{spent} (+{fire_added} 🔥). Огонь: {game.campfire_durability}/{max_d}.")
-                action_header = f"🧱 Подкинуто: Кора ×{spent} (+{fire_added} огня)"
-                text = get_campfire_text(game, action_header=action_header)
-                kb = get_campfire_kb(game)
-                save_game(uid, game)
-            else:
-                sticks_avail = inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)
-                if sticks_avail <= 0:
-                    await callback.answer("⚠️ В инвентаре нет палок/веток!", show_alert=True)
-                    return
-                to_use = 1 if action_mode == "1" else min(sticks_avail, needed)
-                if to_use <= 0:
-                    await callback.answer("⚠️ В инвентаре нет палок/веток!", show_alert=True)
-                    return
-                to_deduct = to_use
-                for k in ("Ветка", "Палки", "Палка"):
-                    if to_deduct <= 0:
-                        break
-                    have = inv.get(k, 0)
-                    take = min(have, to_deduct)
-                    inv[k] -= take
-                    if inv[k] <= 0:
-                        del inv[k]
-                    to_deduct -= take
-                game.campfire_durability += to_use
-                game.nav_stack = ["main", "campfire"]
-                max_d = 30 if is_stove else game.campfire_max_durability
-                game.add_log(f"🪵 Подкинуто: Палки ×{to_use}. Огонь: {game.campfire_durability}/{max_d}.")
-                action_header = f"🪵 Подкинуто: Ветка ×{to_use} (+{to_use} огня)"
-                text = get_campfire_text(game, action_header=action_header)
-                kb = get_campfire_kb(game)
-                save_game(uid, game)
-
-        elif data == "campfire_recipes":
-            game.push_screen("campfire_recipes")
-            from modules.cooking import COOKING_RECIPES, can_cook
-            available_count = sum(1 for r_id in COOKING_RECIPES if can_cook(game, r_id))
-            if available_count > 0:
-                text = "📜 Рецепты костра\n\nВыберите блюдо, чтобы узнать ингредиенты и приготовить:"
-            else:
-                text = "📜 Рецепты костра\n\nСейчас у вас недостаточно ингредиентов ни для одного блюда.\nНайдите ягоды, грибы, мясо, воду или кусок коры."
-            kb = get_campfire_recipes_kb(game)
-        elif data == "inv_inspect":
-            items_in_inv = [item for item, c in game.inventory.items() if c > 0]
-            if not items_in_inv:
-                await callback.answer("Инвентарь пуст!", show_alert=True)
-                return
-            game.push_screen("inspect")
-            text = "🔍 Подробный осмотр предметов\n\nВыберите предмет из инвентаря, чтобы изучить его описание, эффекты и свойства:"
-            kb = get_inspect_menu_kb(game)
-
-        elif data.startswith("inspect_item_"):
-            item = data.removeprefix("inspect_item_")
-            game.push_screen("item_card")
-            text = format_item_card(item)
-            kb = get_item_card_actions_kb(item, game)
-
-        elif data.startswith("use_preview_"):
-            item = data.removeprefix("use_preview_")
-            game.push_screen("item_card")
-            text = format_item_card(item)
-            kb = get_item_card_actions_kb(item, game)
-
-        elif data.startswith("pocket_insert_"):
-            item = data.removeprefix("pocket_insert_")
-            if game.inventory.get(item, 0) > 0 and game.equipment.get("pants") == "Кожаные поножи":
-                old_p = getattr(game, "pants_pocket", None)
-                if old_p:
-                    game.inventory[old_p] = game.inventory.get(old_p, 0) + 1
-                game.inventory[item] -= 1
-                if game.inventory[item] <= 0:
-                    del game.inventory[item]
-                game.pants_pocket = item
-                game.add_log(f"Вы вложили {item} в специальный футляр на кожаных поножах.")
-            text = game.get_ui()
-            kb = get_main_kb(game)
-
-        elif data == "pocket_remove":
-            old_p = getattr(game, "pants_pocket", None)
-            if old_p:
-                game.inventory[old_p] = game.inventory.get(old_p, 0) + 1
-                game.pants_pocket = None
-                game.add_log(f"Вы извлекли {old_p} из футляра на поножах.")
-            text = game.get_ui()
-            kb = get_main_kb(game)
-
-        elif data == "inv_use":
-            # Перенаправляем устаревший inv_use в подробный осмотр
-            items_in_inv = [item for item, c in game.inventory.items() if c > 0]
-            if not items_in_inv:
-                await callback.answer("Инвентарь пуст!", show_alert=True)
-                return
-            game.push_screen("inspect")
-            text = "🔍 Подробный осмотр предметов\n\nВыберите предмет из инвентаря, чтобы изучить его описание, эффекты и свойства:"
-            kb = get_inspect_menu_kb(game)
-
-        elif data == "inv_drop":
-            if not any(count > 0 for count in game.inventory.values()):
-                return
-            game.push_screen("drop")
-            text = "Выберите предмет для удаления:"
-            kb = get_drop_item_kb(game)
-
-        elif data.startswith("use_consumable_"):
-            item = data.removeprefix("use_consumable_")
-            if item == "Костёр":
-                if game.inventory.get("Костёр", 0) < 1:
-                    game.add_log("⚠️ Нет костра в инвентаре.")
-                    await callback.answer("⚠️ Нет костра в инвентаре!", show_alert=True)
-                    text = game.get_ui()
-                    kb = get_main_kb(game)
-                else:
-                    has_torch = (
-                        game.equipment.get("hand_left") == "Факел"
-                    )
-                    has_matches = game.inventory.get("Спички", 0) > 0
-                    min_ap = 1 if (has_torch or has_matches) else 2
-
-                    if has_torch:
-                        cost_text = "🔥 Источник огня: горящий факел в руке!\nЗатраты: 1 ⚡ AP. Спички, сытость и жажда НЕ тратятся."
-                    elif has_matches:
-                        cost_text = "🪵 Источник огня: спички из инвентаря.\nЗатраты: 1 спичка, 1 ⚡ AP. Сытость и жажда НЕ тратятся."
-                    else:
-                        cost_text = "⏳ Спичек и факела нет — розжиг трением вручную.\nЗатраты: 2 ⚡ AP, голод −7, жажда −18 (тяжёлые усилия)."
-
-                    if game.ap < min_ap:
-                        warning_text = f"\n\n⚠️ Не хватает очков действий! Требуется: {min_ap} ⚡ AP (в наличии: {game.ap} ⚡). Нужно поспать."
-                        text = (
-                            "Ты складываешь камни и ветки в аккуратную кладку.\n"
-                            "В круге света теплее не только телу: даже лес будто отступает на шаг.\n\n"
-                            f"{cost_text}"
-                            f"{warning_text}"
-                        )
-                        kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                            [types.InlineKeyboardButton(text="↩️ Назад", callback_data="back")]
-                        ])
-                    else:
-                        text = (
-                            "Ты складываешь камни и ветки в аккуратную кладку.\n"
-                            "В круге света теплее не только телу: даже лес будто отступает на шаг.\n\n"
-                            f"{cost_text}\n\n"
-                            "После розжига на главном экране появится костёр (10/10) и откроются рецепты готовки."
-                        )
-                        kb = get_campfire_light_confirm_kb()
-            elif item == "Бутылка воды":
-                text = (
-                    "🧴 Бутылка чистой воды (20 глотков).\n\n"
-                    "Ты можешь надеть её на пояс (в слот фляги), чтобы кнопка «💧 Пить» появилась на главном экране, либо сделать один глоток прямо сейчас."
-                )
-                kb = get_bottle_actions_kb()
-            else:
-                result = use_consumable(item, game)
-                if result is not None:
-                    if game.inventory.get(item, 0) > 0:
-                        text = format_item_card(item)
-                        kb = get_item_card_actions_kb(item, game)
-                        game.nav_stack = list(CANONICAL_STACKS.get("item_card", ["main", "inventory", "inspect", "item_card"]))
-                    else:
-                        items_in_inv = [i for i, c in game.inventory.items() if c > 0]
-                        if items_in_inv:
-                            text = "🔍 Подробный осмотр предметов\n\nВыберите предмет из инвентаря, чтобы изучить его описание, эффекты и свойства:"
-                            kb = get_inspect_menu_kb(game)
-                            game.nav_stack = list(CANONICAL_STACKS.get("inspect", ["main", "inventory", "inspect"]))
-                        else:
-                            text = game.get_inventory_text()
-                            kb = inventory_inline_kb
-                            game.nav_stack = list(CANONICAL_STACKS.get("inventory", ["main", "inventory"]))
-                else:
-                    await callback.answer("Этот предмет нельзя использовать.", show_alert=True)
-                    text = format_item_card(item)
-                    kb = get_item_card_actions_kb(item, game)
-
-        elif data == "equip_bottle_flask":
-            if game.inventory.get("Бутылка воды", 0) > 0:
-                game.inventory["Бутылка воды"] -= 1
-                if game.inventory["Бутылка воды"] <= 0:
-                    del game.inventory["Бутылка воды"]
-                game.equipment["flask"] = "Бутылка воды"
-                game.flask_water = 20
-                game.add_log("🧴 Бутылка воды экипирована в слот фляги (20/20). Теперь кнопка «Пить» доступна на главном экране!")
-            else:
-                game.add_log("В инвентаре нет бутылки воды.")
-            text = game.get_ui()
-            kb = get_main_kb(game)
-
-        elif data == "equip_army_flask":
-            if game.inventory.get("Армейская фляга", 0) > 0:
-                old_flask = game.equipment.get("flask")
-                if old_flask:
-                    game.inventory[old_flask] = game.inventory.get(old_flask, 0) + 1
-                game.inventory["Армейская фляга"] -= 1
-                if game.inventory["Армейская фляга"] <= 0:
-                    del game.inventory["Армейская фляга"]
-                game.equipment["flask"] = "Армейская фляга"
-                game.flask_water = int(getattr(game, "flask_water", 0) or 0)
-                game.add_log(f"🟨 Армейская фляга надета на пояс ({game.flask_water}/20)!")
-            else:
-                game.add_log("В инвентаре нет армейской фляги.")
-            text = game.get_ui()
-            kb = get_main_kb(game)
-
-        elif data == "drink_rain_bottle":
-            bottles = getattr(game, "rain_bottles", [])
-            if not bottles and game.inventory.get("Бутылка дождевой воды", 0) > 0:
-                bottles = [4] * game.inventory.get("Бутылка дождевой воды", 1)
-                game.rain_bottles = bottles
-
-            if bottles and bottles[0] > 0:
-                bottles[0] -= 1
-                import random
-                if random.random() < 0.55:
-                    game.hp = max(0, game.hp - 6)
-                    game.thirst = max(0, game.thirst - 15)
-                    game.add_log("🤢 Вода была мутной и с привкусом гнили. Желудок скрутило спазмом! (−6 HP, −15 жажды).")
-                else:
-                    game.thirst = min(100, game.thirst + 10)
-                    game.add_log("💧 Ты сделал глоток дождевой воды (+10 жажды). Вода отдаёт прелыми листьями.")
-
-                if bottles[0] <= 0:
-                    bottles.pop(0)
-                    game.inventory["Бутылка дождевой воды"] = max(0, game.inventory.get("Бутылка дождевой воды", 1) - 1)
-                    if game.inventory["Бутылка дождевой воды"] <= 0:
-                        del game.inventory["Бутылка дождевой воды"]
-                    game.inventory["Пустая бутылка"] = game.inventory.get("Пустая бутылка", 0) + 1
-                    game.add_log("Бутылка дождевой воды опустела. В инвентаре осталась пустая бутылка.")
-            else:
-                game.add_log("В бутылке не осталось дождевой воды.")
-            text = game.get_ui()
-            kb = get_main_kb(game)
-
-        elif data == "action_fill_rain_bottle":
-            if game.weather not in {"rain", "storm"}:
-                game.add_log("⚠️ Дождь уже закончился.")
-            elif game.ap < 1:
-                game.add_log("⚠️ Не хватает очков действий (требуется 1 ⚡ AP)!")
-            else:
-                has_empty = game.inventory.get("Пустая бутылка", 0) > 0
-                bottles = getattr(game, "rain_bottles", [])
-                partial_idx = next((i for i, w in enumerate(bottles) if w < 20), None)
-
-                if partial_idx is not None:
-                    game.consume_action(1)
-                    import random
-                    gained = random.randint(2, 4)
-                    new_val = min(20, bottles[partial_idx] + gained)
-                    actual_add = new_val - bottles[partial_idx]
-                    bottles[partial_idx] = new_val
-                    game.add_log(f"🌧️ Ты подставил бутылку под дождь и набрал +{actual_add} делений влаги ({new_val}/20).")
-                elif has_empty:
-                    game.consume_action(1)
-                    import random
-                    gained = random.randint(2, 4)
-                    game.inventory["Пустая бутылка"] -= 1
-                    if game.inventory["Пустая бутылка"] <= 0:
-                        del game.inventory["Пустая бутылка"]
-                    game.inventory["Бутылка дождевой воды"] = game.inventory.get("Бутылка дождевой воды", 0) + 1
-                    bottles.append(gained)
-                    game.rain_bottles = bottles
-                    game.add_log(f"🌧️ Ты наполнил пустую бутылку дождевой водой (+{gained} деления, {gained}/20).")
-                else:
-                    game.add_log("У тебя нет подходящей пустой ёмкости для сбора дождевой воды.")
-            text = game.get_ui()
-            kb = get_main_kb(game)
-
-        elif data == "campfire_boil_water":
-            if not game.campfire_active or game.campfire_durability <= 0:
-                await callback.answer("⚠️ Костёр погас! Сначала разожги его.", show_alert=True)
-                return
-            has_flask = (
-                game.equipment.get("flask") == "Армейская фляга"
-                or game.inventory.get("Армейская фляга", 0) > 0
-            )
-            if not has_flask:
-                await callback.answer("⚠️ Нужна металлическая 🟨 Армейская фляга!", show_alert=True)
-                return
-
-            if game.equipment.get("flask") != "Армейская фляга":
-                old_flask = game.equipment.get("flask")
-                if old_flask:
-                    game.inventory[old_flask] = game.inventory.get(old_flask, 0) + 1
-                game.inventory["Армейская фляга"] -= 1
-                if game.inventory["Армейская фляга"] <= 0:
-                    del game.inventory["Армейская фляга"]
-                game.equipment["flask"] = "Армейская фляга"
-                game.flask_water = int(getattr(game, "flask_water", 0) or 0)
-
-            cur_w = int(getattr(game, "flask_water", 0) or 0)
-            if cur_w >= 20:
-                await callback.answer("⚠️ Фляга уже полна (20/20)!", show_alert=True)
-                return
-
-            bottles = getattr(game, "rain_bottles", [])
-            if not bottles and game.inventory.get("Бутылка дождевой воды", 0) > 0:
-                bottles = [4] * game.inventory.get("Бутылка дождевой воды", 1)
-                game.rain_bottles = bottles
-
-            if not bottles:
-                await callback.answer("⚠️ Нет дождевой воды для кипячения!", show_alert=True)
-                return
-
-            space = 20 - cur_w
-            available = bottles[0]
-            transfer = min(space, available)
-            new_flask_water = cur_w + transfer
-            game.flask_water = new_flask_water
-
-            game.campfire_durability = max(0, game.campfire_durability - 1)
-            if game.campfire_durability <= 0 and not getattr(game, "is_stove", False):
-                game.campfire_active = False
-
-            rem = available - transfer
-            if rem <= 0:
-                bottles.pop(0)
-                game.inventory["Бутылка дождевой воды"] = max(0, game.inventory.get("Бутылка дождевой воды", 1) - 1)
-                if game.inventory["Бутылка дождевой воды"] <= 0:
-                    del game.inventory["Бутылка дождевой воды"]
-                game.inventory["Пустая бутылка"] = game.inventory.get("Пустая бутылка", 0) + 1
-                msg = (
-                    f"🔥 Ты перелил {transfer} гл. дождевой воды во флягу и прокипятил на углях. "
-                    f"Во фляге теперь {new_flask_water}/20 чистой воды. Пустая бутылка вернулась в инвентарь."
-                )
-            else:
-                bottles[0] = rem
-                msg = (
-                    f"🔥 Ты перелил {transfer} гл. дождевой воды во флягу до краёв ({new_flask_water}/20) и прокипятил. "
-                    f"В бутылке осталось {rem}/20 дождевой воды."
-                )
-            game.add_log(msg)
-            text = f"🔥 Прочность костра: {game.campfire_durability}/{game.campfire_max_durability}\n\n{msg}"
-            kb = get_campfire_kb(game)
-
-        elif data == "drink_bottle_single":
-            if game.equipment.get("flask") and getattr(game, "flask_water", 0) > 0:
-                game.flask_water -= 1
-                game.thirst = min(100, game.thirst + 30)
-                game.add_log(f"💧 Ты сделал глоток воды (+15 жажды). Во фляге: {game.flask_water}/20.")
-                if game.flask_water <= 0:
-                    container_name = game.equipment.get("flask") or "Бутылка воды"
-                    if "Армейская" in container_name:
-                        game.flask_water = 0
-                        game.add_log(f"Ёмкость «{container_name}» опустела (0/20)! Вскипяти дождевую воду на костре, чтобы наполнить её.")
-                    else:
-                        game.equipment["flask"] = None
-                        game.inventory["Пустая бутылка"] = game.inventory.get("Пустая бутылка", 0) + 1
-                        game.add_log(f"Ёмкость «{container_name}» опустошена! В инвентаре осталась пустая бутылка.")
-            elif game.inventory.get("Бутылка воды", 0) > 0:
-                game.inventory["Бутылка воды"] -= 1
-                if game.inventory["Бутылка воды"] <= 0:
-                    del game.inventory["Бутылка воды"]
-                game.equipment["flask"] = "Бутылка воды"
-                game.flask_water = 19
-                game.thirst = min(100, game.thirst + 30)
-                game.add_log("🧴 Ты экипировал бутылку на пояс и сделал глоток (+15 жажды). Во фляге: 19/20.")
-            else:
-                game.add_log("Нет доступной воды для питья.")
-            text = game.get_ui()
-            kb = get_main_kb(game)
-        elif data.startswith("drop_item_"):
-            item = data.removeprefix("drop_item_")
-            if game.inventory.get(item, 0) > 0:
-                game.push_screen("drop_qty")
-                current_count = game.inventory[item]
-                game.story_state = "WAITING_FOR_DROP_QUANTITY"
-                game.story_flags["drop_item_name"] = item
-                from modules.items import get_item_description
-                desc = get_item_description(item)
-                text = (
-                    f"🗑 {item} (в наличии: {current_count} шт.)\n\n"
-                    f"{desc}\n\n"
-                    f"Введите свое число в чат чтобы выбросить или выберите вариант:"
-                )
-                kb = get_drop_quantity_kb(item)
-
-        elif data.startswith("drop_qty:"):
-            parts = data.split(":", 2)
-            if len(parts) < 3:
-                return
-            qty_type = parts[1]
-            item = parts[2]
-            game.story_state = None
-            game.story_flags.pop("drop_item_name", None)
-            current_count = game.inventory.get(item, 0)
-            if current_count <= 0:
-                while len(game.nav_stack) > 1 and game.nav_stack[-1] in ("drop", "drop_qty"):
-                    game.nav_stack.pop()
-                text = f"Предмета «{item}» нет в инвентаре.\n\n{game.get_inventory_text()}"
-                kb = inventory_inline_kb
-            else:
-                drop_count = 0
-                if qty_type == "1":
-                    drop_count = 1
-                elif qty_type == "all":
-                    drop_count = current_count
-
-                if drop_count > 0:
-                    while len(game.nav_stack) > 1 and game.nav_stack[-1] in ("drop", "drop_qty"):
-                        game.nav_stack.pop()
-                    game.inventory[item] -= drop_count
-                    if game.inventory[item] <= 0:
-                        del game.inventory[item]
-                    game.add_log(f"🗑️ Выброшено: {item} ×{drop_count}.")
-                    text = f"Удалено: {item} ×{drop_count}.\n\n{game.get_inventory_text()}"
-                    kb = get_inventory_kb(game, 0)
-
-        elif data == "drop_qty_cancel":
-            game.story_state = None
-            if "drop_item_name" in game.story_flags:
-                del game.story_flags["drop_item_name"]
-            game.nav_stack = ["main", "inventory", "drop"]
-            if any(count > 0 for count in game.inventory.values()):
-                text = "Выберите предмет для удаления:"
-                kb = get_drop_item_kb(game)
-            else:
-                text = game.get_inventory_text()
-                kb = inventory_inline_kb
+        elif is_explore_callback(data):
+            text, kb = await handle_explore_callback(data, game, uid, callback)
 
         elif data == "back":
-            game.story_state = None
-            if "drop_item_name" in game.story_flags:
-                del game.story_flags["drop_item_name"]
-            game.story_flags.pop("fuel_item", None)
-            game.story_flags.pop("cook_recipe_id", None)
-
-            current = game.nav_stack[-1] if game.nav_stack else "main"
-            target = PARENT_SCREEN.get(current, "main")
-
-            # Выставляем канонический стек для target экрана
-            game.nav_stack = list(CANONICAL_STACKS.get(target, ["main"]))
-
-            if target == "main":
-                if getattr(game, "active_story_callback", None):
-                    text, kb = handle_story(game.active_story_callback, game, uid)
-                    if text is None:
-                        game.active_story_callback = None
-                        text = game.get_ui()
-                        kb = get_main_kb(game)
-                else:
-                    text = game.get_ui()
-                    kb = get_main_kb(game)
-            elif target == "inventory":
-                text = game.get_inventory_text()
-                kb = inventory_inline_kb
-            elif target == "character":
-                text = game.get_character_text()
-                kb = character_inline_kb
-            elif target in ("craft", "recipes"):
-                text = get_craft_menu_text(game)
-                kb = get_craft_menu_kb(game)
-            elif target == "inspect":
-                items_in_inv = [item for item, c in game.inventory.items() if c > 0]
-                if items_in_inv:
-                    text = "🔍 Подробный осмотр предметов\n\nВыберите предмет из инвентаря, чтобы изучить его описание, эффекты и свойства:"
-                    kb = get_inspect_menu_kb(game)
-                else:
-                    text = game.get_inventory_text()
-                    kb = inventory_inline_kb
-            elif target == "drop":
-                if any(count > 0 for count in game.inventory.values()):
-                    text = "Выберите предмет для удаления:"
-                    kb = get_drop_item_kb(game)
-                else:
-                    text = game.get_inventory_text()
-                    kb = inventory_inline_kb
-            elif target == "campfire":
-                text = get_campfire_text(game)
-                kb = get_campfire_kb(game)
-            elif target == "campfire_recipes":
-                from modules.cooking import COOKING_RECIPES, can_cook
-                available_count = sum(1 for r_id in COOKING_RECIPES if can_cook(game, r_id))
-                if available_count > 0:
-                    text = "📜 Рецепты костра\n\nВыберите блюдо, чтобы узнать ингредиенты и приготовить:"
-                else:
-                    text = "📜 Рецепты костра\n\nСейчас у вас недостаточно ингредиентов ни для одного блюда.\nНайдите ягоды, грибы, мясо, воду или кусок коры."
-                kb = get_campfire_recipes_kb(game)
-            elif target == "campfire_fuel":
-                cur_d = getattr(game, "campfire_durability", 0)
-                max_d = getattr(game, "campfire_max_durability", 10)
-                text = f"🔥 КОСТЁР ({cur_d}/{max_d})\nВыберите топливо для поддержания огня:"
-                kb = get_campfire_fuel_kb(game)
-            elif target == "locations":
-                text = "Куда направиться?"
-                kb = get_locations_kb(game)
-            elif target == "wolf_lair":
-                from story.location_stories import handle_l1_wolf_lair
-                text, kb = handle_l1_wolf_lair("wolf_lair_enter", game, uid)
-            elif target == "settings":
-                text = get_settings_text(game)
-                kb = get_settings_kb(game)
-            else:
-                text = game.get_ui()
-                kb = get_main_kb(game)
-
-
-
-        elif data.startswith("craft_") or data.startswith("use_item_"):
-            text, kb = handle_craft(data, game, uid)
-            if text is None:
-                text = game.get_inventory_text()
-                kb = inventory_inline_kb
-
-        elif data.startswith("river_") or data.startswith("snake_") or data.startswith("story_") or data.startswith("l2_"):
-            text, kb = handle_location_2_ruchey(data, game, uid)
-            if text is None:
-                text = game.get_ui()
-                kb = get_main_kb(game)
-        
-        elif data.startswith("slate_") or data.startswith("rest_") or data.startswith("examine") or data.startswith("l3_") or data.startswith("boar_"):
-            text, kb = handle_location_3_slate_hollow(data, game, uid)
-            if text is None:
-                text = game.get_ui()
-                kb = get_main_kb(game)
-        
-        elif data.startswith("hunters_") or data.startswith("glade_") or data.startswith("l4_"):
-            text, kb = handle_location_4_hunters_glade(data, game, uid)
-            if text is None:
-                text = game.get_ui()
-                kb = get_main_kb(game)
-        
-        elif data.startswith("slug_") or data.startswith("pit_") or data.startswith("l5_"):
-            text, kb = handle_location_5_slug_pit(data, game, uid)
-            if text is None:
-                text = game.get_ui()
-                kb = get_main_kb(game)
-        
-        elif data.startswith("furry_") or data.startswith("warm_") or data.startswith("sleep") or data.startswith("cave_"):
-            text, kb = handle_location_6_furry_cave(data, game, uid)
-            if text is None:
-                text = game.get_ui()
-                kb = get_main_kb(game)
-        
-        elif data.startswith("sanctuary_") and data != "sanctuary_resolve":
-            text, kb = handle_location_7_sanctuary_peak(data, game, uid)
-            if text is None:
-                text = game.get_ui()
-                kb = get_main_kb(game)
+            text, kb = handle_back_navigation(game, uid)
 
         elif is_story_callback(data):
             text, kb = handle_story(data, game, uid)
 
-        elif data == "action_1":
-            if game.ap <= 0:
-                ap_warning = "Не хватает очков действий! Нужно поспать (Отдых)."
-                game.add_log(ap_warning)
-                await callback.answer(ap_warning, show_alert=True)
-                text = game.get_ui()
-                kb = get_main_kb(game)
-                if text is not None:
-                    await update_or_send_message(chat_id, uid, text, kb)
-                    save_game(uid, game)
-                return
-
-            deltas = game.consume_action(action_type="search", base_hunger=2, base_thirst=4)
-            loc_id = location_id_from_game(game)
-            loc_emoji = LOCATION_EMOJIS.get(loc_id, "🌲")
-
-            parts = []
-            if deltas.get("delta_hunger"):
-                parts.append(f"Сытость {deltas['delta_hunger']}")
-            if deltas.get("delta_thirst"):
-                parts.append(f"Жажда {deltas['delta_thirst']}")
-            hp_delta = deltas.get("delta_hp", 0)
-            if hp_delta:
-                hp_reasons = []
-                if deltas.get("hunger_damage_to_hp"):
-                    hp_reasons.append("голодание")
-                if deltas.get("thirst_damage_to_hp"):
-                    hp_reasons.append("обезвоживание")
-                reason = f" ({', '.join(hp_reasons)})" if hp_reasons else ""
-                parts.append(f"HP {hp_delta}{reason}")
-
-            res_str = ", ".join(parts) if parts else "без изменений"
-            game.add_log(f"{loc_emoji} Исследование: {res_str}")
-
-            if game.hp <= 0:
-                game.hp = 0
-                game.active_story_callback = None
-                text = get_death_text(game, "💀 Ты умер от голода и истощения.")
-                kb = get_death_kb()
-                await update_or_send_message(chat_id, uid, text, kb)
-                save_game(uid, game)
-                return
-
-            torch_equipped = (
-                game.equipment.get("hand_left") == "Факел"
-            )
-            lantern_equipped = (
-                game.equipment.get("hand_left") == "Старый фонарь"
-            )
-
-            # Проверка сюжетных триггеров через модуль story/location_stories.py
-            story_event, story_log = check_forest_research_story_trigger(game, loc_id, torch_equipped)
-            if story_event:
-                if story_log:
-                    game.add_log(story_log)
-                text, kb = handle_story(story_event, game, uid)
-            elif loc_id == 5 and getattr(game, "slug_bait_active", False) and random.random() < 0.5:
-                if lantern_equipped:
-                    cur_d = int(getattr(game, "lantern_durability", 20) or 0)
-                    if cur_d > 0:
-                        cur_d -= 1
-                        game.lantern_durability = cur_d
-                game.add_log("🍯 Сладкий запах приманки привлёк скопление слизней! Они выползают из расщелин!")
-                text, kb = start_slug_pack_battle(game, count=random.randint(1, 6))
-            else:
-                has_amulet = (game.equipment.get("trinket") == "Костяной амулет охотника")
-                found_list = roll_find(loc_id, game.inventory, extra_roll=has_amulet)
-                msg = apply_finds_to_inventory(game, found_list)
-                if lantern_equipped:
-                    cur_d = int(getattr(game, "lantern_durability", 20) or 0)
-                    if cur_d > 0:
-                        cur_d -= 1
-                        game.lantern_durability = cur_d
-                    max_d = int(getattr(game, "lantern_max_durability", 20) or 20)
-                    if cur_d == 0:
-                        game.add_log(f"🔦 {msg} [Фонарь погас (0/{max_d}) — требуется заправить через крафт]")
-                    else:
-                        game.add_log(f"🔦 {msg} [Фонарь: {cur_d}/{max_d}]")
-                elif torch_equipped:
-                    game.add_log(f"🔦 {msg}")
-                else:
-                    game.add_log(msg)
-                text = game.get_ui()
-                kb = get_main_kb(game)
-
-
-
         elif data in ("action_sleep", "action_4"):
-            game.sleep_and_turn_day()
-            cur_loc = str(getattr(game, "current_location", "") or "")
-            if "Просека" in cur_loc:
-                if not hasattr(game, "story_flags") or game.story_flags is None:
-                    game.story_flags = {}
-                game.story_flags["l4_sleep_count"] = game.story_flags.get("l4_sleep_count", 0) + 1
-            if game.hp <= 0:
-                game.hp = 0
-                game.active_story_callback = None
-                text = get_death_text(game, "💀 Ты не проснулся от истощения.")
-                kb = get_death_kb()
-                await update_or_send_message(chat_id, uid, text, kb)
-                save_game(uid, game)
-                return
-            trap_msgs = []
-            # Утро: 40% пуста, 20% ломается, 40% добыча по таблице локации
-            for event in process_trap_rollover(game):
-                loc_id = event.get("location_id")
-                if event.get("broken"):
-                    msg = f"Ловушка на локации {loc_id}: сломалась, добычи нет."
-                    game.add_log(msg)
-                    trap_msgs.append(msg)
-                    continue
-                if event.get("empty"):
-                    msg = f"Ловушка на локации {loc_id}: пуста, ничего не попалось."
-                    game.add_log(msg)
-                    trap_msgs.append(msg)
-                    continue
-                animal = event.get("animal")
-                loot = event.get("loot") or {}
-                if loot:
-                    apply_trap_loot_to_inventory(game, loot)
-                    loot_txt = ", ".join(f"{k}×{v}" for k, v in loot.items())
-                    msg = f"Ловушка на локации {loc_id}: {animal} (+{loot_txt})"
-                    game.add_log(msg)
-                    trap_msgs.append(msg)
-                elif animal:
-                    msg = f"Ловушка на локации {loc_id}: {animal}"
-                    game.add_log(msg)
-                    trap_msgs.append(msg)
-                trap = getattr(game, "traps", {}).get(loc_id)
-                if trap:
-                    trap["pending_animal"] = None
-                    trap["pending_loot"] = None
-            if trap_msgs:
-                text = game.get_ui() + "\n" + "\n".join(trap_msgs)
-            else:
-                text = game.get_ui()
-            kb = get_main_kb(game)
+            text, kb = handle_sleep_action(game)
 
-        elif data == "action_3":
-            # Пить из экипированной бутылки/фляги
-            if game.equipment.get("flask"):
-                water_left = int(getattr(game, "flask_water", 0) or 0)
-                if water_left > 0:
-                    game.flask_water = water_left - 1
-                    game.thirst = min(100, game.thirst + 15)
-                    game.add_log(f"💧 Ты сделал глоток воды из бутылки (+15 жажды). Во фляге: {game.flask_water}/20.")
-                    if game.flask_water <= 0:
-                        container_name = game.equipment.get("flask") or "Бутылка воды"
-                        if "Армейская" in container_name:
-                            game.flask_water = 0
-                            game.add_log(f"Ёмкость «{container_name}» опустела (0/20)! Вскипяти дождевую воду на костре, чтобы наполнить её.")
-                        else:
-                            game.equipment["flask"] = None
-                            game.inventory["Пустая бутылка"] = game.inventory.get("Пустая бутылка", 0) + 1
-                            game.add_log(f"Ёмкость «{container_name}» опустошена! В инвентаре осталась пустая бутылка.")
-                else:
-                    container_name = game.equipment.get("flask") or "Бутылка воды"
-                    if "Армейская" in container_name:
-                        game.flask_water = 0
-                        game.add_log(f"Ёмкость «{container_name}» пуста (0/20)! Вскипяти дождевую воду на костре, чтобы наполнить её.")
-                    else:
-                        game.equipment["flask"] = None
-                        game.inventory["Пустая бутылка"] = game.inventory.get("Пустая бутылка", 0) + 1
-                        game.add_log(f"Ёмкость «{container_name}» опустошена! В инвентаре осталась пустая бутылка.")
-            elif game.inventory.get("Бутылка воды", 0) > 0:
-                game.add_log("Бутылка в инвентаре не надета! Перейди в инвентарь и нажми «Бутылка воды» -> «Надеть на пояс».")
-            elif game.inventory.get("Вода", 0) > 0:
-                game.inventory["Вода"] -= 1
-                if game.inventory["Вода"] <= 0:
-                    del game.inventory["Вода"]
-                game.thirst = min(100, game.thirst + 30)
-                game.add_log("Ты сделал глоток воды. Жажда уменьшилась.")
-            else:
-                game.add_log("Воды больше нет.")
-            text = game.get_ui()
-            kb = get_main_kb(game)
-
-        elif data == "action_light_campfire":
-            has_torch = (
-                game.equipment.get("hand_left") == "Факел"
-            )
-            has_matches = game.inventory.get("Спички", 0) > 0
-            min_ap = 1 if (has_torch or has_matches) else 2
-            if game.ap < min_ap:
-                warning_msg = f"⚠️ Не хватает очков действий (требуется {min_ap} ⚡)!"
-                game.add_log(warning_msg)
-                await callback.answer(warning_msg, show_alert=True)
-                text = game.get_ui()
-                kb = get_main_kb(game)
-            else:
-                campfire_result = game.light_campfire()
-                if campfire_result.get("lit"):
-                    res_log = format_resource_log_text(campfire_result)
-                    if res_log:
-                        game.add_log(res_log)
-                    text = f"🔥 Вы развели костёр! (Прочность: {game.campfire_durability}/{game.campfire_max_durability})"
-                    kb = get_campfire_kb(game)
-                else:
-                    warning_msg = f"⚠️ Не хватает очков действий (требуется {min_ap} ⚡)!"
-                    game.add_log(warning_msg)
-                    await callback.answer(warning_msg, show_alert=True)
-                    text = game.get_ui()
-                    kb = get_main_kb(game)
-
-        elif data == "action_collect_water":
-            if game.weather in {"rain", "storm"}:
-                game.thirst = min(100, game.thirst + 20)
-                game.add_log("🌧️ Ты подставил ладони под дождь и напился свежей воды (+20 жажды).")
-            else:
-                game.add_log("⚠️ Дождь уже закончился.")
-            text = game.get_ui()
-            kb = get_main_kb(game)
-        
         elif data == "menu_main":
             game.active_story_callback = None
             text = game.get_ui()

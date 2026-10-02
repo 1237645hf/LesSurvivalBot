@@ -3,6 +3,9 @@ modules/items.py — Единый реестр предметов, рангов 
 """
 
 from typing import Dict, Tuple, Optional, Any
+import random
+from aiogram import types
+from game_math import get_resource_multiplier
 
 
 # Региональные ягоды (тег [Ягоды])
@@ -1043,3 +1046,501 @@ def format_item_card(item_name: str) -> str:
 
     body = "\n".join(lines)
     return f"━━━━━━━━━━━━━━━━━━━\n{body}\n━━━━━━━━━━━━━━━━━━━"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ИНСПЕКЦИЯ, РАСХОДНИКИ И ОБРАБОТКА ИНВЕНТАРЯ
+# ──────────────────────────────────────────────────────────────────────────────
+ITEM_DESCRIPTIONS = {
+    "Спички": "Нужны для розжига и создания факела.",
+    "Ветка": "Подходит для крафта простых предметов.",
+    "Факел": "Освещает путь и помогает пережить опасные встречи.",
+    "Сланцевая пластина": "Ключевой материал для снаряжения у ручья.",
+    "Сланевый шлем": "Защищает голову от опасностей локации.",
+    "Сланевая броня": "Защищает грудь в путешествии.",
+}
+
+
+def get_inspectable_items(game):
+    return [
+        item for item, count in game.inventory.items()
+        if count > 0 and item in ITEM_DESCRIPTIONS
+    ]
+
+
+def get_usable_items(game):
+    return [
+        item for item, count in game.inventory.items()
+        if count > 0 and is_item_consumable(item)
+    ]
+
+
+def use_consumable(item, game):
+    """Использовать предмет с учётом динамических коэффициентов.
+
+    Источник правды по эффектам — modules/items.py (get_item_effects).
+    """
+    if item == "Вода":
+        hunger_mult = get_resource_multiplier(game, "hunger")
+        water_cost = 1 + max(0, (30 - game.hunger) // 10)
+        if game.inventory.get("Вода", 0) < water_cost:
+            return f"Нужно воды: {water_cost}. В инвентаре недостаточно воды."
+        game.inventory["Вода"] -= water_cost
+        if game.inventory["Вода"] <= 0:
+            del game.inventory["Вода"]
+        thirst_restore = 10 * get_resource_multiplier(game, "thirst")
+        game.thirst = min(100, game.thirst + thirst_restore)
+        result = f"Жажда восстановлена на {int(thirst_restore)}. Потрачено воды: {water_cost}."
+    else:
+        effects = get_item_effects(item)
+
+        if not effects and "зель" in item.lower():
+            effects = {"hp": 25}
+        if not effects and item == "Еда":
+            effects = {"hunger": 30}
+
+        if not effects:
+            return None
+
+        restore_parts = []
+
+        if "hunger" in effects:
+            hunger_mult = get_resource_multiplier(game, "hunger")
+            hunger_val = int(effects["hunger"] * hunger_mult)
+            game.hunger = min(100, game.hunger + hunger_val)
+            restore_parts.append(f"Голод утолен ({hunger_val} ед.)")
+
+        if "thirst" in effects:
+            thirst_mult = get_resource_multiplier(game, "thirst")
+            thirst_val = int(effects["thirst"] * thirst_mult)
+            game.thirst = min(100, game.thirst + thirst_val)
+            restore_parts.append(f"Жажда восстановлена ({thirst_val} ед.)")
+
+        if "hp" in effects:
+            hp_val = effects["hp"]
+            game.hp = min(100, game.hp + hp_val)
+            if hp_val >= 0:
+                restore_parts.append(f"Здоровье восстановлено ({hp_val} ед.)")
+            else:
+                restore_parts.append(f"Получен урон ({abs(hp_val)} ед.)")
+
+        if "poison" in effects and effects["poison"]:
+            poison_val = effects["poison"]
+            game.hp = max(0, game.hp - poison_val)
+            restore_parts.append(f"Отравление ({poison_val} урона)")
+
+        # Проверка негативных эффектов (расстройство желудка, токсины, паразиты)
+        neg = get_item_negative_effects(item)
+        if neg:
+            chance = int(neg.get("chance", 0))
+            if random.randint(1, 100) <= chance:
+                neg_effects = neg.get("effects", {})
+                if "thirst" in neg_effects:
+                    game.thirst = max(0, game.thirst + neg_effects["thirst"])
+                if "hp" in neg_effects:
+                    game.hp = max(0, game.hp + neg_effects["hp"])
+                msg = neg.get("log_message") or neg.get("description")
+                restore_parts.append(f"⚠️ {msg}")
+
+        if not restore_parts:
+            return None
+
+        result = " ".join(restore_parts)
+
+        game.inventory[item] -= 1
+        if game.inventory[item] <= 0:
+            del game.inventory[item]
+
+    if "🍽️" in item:
+        game.inventory["Сланцевая тарелка"] = game.inventory.get("Сланцевая тарелка", 0) + 1
+        game.add_log(f"Использовано: {item}. {result} Ты доел, и тарелка снова свободна.")
+    elif item == "Янтарное зелье":
+        game.inventory["Пузырёк"] = game.inventory.get("Пузырёк", 0) + 1
+        game.add_log(f"Использовано: {item}. {result} Сланцевый пузырёк остался цел и вернулся в рюкзак.")
+    else:
+        game.add_log(f"Использовано: {item}. {result}")
+    return game.get_ui()
+
+
+INVENTORY_CANONICAL_STACKS = {
+    "inventory": ["main", "inventory"],
+    "inspect": ["main", "inventory", "inspect"],
+    "item_card": ["main", "inventory", "inspect", "item_card"],
+    "drop": ["main", "inventory", "drop"],
+    "drop_qty": ["main", "inventory", "drop", "drop_qty"],
+}
+
+
+def is_inventory_callback(data: str) -> bool:
+    """Проверяет, относится ли данный callback.data к инвентарю, экипировке или сбросу предметов."""
+    return (
+        data in (
+            "action_2",
+            "action_3",
+            "inv_inspect",
+            "inv_use",
+            "inv_drop",
+            "pocket_remove",
+            "equip_bottle_flask",
+            "equip_army_flask",
+            "drink_bottle_single",
+            "drink_rain_bottle",
+            "drop_qty_cancel",
+        )
+        or data.startswith((
+            "inspect_item_",
+            "use_preview_",
+            "pocket_insert_",
+            "use_consumable_",
+            "drop_item_",
+            "drop_qty:",
+        ))
+    )
+
+
+async def handle_inventory_callback(
+    data: str,
+    game: Any,
+    uid: int,
+    callback: Optional[Any] = None,
+) -> Tuple[Optional[str], Optional[Any]]:
+    """Обрабатывает все callback-запросы инвентаря, осмотра, экипировки, расходников и удаления предметов.
+
+    Импорты клавиатур происходят строго внутри функции для защиты от циклических зависимостей.
+    """
+    from keyboards import (
+        inventory_inline_kb,
+        get_inventory_kb,
+        get_inspect_menu_kb,
+        get_item_card_actions_kb,
+        get_bottle_actions_kb,
+        get_campfire_light_confirm_kb,
+        get_drop_item_kb,
+        get_drop_quantity_kb,
+        get_main_kb,
+    )
+
+    text = None
+    kb = None
+
+    if data == "action_2":
+        game.push_screen("inventory")
+        text = game.get_inventory_text()
+        kb = inventory_inline_kb
+
+    elif data == "inv_inspect":
+        items_in_inv = [item for item, c in game.inventory.items() if c > 0]
+        if not items_in_inv:
+            if callback:
+                await callback.answer("Инвентарь пуст!", show_alert=True)
+            return None, None
+        game.push_screen("inspect")
+        text = "🔍 Подробный осмотр предметов\n\nВыберите предмет из инвентаря, чтобы изучить его описание, эффекты и свойства:"
+        kb = get_inspect_menu_kb(game)
+
+    elif data.startswith("inspect_item_"):
+        item = data.removeprefix("inspect_item_")
+        game.push_screen("item_card")
+        text = format_item_card(item)
+        kb = get_item_card_actions_kb(item, game)
+
+    elif data.startswith("use_preview_"):
+        item = data.removeprefix("use_preview_")
+        game.push_screen("item_card")
+        text = format_item_card(item)
+        kb = get_item_card_actions_kb(item, game)
+
+    elif data.startswith("pocket_insert_"):
+        item = data.removeprefix("pocket_insert_")
+        if game.inventory.get(item, 0) > 0 and game.equipment.get("pants") == "Кожаные поножи":
+            old_p = getattr(game, "pants_pocket", None)
+            if old_p:
+                game.inventory[old_p] = game.inventory.get(old_p, 0) + 1
+            game.inventory[item] -= 1
+            if game.inventory[item] <= 0:
+                del game.inventory[item]
+            game.pants_pocket = item
+            game.add_log(f"Вы вложили {item} в специальный футляр на кожаных поножах.")
+        text = game.get_ui()
+        kb = get_main_kb(game)
+
+    elif data == "pocket_remove":
+        old_p = getattr(game, "pants_pocket", None)
+        if old_p:
+            game.inventory[old_p] = game.inventory.get(old_p, 0) + 1
+            game.pants_pocket = None
+            game.add_log(f"Вы извлекли {old_p} из футляра на поножах.")
+        text = game.get_ui()
+        kb = get_main_kb(game)
+
+    elif data == "inv_use":
+        # Перенаправляем устаревший inv_use в подробный осмотр
+        items_in_inv = [item for item, c in game.inventory.items() if c > 0]
+        if not items_in_inv:
+            if callback:
+                await callback.answer("Инвентарь пуст!", show_alert=True)
+            return None, None
+        game.push_screen("inspect")
+        text = "🔍 Подробный осмотр предметов\n\nВыберите предмет из инвентаря, чтобы изучить его описание, эффекты и свойства:"
+        kb = get_inspect_menu_kb(game)
+
+    elif data == "inv_drop":
+        if not any(count > 0 for count in game.inventory.values()):
+            return None, None
+        game.push_screen("drop")
+        text = "Выберите предмет для удаления:"
+        kb = get_drop_item_kb(game)
+
+    elif data.startswith("use_consumable_"):
+        item = data.removeprefix("use_consumable_")
+        if item == "Костёр":
+            if game.inventory.get("Костёр", 0) < 1:
+                game.add_log("⚠️ Нет костра в инвентаре.")
+                if callback:
+                    await callback.answer("⚠️ Нет костра в инвентаре!", show_alert=True)
+                text = game.get_ui()
+                kb = get_main_kb(game)
+            else:
+                has_torch = (
+                    game.equipment.get("hand_left") == "Факел"
+                )
+                has_matches = game.inventory.get("Спички", 0) > 0
+                min_ap = 1 if (has_torch or has_matches) else 2
+
+                if has_torch:
+                    cost_text = "🔥 Источник огня: горящий факел в руке!\nЗатраты: 1 ⚡ AP. Спички, сытость и жажда НЕ тратятся."
+                elif has_matches:
+                    cost_text = "🪵 Источник огня: спички из инвентаря.\nЗатраты: 1 спичка, 1 ⚡ AP. Сытость и жажда НЕ тратятся."
+                else:
+                    cost_text = "⏳ Спичек и факела нет — розжиг трением вручную.\nЗатраты: 2 ⚡ AP, голод −7, жажда −18 (тяжёлые усилия)."
+
+                if game.ap < min_ap:
+                    warning_text = f"\n\n⚠️ Не хватает очков действий! Требуется: {min_ap} ⚡ AP (в наличии: {game.ap} ⚡). Нужно поспать."
+                    text = (
+                        "Ты складываешь камни и ветки в аккуратную кладку.\n"
+                        "В круге света теплее не только телу: даже лес будто отступает на шаг.\n\n"
+                        f"{cost_text}"
+                        f"{warning_text}"
+                    )
+                    kb = types.InlineKeyboardMarkup(inline_keyboard=[
+                        [types.InlineKeyboardButton(text="↩️ Назад", callback_data="back")]
+                    ])
+                else:
+                    text = (
+                        "Ты складываешь камни и ветки в аккуратную кладку.\n"
+                        "В круге света теплее не только телу: даже лес будто отступает на шаг.\n\n"
+                        f"{cost_text}\n\n"
+                        "После розжига на главном экране появится костёр (10/10) и откроются рецепты готовки."
+                    )
+                    kb = get_campfire_light_confirm_kb()
+        elif item == "Бутылка воды":
+            text = (
+                "🧴 Бутылка чистой воды (20 глотков).\n\n"
+                "Ты можешь надеть её на пояс (в слот фляги), чтобы кнопка «💧 Пить» появилась на главном экране, либо сделать один глоток прямо сейчас."
+            )
+            kb = get_bottle_actions_kb()
+        else:
+            result = use_consumable(item, game)
+            if result is not None:
+                if game.inventory.get(item, 0) > 0:
+                    text = format_item_card(item)
+                    kb = get_item_card_actions_kb(item, game)
+                    game.nav_stack = list(INVENTORY_CANONICAL_STACKS.get("item_card", ["main", "inventory", "inspect", "item_card"]))
+                else:
+                    items_in_inv = [i for i, c in game.inventory.items() if c > 0]
+                    if items_in_inv:
+                        text = "🔍 Подробный осмотр предметов\n\nВыберите предмет из инвентаря, чтобы изучить его описание, эффекты и свойства:"
+                        kb = get_inspect_menu_kb(game)
+                        game.nav_stack = list(INVENTORY_CANONICAL_STACKS.get("inspect", ["main", "inventory", "inspect"]))
+                    else:
+                        text = game.get_inventory_text()
+                        kb = inventory_inline_kb
+                        game.nav_stack = list(INVENTORY_CANONICAL_STACKS.get("inventory", ["main", "inventory"]))
+            else:
+                if callback:
+                    await callback.answer("Этот предмет нельзя использовать.", show_alert=True)
+                text = format_item_card(item)
+                kb = get_item_card_actions_kb(item, game)
+
+    elif data == "equip_bottle_flask":
+        if game.inventory.get("Бутылка воды", 0) > 0:
+            game.inventory["Бутылка воды"] -= 1
+            if game.inventory["Бутылка воды"] <= 0:
+                del game.inventory["Бутылка воды"]
+            game.equipment["flask"] = "Бутылка воды"
+            game.flask_water = 20
+            game.add_log("🧴 Бутылка воды экипирована в слот фляги (20/20). Теперь кнопка «Пить» доступна на главном экране!")
+        else:
+            game.add_log("В инвентаре нет бутылки воды.")
+        text = game.get_ui()
+        kb = get_main_kb(game)
+
+    elif data == "equip_army_flask":
+        if game.inventory.get("Армейская фляга", 0) > 0:
+            old_flask = game.equipment.get("flask")
+            if old_flask:
+                game.inventory[old_flask] = game.inventory.get(old_flask, 0) + 1
+            game.inventory["Армейская фляга"] -= 1
+            if game.inventory["Армейская фляга"] <= 0:
+                del game.inventory["Армейская фляга"]
+            game.equipment["flask"] = "Армейская фляга"
+            game.flask_water = int(getattr(game, "flask_water", 0) or 0)
+            game.add_log(f"🟨 Армейская фляга надета на пояс ({game.flask_water}/20)!")
+        else:
+            game.add_log("В инвентаре нет армейской фляги.")
+        text = game.get_ui()
+        kb = get_main_kb(game)
+
+    elif data == "drink_rain_bottle":
+        bottles = getattr(game, "rain_bottles", [])
+        if not bottles and game.inventory.get("Бутылка дождевой воды", 0) > 0:
+            bottles = [4] * game.inventory.get("Бутылка дождевой воды", 1)
+            game.rain_bottles = bottles
+
+        if bottles and bottles[0] > 0:
+            bottles[0] -= 1
+            if random.random() < 0.55:
+                game.hp = max(0, game.hp - 6)
+                game.thirst = max(0, game.thirst - 15)
+                game.add_log("🤢 Вода была мутной и с привкусом гнили. Желудок скрутило спазмом! (−6 HP, −15 жажды).")
+            else:
+                game.thirst = min(100, game.thirst + 10)
+                game.add_log("💧 Ты сделал глоток дождевой воды (+10 жажды). Вода отдаёт прелыми листьями.")
+
+            if bottles[0] <= 0:
+                bottles.pop(0)
+                game.inventory["Бутылка дождевой воды"] = max(0, game.inventory.get("Бутылка дождевой воды", 1) - 1)
+                if game.inventory["Бутылка дождевой воды"] <= 0:
+                    del game.inventory["Бутылка дождевой воды"]
+                game.inventory["Пустая бутылка"] = game.inventory.get("Пустая бутылка", 0) + 1
+                game.add_log("Бутылка дождевой воды опустела. В инвентаре осталась пустая бутылка.")
+        else:
+            game.add_log("В бутылке не осталось дождевой воды.")
+        text = game.get_ui()
+        kb = get_main_kb(game)
+
+    elif data == "drink_bottle_single":
+        if game.equipment.get("flask") and getattr(game, "flask_water", 0) > 0:
+            game.flask_water -= 1
+            game.thirst = min(100, game.thirst + 30)
+            game.add_log(f"💧 Ты сделал глоток воды (+15 жажды). Во фляге: {game.flask_water}/20.")
+            if game.flask_water <= 0:
+                container_name = game.equipment.get("flask") or "Бутылка воды"
+                if "Армейская" in container_name:
+                    game.flask_water = 0
+                    game.add_log(f"Ёмкость «{container_name}» опустела (0/20)! Вскипяти дождевую воду на костре, чтобы наполнить её.")
+                else:
+                    game.equipment["flask"] = None
+                    game.inventory["Пустая бутылка"] = game.inventory.get("Пустая бутылка", 0) + 1
+                    game.add_log(f"Ёмкость «{container_name}» опустошена! В инвентаре осталась пустая бутылка.")
+        elif game.inventory.get("Бутылка воды", 0) > 0:
+            game.inventory["Бутылка воды"] -= 1
+            if game.inventory["Бутылка воды"] <= 0:
+                del game.inventory["Бутылка воды"]
+            game.equipment["flask"] = "Бутылка воды"
+            game.flask_water = 19
+            game.thirst = min(100, game.thirst + 30)
+            game.add_log("🧴 Ты экипировал бутылку на пояс и сделал глоток (+15 жажды). Во фляге: 19/20.")
+        else:
+            game.add_log("Нет доступной воды для питья.")
+        text = game.get_ui()
+        kb = get_main_kb(game)
+
+    elif data == "action_3":
+        # Пить из экипированной бутылки/фляги
+        if game.equipment.get("flask"):
+            water_left = int(getattr(game, "flask_water", 0) or 0)
+            if water_left > 0:
+                game.flask_water = water_left - 1
+                game.thirst = min(100, game.thirst + 15)
+                game.add_log(f"💧 Ты сделал глоток воды из бутылки (+15 жажды). Во фляге: {game.flask_water}/20.")
+                if game.flask_water <= 0:
+                    container_name = game.equipment.get("flask") or "Бутылка воды"
+                    if "Армейская" in container_name:
+                        game.flask_water = 0
+                        game.add_log(f"Ёмкость «{container_name}» опустела (0/20)! Вскипяти дождевую воду на костре, чтобы наполнить её.")
+                    else:
+                        game.equipment["flask"] = None
+                        game.inventory["Пустая бутылка"] = game.inventory.get("Пустая бутылка", 0) + 1
+                        game.add_log(f"Ёмкость «{container_name}» опустошена! В инвентаре осталась пустая бутылка.")
+            else:
+                container_name = game.equipment.get("flask") or "Бутылка воды"
+                if "Армейская" in container_name:
+                    game.flask_water = 0
+                    game.add_log(f"Ёмкость «{container_name}» пуста (0/20)! Вскипяти дождевую воду на костре, чтобы наполнить её.")
+                else:
+                    game.equipment["flask"] = None
+                    game.inventory["Пустая бутылка"] = game.inventory.get("Пустая бутылка", 0) + 1
+                    game.add_log(f"Ёмкость «{container_name}» опустошена! В инвентаре осталась пустая бутылка.")
+        elif game.inventory.get("Бутылка воды", 0) > 0:
+            game.add_log("Бутылка в инвентаре не надета! Перейди в инвентарь и нажми «Бутылка воды» -> «Надеть на пояс».")
+        elif game.inventory.get("Вода", 0) > 0:
+            game.inventory["Вода"] -= 1
+            if game.inventory["Вода"] <= 0:
+                del game.inventory["Вода"]
+            game.thirst = min(100, game.thirst + 30)
+            game.add_log("Ты сделал глоток воды. Жажда уменьшилась.")
+        else:
+            game.add_log("Воды больше нет.")
+        text = game.get_ui()
+        kb = get_main_kb(game)
+
+    elif data.startswith("drop_item_"):
+        item = data.removeprefix("drop_item_")
+        if game.inventory.get(item, 0) > 0:
+            game.push_screen("drop_qty")
+            current_count = game.inventory[item]
+            game.story_state = "WAITING_FOR_DROP_QUANTITY"
+            game.story_flags["drop_item_name"] = item
+            desc = get_item_description(item)
+            text = (
+                f"🗑 {item} (в наличии: {current_count} шт.)\n\n"
+                f"{desc}\n\n"
+                f"Введите свое число в чат чтобы выбросить или выберите вариант:"
+            )
+            kb = get_drop_quantity_kb(item)
+
+    elif data.startswith("drop_qty:"):
+        parts = data.split(":", 2)
+        if len(parts) < 3:
+            return None, None
+        qty_type = parts[1]
+        item = parts[2]
+        game.story_state = None
+        game.story_flags.pop("drop_item_name", None)
+        current_count = game.inventory.get(item, 0)
+        if current_count <= 0:
+            while len(game.nav_stack) > 1 and game.nav_stack[-1] in ("drop", "drop_qty"):
+                game.nav_stack.pop()
+            text = f"Предмета «{item}» нет в инвентаре.\n\n{game.get_inventory_text()}"
+            kb = inventory_inline_kb
+        else:
+            drop_count = 0
+            if qty_type == "1":
+                drop_count = 1
+            elif qty_type == "all":
+                drop_count = current_count
+
+            if drop_count > 0:
+                while len(game.nav_stack) > 1 and game.nav_stack[-1] in ("drop", "drop_qty"):
+                    game.nav_stack.pop()
+                game.inventory[item] -= drop_count
+                if game.inventory[item] <= 0:
+                    del game.inventory[item]
+                game.add_log(f"🗑️ Выброшено: {item} ×{drop_count}.")
+                text = f"Удалено: {item} ×{drop_count}.\n\n{game.get_inventory_text()}"
+                kb = get_inventory_kb(game, 0)
+
+    elif data == "drop_qty_cancel":
+        game.story_state = None
+        if "drop_item_name" in game.story_flags:
+            del game.story_flags["drop_item_name"]
+        game.nav_stack = ["main", "inventory", "drop"]
+        if any(count > 0 for count in game.inventory.values()):
+            text = "Выберите предмет для удаления:"
+            kb = get_drop_item_kb(game)
+        else:
+            text = game.get_inventory_text()
+            kb = inventory_inline_kb
+
+    return text, kb

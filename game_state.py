@@ -6,7 +6,7 @@ game_state.py — Центральное хранилище состояния �
 import random
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 
 from game_math import (
@@ -1185,6 +1185,170 @@ def get_death_text(game=None, reason: str = "") -> str:
 # Алиас для обратной совместимости: Game = GameState
 # Все модули, делающие from game_state import Game, получат тот же класс.
 Game = GameState
+
+
+# Дерево родителей для гарантированной навигации «↩️ Назад» (Блок 2)
+PARENT_SCREEN: Dict[str, str] = {
+    # Поддерево инвентаря
+    "inventory": "main",
+    "inspect": "inventory",
+    "item_card": "inspect",
+    "craft": "inventory",
+    "recipes": "inventory",
+    "drop": "inventory",
+    "drop_qty": "inventory",
+    "character": "inventory",
+    # Поддерево костра
+    "campfire": "main",
+    "campfire_fuel": "campfire",
+    "fuel_qty": "campfire_fuel",
+    "campfire_recipes": "campfire",
+    "recipe_card": "campfire_recipes",
+    # Прочие экраны
+    "locations": "main",
+    "l1_dome": "locations",
+    "wolf_lair": "locations",
+    "wolf_battle": "wolf_lair",
+    "combat": "wolf_lair",
+    "settings": "main",
+    "tablet_notes": "main",
+    "traps": "inventory",
+}
+
+CANONICAL_STACKS: Dict[str, List[str]] = {
+    "main": ["main"],
+    "inventory": ["main", "inventory"],
+    "inspect": ["main", "inventory", "inspect"],
+    "item_card": ["main", "inventory", "inspect", "item_card"],
+    "craft": ["main", "inventory", "craft"],
+    "drop": ["main", "inventory", "drop"],
+    "character": ["main", "inventory", "character"],
+    "traps": ["main", "inventory", "traps"],
+    "campfire": ["main", "campfire"],
+    "campfire_fuel": ["main", "campfire", "campfire_fuel"],
+    "fuel_qty": ["main", "campfire", "campfire_fuel", "fuel_qty"],
+    "campfire_recipes": ["main", "campfire", "campfire_recipes"],
+    "recipe_card": ["main", "campfire", "campfire_recipes", "recipe_card"],
+    "locations": ["main", "locations"],
+    "l1_dome": ["main", "locations", "l1_dome"],
+    "wolf_lair": ["main", "locations", "wolf_lair"],
+    "wolf_battle": ["main", "locations", "wolf_lair", "wolf_battle"],
+    "combat": ["main", "locations", "wolf_lair", "combat"],
+    "settings": ["main", "settings"],
+    "tablet_notes": ["main", "tablet_notes"],
+}
+
+
+def get_settings_text(game: Any = None) -> str:
+    return (
+        "⚙️ **Настройки**\n\n"
+        "Интерфейс игры работает в стандартном полноразмерном режиме Telegram.\n"
+        "Обрезка сообщений отключена для сохранения всех слотов и описаний."
+    )
+
+
+def handle_back_navigation(game: Any, uid: int) -> Tuple[Optional[str], Optional[Any]]:
+    """Обрабатывает нажатие кнопки «↩️ Назад» и возвращает (text, kb) для целевого экрана.
+
+    Детерминированно смотрит текущий экран в PARENT_SCREEN и восстанавливает
+    канонический стек из CANONICAL_STACKS.
+    """
+    from keyboards import (
+        get_main_kb,
+        inventory_inline_kb,
+        character_inline_kb,
+        get_craft_menu_kb,
+        get_inspect_menu_kb,
+        get_drop_item_kb,
+        get_campfire_kb,
+        get_campfire_recipes_kb,
+        get_campfire_fuel_kb,
+        get_locations_kb,
+        get_settings_kb,
+    )
+    from crafts import get_craft_menu_text
+    from modules.cooking import get_campfire_text, COOKING_RECIPES, can_cook
+    from story.location_stories import handle_story, handle_l1_wolf_lair
+
+    game.story_state = None
+    if hasattr(game, "story_flags") and isinstance(game.story_flags, dict):
+        game.story_flags.pop("drop_item_name", None)
+        game.story_flags.pop("fuel_item", None)
+        game.story_flags.pop("cook_recipe_id", None)
+
+    current = game.nav_stack[-1] if getattr(game, "nav_stack", None) else "main"
+    target = PARENT_SCREEN.get(current, "main")
+
+    # Выставляем канонический стек для target экрана
+    game.nav_stack = list(CANONICAL_STACKS.get(target, ["main"]))
+
+    if target == "main":
+        if getattr(game, "active_story_callback", None):
+            text, kb = handle_story(game.active_story_callback, game, uid)
+            if text is None:
+                game.active_story_callback = None
+                text = game.get_ui()
+                kb = get_main_kb(game)
+        else:
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif target == "inventory":
+        text = game.get_inventory_text()
+        kb = inventory_inline_kb
+    elif target == "character":
+        text = game.get_character_text()
+        kb = character_inline_kb
+    elif target in ("craft", "recipes"):
+        text = get_craft_menu_text(game)
+        kb = get_craft_menu_kb(game)
+    elif target == "inspect":
+        items_in_inv = [item for item, c in game.inventory.items() if c > 0]
+        if items_in_inv:
+            text = "🔍 Подробный осмотр предметов\n\nВыберите предмет из инвентаря, чтобы изучить его описание, эффекты и свойства:"
+            kb = get_inspect_menu_kb(game)
+        else:
+            text = game.get_inventory_text()
+            kb = inventory_inline_kb
+    elif target == "drop":
+        if any(count > 0 for count in game.inventory.values()):
+            text = "Выберите предмет для удаления:"
+            kb = get_drop_item_kb(game)
+        else:
+            text = game.get_inventory_text()
+            kb = inventory_inline_kb
+    elif target == "campfire":
+        text = get_campfire_text(game)
+        kb = get_campfire_kb(game)
+    elif target == "campfire_recipes":
+        available_count = sum(1 for r_id in COOKING_RECIPES if can_cook(game, r_id))
+        if available_count > 0:
+            text = "📜 Рецепты костра\n\nВыберите блюдо, чтобы узнать ингредиенты и приготовить:"
+        else:
+            text = "📜 Рецепты костра\n\nСейчас у вас недостаточно ингредиентов ни для одного блюда.\nНайдите ягоды, грибы, мясо, воду или кусок коры."
+        kb = get_campfire_recipes_kb(game)
+    elif target == "campfire_fuel":
+        cur_d = getattr(game, "campfire_durability", 0)
+        max_d = getattr(game, "campfire_max_durability", 10)
+        text = f"🔥 КОСТЁР ({cur_d}/{max_d})\nВыберите топливо для поддержания огня:"
+        kb = get_campfire_fuel_kb(game)
+    elif target == "locations":
+        text = "Куда направиться?"
+        kb = get_locations_kb(game)
+    elif target == "wolf_lair":
+        text, kb = handle_l1_wolf_lair("wolf_lair_enter", game, uid)
+    elif target == "settings":
+        text = get_settings_text(game)
+        kb = get_settings_kb(game)
+    else:
+        text = game.get_ui()
+        kb = get_main_kb(game)
+
+    return text, kb
+
+
+# Алиас для альтернативного именования
+resolve_back_screen = handle_back_navigation
+
 
 
 

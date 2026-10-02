@@ -44,27 +44,60 @@ def handle_location_1_forest_start(data: str, game, uid: int):
 
 def handle_story(data: str, game, uid: int):
     """Обработать сюжетную сцену волка и котёнка или передать в ветку других локаций."""
+    res = None
     if data.startswith("l1_dome"):
-        return handle_l1_dome(data, game, uid)
-    if data.startswith("l2_") or data.startswith("ruchey_") or data == "location_enter_2":
-        return handle_location_2_ruchey(data, game, uid)
-    if (
+        res = handle_l1_dome(data, game, uid)
+    elif data.startswith("l2_") or data.startswith("ruchey_") or data.startswith("river_") or data.startswith("snake_") or data.startswith("story_") or data == "location_enter_2":
+        if data == "location_enter_2":
+            game.current_location = "Ручей со змеями"
+        res = handle_location_2_ruchey(data, game, uid)
+    elif (
         data.startswith("l3_")
         or data.startswith("slate_")
         or data.startswith("rest_")
-        or data.startswith("examine_")
+        or data.startswith("examine")
         or data.startswith("boar_")
         or data in ("location_enter_3", "location_enter_boar")
     ):
-        return handle_location_3_slate_hollow(data, game, uid)
-    if data.startswith("l4_") or data.startswith("hunters_") or data.startswith("glade_") or data == "location_enter_4":
-        return handle_location_4_hunters_glade(data, game, uid)
-    if data.startswith("slug_") or data.startswith("pit_") or data == "location_enter_5":
-        return handle_location_5_slug_pit(data, game, uid)
-    if data.startswith("furry_") or data.startswith("warm_") or data.startswith("cave_") or data == "location_enter_6":
-        return handle_location_6_furry_cave(data, game, uid)
-    if data.startswith("sanctuary_") or data == "location_enter_7":
-        return handle_location_7_sanctuary_peak(data, game, uid)
+        if data == "location_enter_3":
+            game.current_location = "Скромная лощина"
+        res = handle_location_3_slate_hollow(data, game, uid)
+    elif data.startswith("l4_") or data.startswith("hunters_") or data.startswith("glade_") or data == "location_enter_4":
+        if data == "location_enter_4":
+            unlocked = getattr(game, "unlocked_locations", []) or []
+            if "Просека охотников" not in unlocked and "Просека Охотников" not in unlocked:
+                unlocked.append("Просека охотников")
+                unlocked.append("Просека Охотников")
+                game.unlocked_locations = unlocked
+            game.current_location = "Просека охотников"
+            res = handle_location_4_hunters_glade("hunters_glade_start", game, uid)
+        else:
+            res = handle_location_4_hunters_glade(data, game, uid)
+    elif data.startswith("slug_") or data.startswith("pit_") or data.startswith("l5_") or data == "location_enter_5":
+        if data == "location_enter_5":
+            game.current_location = "Яр слизней"
+            res = handle_location_5_slug_pit("slug_pit_start", game, uid)
+        else:
+            res = handle_location_5_slug_pit(data, game, uid)
+    elif data.startswith("furry_") or data.startswith("warm_") or data.startswith("cave_") or data == "location_enter_6":
+        if data == "location_enter_6":
+            game.current_location = "Мохнатая пещера"
+            res = handle_location_6_furry_cave("furry_cave_start", game, uid)
+        else:
+            res = handle_location_6_furry_cave(data, game, uid)
+    elif data.startswith("sanctuary_") or data == "location_enter_7":
+        if data == "location_enter_7":
+            game.current_location = "Святилище"
+            res = handle_location_7_sanctuary_peak("sanctuary_peak_start", game, uid)
+        else:
+            res = handle_location_7_sanctuary_peak(data, game, uid)
+
+    if res is not None:
+        text, kb = res
+        if text is None:
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        return text, kb
 
     text = None
     kb = None
@@ -367,15 +400,23 @@ def is_story_callback(data: str) -> bool:
             "pet_take",
             "waiting_pet_name",
             "story_next",
+            "sanctuary_resolve",
+            "location_enter_2",
+            "location_enter_3",
+            "location_enter_4",
+            "location_enter_5",
+            "location_enter_6",
+            "location_enter_7",
+            "location_enter_boar",
         )
         or data.startswith((
             "l1_dome", "l1_5", "l1_6", "l1_7", "wolf_lair", "wolf_battle", "boar_",
-            "l2_", "ruchey_",
-            "l3_", "slate_", "rest_", "examine_", "location_enter_3",
-            "hunters_", "glade_", "location_enter_4",
-            "slug_", "pit_", "location_enter_5",
-            "furry_", "warm_", "cave_", "location_enter_6",
-            "sanctuary_", "location_enter_7",
+            "l2_", "ruchey_", "river_", "snake_", "story_",
+            "l3_", "slate_", "rest_", "examine",
+            "hunters_", "glade_", "l4_",
+            "slug_", "pit_", "l5_",
+            "furry_", "warm_", "cave_",
+            "sanctuary_",
         ))
     )
 
