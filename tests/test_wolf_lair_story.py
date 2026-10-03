@@ -518,12 +518,76 @@ def test_wolf_torch_equipped_only_and_idempotent():
     assert "Факел" not in game.inventory
     assert kb2.inline_keyboard[0][0].callback_data == "l1_1b_1"
 
-    # Прохождение канонической цепочки L1.1b.1 -> L1.1b.2 -> L1.1b.3 -> peek_den
+    # Прохождение канонической цепочки L1.1b.1 -> L1.1b.2 -> L1.1b.3 -> l1_2
     _, kb_b1 = handle_story("l1_1b_1", game, 101)
     assert kb_b1.inline_keyboard[0][0].callback_data == "l1_1b_2"
     _, kb_b2 = handle_story("l1_1b_2", game, 101)
     assert kb_b2.inline_keyboard[0][0].callback_data == "l1_1b_3"
     _, kb_b3 = handle_story("l1_1b_3", game, 101)
-    assert kb_b3.inline_keyboard[0][0].callback_data == "peek_den"
+    assert kb_b3.inline_keyboard[0][0].callback_data == "l1_2"
+    assert kb_b3.inline_keyboard[0][0].text == "👀 Заглянуть под пень"
+
+
+def test_restored_l1_kitten_full_chain():
+    """Тест восстановленной канонической цепочки L1.2 -> L1.2b -> L1.2b.1 -> L1.3."""
+    game = GameState()
+
+    # L1.2: Осмотр ямы под пнем
+    t2, kb2 = handle_story("l1_2", game, 101)
+    assert "Тяжело дыша, ты опускаешься на колени" in t2
+    assert "два огромных влажных глаза" in t2
+    assert kb2.inline_keyboard[0][0].text == "✋ Протянуть руку"
+    assert kb2.inline_keyboard[0][0].callback_data == "l1_2b"
+    assert kb2.inline_keyboard[1][0].text == "🚫 Оставить его здесь"
+    assert kb2.inline_keyboard[1][0].callback_data == "l1_2a"
+
+    # Ветка L1.2a -> L1.2a_leave (уйти не протянув руку)
+    game_leave1 = GameState()
+    t_leave1, kb_leave1 = handle_story("l1_2a", game_leave1, 101)
+    assert "Ты медленно встаёшь и уходишь" in t_leave1
+    assert kb_leave1.inline_keyboard[0][0].text == "Выйти в лагерь"
+    assert kb_leave1.inline_keyboard[0][0].callback_data == "l1_2a_leave"
+    t_main1, kb_main1 = handle_story("l1_2a_leave", game_leave1, 101)
+    assert game_leave1.is_story_flag_set("left_kitten")
+    assert game_leave1.is_story_flag_set("l1_completed")
+
+    # L1.2b: Протянуть руку
+    t2b, kb2b = handle_story("l1_2b", game, 101)
+    assert "Ты осторожно опускаешь ладонь в яму" in t2b
+    assert "мягкое и пушистое касается твоих пальцев" in t2b
+    assert kb2b.inline_keyboard[0][0].callback_data == "l1_2b_1"
+
+    # L1.2b.1: Котёнок выходит на ладошки
+    t2b1, kb2b1 = handle_story("l1_2b_1", game, 101)
+    assert "тёмное и пушистое облачко с огромными влажными глазами" in t2b1
+    assert "Возьмёшь его с собой?" in t2b1
+    assert kb2b1.inline_keyboard[0][0].text == "🤝 Забрать с собой"
+    assert kb2b1.inline_keyboard[0][0].callback_data == "l1_3"
+    assert kb2b1.inline_keyboard[1][0].text == "🚫 Оставить здесь"
+    assert kb2b1.inline_keyboard[1][0].callback_data == "l1_2c"
+
+    # Ветка L1.2c -> L1.2c_leave (оставить после знакомства)
+    game_leave2 = GameState()
+    t_leave2, kb_leave2 = handle_story("l1_2c", game_leave2, 101)
+    assert "Ты осторожно опускаешь котёнка на землю возле пня" in t_leave2
+    assert kb_leave2.inline_keyboard[0][0].text == "Выйти в лагерь"
+    assert kb_leave2.inline_keyboard[0][0].callback_data == "l1_2c_leave"
+    t_main2, kb_main2 = handle_story("l1_2c_leave", game_leave2, 101)
+    assert game_leave2.is_story_flag_set("left_kitten")
+    assert game_leave2.is_story_flag_set("l1_completed")
+
+    # Ветка wolf_leave (тихо уйти от волка)
+    game_wolf = GameState()
+    t_wl, kb_wl = handle_story("wolf_leave", game_wolf, 101)
+    assert kb_wl.inline_keyboard[0][0].text == "Выйти в лагерь"
+    assert kb_wl.inline_keyboard[0][0].callback_data == "story_next"
+
+    # L1.3: Запрос клички
+    t3, kb3 = handle_story("l1_3", game, 101)
+    assert "Ты держишь котёнка в ладонях. Хочется его погладить и как-то назвать…" in t3
+    assert "Как ты его назовёшь?" in t3
+    assert kb3 is None
+    assert game.story_state == "WAITING_FOR_PET_NAME"
+    assert game.active_story_callback == "waiting_pet_name"
 
 

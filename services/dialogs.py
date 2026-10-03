@@ -201,15 +201,14 @@ async def handle_waiting_for_pet_name(
     game.add_log(f"У вас появился питомец: {name}")
 
     final_text = (
-        "Ты смотришь на маленькое существо у себя на руках.\n"
-        f"«{name}», — произносишь ты вслух, и понимаешь что нашёл себе нового друга.\n"
-        "Котёнок поднимает голову, будто услышал и запомнил.\n"
-        "Уходя от пня, ты чувствуешь, как он начинает тихо, почти не слышно мурчать...\n\n"
-        "Вибрация проходит сквозь твою грудь — слабая, но живая.\n"
+        "Ты смотришь на маленькое существо у себя на руках.\n\n"
+        f"«{name}», — тихонько произносишь ты вслух. Котёнок поднимает голову, будто услышал и запомнил.\n\n"
+        "Уходя от пня, ты чувствуешь, как он начинает тихо, почти не слышно мурчать...\n"
+        "Вибрация проходит сквозь твою грудь — слабая, но живая.\n\n"
         "Впервые за долгое время в этом лесу становится чуть теплее."
     )
     kb = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="Дальше", callback_data="story_next")]
+        [types.InlineKeyboardButton(text="Выйти в лагерь", callback_data="story_next")]
     ])
 
     msg_id = bot_ctx["last_active_msg_id"].get(uid)
@@ -802,7 +801,7 @@ def handle_session_callback(
             return text, kb
 
         from story.location_stories import handle_story
-        if getattr(loaded, "story_state", None) == "WAITING_FOR_PET_NAME" or getattr(loaded, "active_story_callback", None) in ("pet_take", "waiting_pet_name"):
+        if getattr(loaded, "story_state", None) == "WAITING_FOR_PET_NAME" or getattr(loaded, "active_story_callback", None) in ("pet_take", "waiting_pet_name", "l1_3"):
             has_named_pet = loaded.is_story_flag_set("has_pet") and bool(
                 loaded.equipment.get("pet") or (getattr(loaded, "companion_name", "") not in (None, "", "Кот", "Котёнок"))
             )

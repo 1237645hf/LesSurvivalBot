@@ -535,16 +535,23 @@ wolf_kb = InlineKeyboardMarkup(inline_keyboard=[
 ])
 
 peek_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="👀 Заглянуть внутрь", callback_data="peek_den")]
+    [InlineKeyboardButton(text="👀 Заглянуть под пень", callback_data="l1_2")]
 ])
 
-cat_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="🤝 Забрать с собой", callback_data="pet_take")],
-    [InlineKeyboardButton(text="🚫 Оставить его здесь", callback_data="pet_leave")]
+l1_2_kb = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="✋ Протянуть руку", callback_data="l1_2b")],
+    [InlineKeyboardButton(text="🚫 Оставить его здесь", callback_data="l1_2a")]
 ])
+
+l1_2b_1_kb = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="🤝 Забрать с собой", callback_data="l1_3")],
+    [InlineKeyboardButton(text="🚫 Оставить здесь", callback_data="l1_2c")]
+])
+
+cat_kb = l1_2b_1_kb
 
 next_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="➡️ Дальше", callback_data="story_next")]
+    [InlineKeyboardButton(text="Выйти в лагерь", callback_data="story_next")]
 ])
 
 

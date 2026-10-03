@@ -128,7 +128,9 @@ def handle_story(data: str, game, uid: int):
             "Что бы там ни было под пнём — оно теперь не твоё дело.\n"
             "Сердце всё ещё колотится."
         )
-        kb = get_main_kb(game)
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Выйти в лагерь", callback_data="story_next")]
+        ])
 
     elif data == "wolf_torch":
         has_torch_in_hand = (
@@ -190,40 +192,80 @@ def handle_story(data: str, game, uid: int):
             "Ещё не понимая, как тебе повезло, ты круглыми глазами смотришь на этот несчастный пень и на остатки сломанного факела у твоих ног…"
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="👀 Заглянуть внутрь", callback_data="peek_den")]
+            [InlineKeyboardButton(text="👀 Заглянуть под пень", callback_data="l1_2")]
         ])
 
-    elif data == "peek_den":
+    elif data in ("l1_2", "peek_den"):
         game.story_state = "cat_choice"
         text = (
-            "Ты опускаешься на колени, наклоняешься ближе.\n"
-            "В слабом отсвете угасающих угольков факела, почти на самом дне ямы, блестят два огромных влажных глаза.\n"
-            "Они смотрят на тебя с ужасом и надеждой одновременно.\n"
-            "Маленький, грязный, дрожащий котёнок.\n"
-            "Шерсть слиплась от сырости, одно ухо надорвано.\n"
-            "Ты тихо протягиваешь руку.\n"
-            "Он долго не решается. Потом осторожно, очень медленно обнюхивает твои пальцы.\n"
-            "Ты чувствуешь холодный нос и слабое, прерывистое дыхание.\n\n"
+            "Тяжело дыша, ты опускаешься на колени, чтобы заглянуть под пень…\n"
+            "В слабом отсвете угасающих угольков факела, почти на самом дне ямы, блестят два огромных влажных глаза…\n\n"
             "Твои действия:"
         )
-        kb = cat_kb
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✋ Протянуть руку", callback_data="l1_2b")],
+            [InlineKeyboardButton(text="🚫 Оставить его здесь", callback_data="l1_2a")]
+        ])
 
-    elif data == "pet_leave":
+    elif data == "l1_2a":
+        text = "Ты медленно встаёшь и уходишь, с опаской оглядываясь на пень…"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Выйти в лагерь", callback_data="l1_2a_leave")]
+        ])
+
+    elif data in ("l1_2a_leave", "pet_leave"):
         game.adjust_narrative_karma("compassion", -3)
         game.story_state = None
         game.reset_nav()
         game.set_story_flag("l1_completed")
         game.story_flags["l1_completed_day"] = getattr(game, "day", 1)
         game.set_story_flag("left_kitten")
-        text = (
-            "Ты медленно убираешь руку.\n"
-            "Котёнок смотрит тебе вслед, но не мяукает.\n"
-            "Ты встаёшь, разворачиваешься и уходишь.\n"
-            "За спиной остаётся только тишина леса и ощущение, что ты только что прошёл мимо чего-то важного."
-        )
+        game.active_story_callback = None
+        text = game.get_ui()
         kb = get_main_kb(game)
 
-    elif data in ("pet_take", "waiting_pet_name"):
+    elif data == "l1_2b":
+        text = (
+            "Ты осторожно опускаешь ладонь в яму и чувствуешь, как твою руку тихонько обнюхивают.\n"
+            "Потом что-то мягкое и пушистое касается твоих пальцев."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l1_2b_1")]
+        ])
+
+    elif data == "l1_2b_1":
+        text = (
+            "Убрав руку, ты замечаешь, как из-под пня — настолько трухлявого, что непонятно, как он ещё не развалился, — тихонько выплывает тёмное и пушистое облачко с огромными влажными глазами.\n"
+            "Ты протягиваешь руки и берёшь маленького котёнка в ладошки, совершенно не понимая, как он тут оказался.\n"
+            "Хочется его погладить и как-то назвать…\n"
+            "Возьмёшь его с собой?"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🤝 Забрать с собой", callback_data="l1_3")],
+            [InlineKeyboardButton(text="🚫 Оставить здесь", callback_data="l1_2c")]
+        ])
+
+    elif data == "l1_2c":
+        text = (
+            "Ты осторожно опускаешь котёнка на землю возле пня.\n"
+            "Он смотрит на тебя снизу вверх, а ты медленно встаёшь и уходишь, с опаской оглядываясь…"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Выйти в лагерь", callback_data="l1_2c_leave")]
+        ])
+
+    elif data in ("l1_2c_leave", "kitten_to_main"):
+        game.adjust_narrative_karma("compassion", -3)
+        game.story_state = None
+        game.reset_nav()
+        game.set_story_flag("l1_completed")
+        game.story_flags["l1_completed_day"] = getattr(game, "day", 1)
+        game.set_story_flag("left_kitten")
+        game.active_story_callback = None
+        text = game.get_ui()
+        kb = get_main_kb(game)
+
+    elif data in ("l1_3", "pet_take", "waiting_pet_name"):
         has_named_pet = game.is_story_flag_set("has_pet") and bool(
             game.equipment.get("pet") or (getattr(game, "companion_name", "") not in (None, "", "Кот", "Котёнок"))
         )
@@ -240,15 +282,14 @@ def handle_story(data: str, game, uid: int):
             game.adjust_narrative_karma("compassion", 2)
         game.story_state = "WAITING_FOR_PET_NAME"
         text = (
-            "Ты осторожно опускаешь обе ладони в яму.\n"
-            "Котёнок сначала отшатывается, потом сам делает маленький шаг навстречу.\n"
-            "Через секунду он уже у тебя на руках — лёгкий, холодный, дрожащий всем телом.\n"
-            "Ты прижимаешь его к груди, прикрывая полой куртки.\n\n"
+            "Ты держишь котёнка в ладонях. Хочется его погладить и как-то назвать…\n"
             "Как ты его назовёшь?"
         )
+        kb = None
 
     elif data == "story_next":
         game.story_state = None
+        game.active_story_callback = None
         game.reset_nav()
         text = game.get_ui()
         kb = get_main_kb(game)
@@ -263,10 +304,10 @@ def handle_story(data: str, game, uid: int):
     ):
         return handle_l1_wolf_lair(data, game, uid)
 
-    if kb == get_main_kb(game) or data in ("wolf_leave", "pet_leave", "story_next", "back") or getattr(game, "hp", 100) <= 0:
+    if kb == get_main_kb(game) or data in ("wolf_leave", "pet_leave", "l1_2a_leave", "l1_2c_leave", "kitten_to_main", "story_next", "back") or getattr(game, "hp", 100) <= 0:
         game.active_story_callback = None
     elif text is not None:
-        if data in ("pet_take", "waiting_pet_name"):
+        if data in ("l1_3", "pet_take", "waiting_pet_name"):
             game.active_story_callback = "waiting_pet_name"
         else:
             game.active_story_callback = data
