@@ -370,7 +370,7 @@ def get_craft_menu_kb(game):
 
 def is_craft_callback(data: str) -> bool:
     """Проверяет, относится ли callback к меню крафта, рецептам или использованию экипируемых предметов."""
-    return data in ("inv_craft", "inv_recipes") or data.startswith("craft_") or data.startswith("use_item_")
+    return data in ("inv_craft", "inv_recipes") or data.startswith("craft_") or data.startswith("confirm_craft_") or data.startswith("use_item_")
 
 
 def handle_craft(data, game, uid):
@@ -386,8 +386,26 @@ def handle_craft(data, game, uid):
         text = get_craft_menu_text(game)
         kb = get_craft_menu_kb(game)
         return text, kb
-    elif data.startswith("craft_"):
-        recipe = data.removeprefix("craft_")
+    elif data == "craft_Крепкий посох":
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        branches = game.inventory.get("Ветка", 0) + game.inventory.get("Палка", 0) + game.inventory.get("Палки", 0)
+        req_icon = "✅" if branches >= 8 else "❌"
+        text = (
+            "━━━━━━━━━━━━━━━━━━━\n"
+            "🦯 Крепкий посох\n\n"
+            "Обтёсанная тяжёлая ветвь — надёжное оружие против лесных хищников.\n\n"
+            f"📦 Требования: {req_icon} Ветка ({branches}/8)\n"
+            "⚔️ Свойства: Урон в бою: 4–6 ед. (Правая рука)\n"
+            "━━━━━━━━━━━━━━━━━━━"
+        )
+        buttons = []
+        if branches >= 8:
+            buttons.append([InlineKeyboardButton(text="🔨 Скрафтить", callback_data="confirm_craft_Крепкий посох")])
+        buttons.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        return text, kb
+    elif data.startswith("confirm_craft_") or data.startswith("craft_"):
+        recipe = data.removeprefix("confirm_craft_").removeprefix("craft_")
         ok, msg = do_craft(game, recipe)
         if ok:
             from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -408,7 +426,6 @@ def handle_craft(data, game, uid):
                     del game.inventory["Факел"]
                 game.equipment["hand_left"] = "Факел"
                 game.ap += 1
-                game.add_log("Вы взяли факел в левую руку (+1 ⚡ AP пока факел в руке). Счётчик исследований активирован.")
                 text = game.get_ui()
                 kb = get_main_kb(game)
             else:

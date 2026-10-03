@@ -329,7 +329,7 @@ def apply_finds_to_inventory(game, found: List[str]) -> str:
             parts.append(f"{item} ×{qty}")
         else:
             parts.append(item)
-    return "Нашёл: " + ", ".join(parts)
+    return "🔍 Нашёл: " + ", ".join(parts)
 
 
 LOCATION_EMOJIS: Dict[int, str] = {
@@ -383,9 +383,9 @@ async def handle_explore_callback(
 
         parts = []
         if deltas.get("delta_hunger"):
-            parts.append(f"Сытость {deltas['delta_hunger']}")
+            parts.append(f"🍖 {deltas['delta_hunger']}")
         if deltas.get("delta_thirst"):
-            parts.append(f"Жажда {deltas['delta_thirst']}")
+            parts.append(f"💧 {deltas['delta_thirst']}")
         hp_delta = deltas.get("delta_hp", 0)
         if hp_delta:
             hp_reasons = []
@@ -394,7 +394,7 @@ async def handle_explore_callback(
             if deltas.get("thirst_damage_to_hp"):
                 hp_reasons.append("обезвоживание")
             reason = f" ({', '.join(hp_reasons)})" if hp_reasons else ""
-            parts.append(f"HP {hp_delta}{reason}")
+            parts.append(f"❤️ {hp_delta}{reason}")
 
         res_str = ", ".join(parts) if parts else "без изменений"
         game.add_log(f"{loc_emoji} Исследование: {res_str}")
@@ -442,7 +442,7 @@ async def handle_explore_callback(
                 else:
                     game.add_log(f"🔦 {msg} [Фонарь: {cur_d}/{max_d}]")
             elif torch_equipped:
-                game.add_log(f"🔦 {msg}")
+                game.add_log(msg)
             else:
                 game.add_log(msg)
             text = game.get_ui()

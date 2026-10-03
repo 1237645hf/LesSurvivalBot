@@ -16,7 +16,7 @@ from keyboards import (
     get_death_kb,
 )
 from game_state import get_death_text
-from modules.items import is_item_consumable, get_item_rank, get_item_type
+from modules.items import is_item_consumable, get_item_rank, get_item_type, get_item_emoji
 from modules.combat import (
     start_battle,
     apply_action,
@@ -147,18 +147,51 @@ def handle_story(data: str, game, uid: int):
             game.adjust_narrative_karma("compassion", -2)
             game.adjust_narrative_karma("pragmatism", 3)
             game.story_state = "after_fight"
+            if game.equipment.get("hand_left") == "Факел":
+                game.equipment["hand_left"] = None
+            if game.equipment.get("hand_right") == "Факел":
+                game.equipment["hand_right"] = None
+            if "Факел" in game.inventory:
+                del game.inventory["Факел"]
+            game.story_flags["torch_consumed"] = True
+
         text = (
-            "Ты поднимаешь факел повыше. Пламя трещит громче.\n"
-            "Волк резко оборачивается, глаза вспыхивают жёлтым в свете огня.\n"
-            "Секунду он смотрит на тебя — не нападает, но и не отступает.\n"
-            "Тогда ты делаешь шаг вперёд и рычишь сам — низко, зло, по-человечески неумело.\n"
-            "Факел вспыхивает ярче от рывка воздуха.\n"
-            "Зверь подается назад и ты замахиваешься факелом.\n"
-            "Ещё мгновение — и ты видишь как подпалённый волк убегает в темноту между деревьями, бросив свою яму.\n"
-            "Остатки факела медленно догорают на земле возле тебя.\n\n"
-            "Теперь перед тобой открытая яма под пнём."
+            "Ты поднимаешь факел высоко над своей головой, озаряя местность светом.\n"
+            "Твоё неожиданное появление и вид огня явно вогнали старого волка в ступор.\n"
+            "Громкими криками и руганью — больше для храбрости — ты пытаешься напугать зверя."
         )
-        kb = peek_kb
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l1_1b_1")]
+        ])
+
+    elif data == "l1_1b_1":
+        text = (
+            "Голодный хищник, громко рыча, разворачивается в твою сторону.\n"
+            "Ты слышишь угрожающее рычание, за которым теряются окружающие звуки, а из его пасти на землю капает пенистая слюна."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l1_1b_2")]
+        ])
+
+    elif data == "l1_1b_2":
+        text = (
+            "Единственное твоё оружие — горящий факел, который явно пугает волка.\n"
+            "Истошно крича и размахивая факелом, ты спотыкаешься об корень и, падая, попадаешь горящим концом по морде зверя.\n"
+            "Вокруг разлетаются снопы искр. Древко с хрустом ломается, ударившись о выступающий корень."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l1_1b_3")]
+        ])
+
+    elif data == "l1_1b_3":
+        text = (
+            "Ты встаёшь всего за пару мгновений, но волка уже не видно.\n"
+            "Слышны только громкий стук твоего собственного сердца и удаляющееся скуление. В воздухе стоит запах подгорелой шерсти…\n"
+            "Ещё не понимая, как тебе повезло, ты круглыми глазами смотришь на этот несчастный пень и на остатки сломанного факела у твоих ног…"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👀 Заглянуть внутрь", callback_data="peek_den")]
+        ])
 
     elif data == "peek_den":
         game.story_state = "cat_choice"
@@ -410,7 +443,7 @@ def is_story_callback(data: str) -> bool:
             "location_enter_boar",
         )
         or data.startswith((
-            "l1_dome", "l1_5", "l1_6", "l1_7", "wolf_lair", "wolf_battle", "boar_",
+            "l1_", "l1_dome", "l1_5", "l1_6", "l1_7", "wolf_lair", "wolf_battle", "boar_",
             "l2_", "ruchey_", "river_", "snake_", "story_",
             "l3_", "slate_", "rest_", "examine",
             "hunters_", "glade_", "l4_",
@@ -734,8 +767,10 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
             ])
         else:
             text = (
-                "Сжимая в руке тяжёлый посох, ты стоишь у входа в пещеру. "
-                "Зверь внутри глухо рычит, ожидая твоего шага."
+                "Сжимая в руке тяжёлый посох, ты стоишь у входа в пещеру.\n\n"
+                "Из темноты доносится хриплое прерывистое дыхание. В полумраке блестят воспалённые волчьи глаза.\n"
+                "Зверь поднимается на лапы, шерсть на загривке встаёт дыбом, а из приоткрытой пасти обнажаются жёлтые клыки.\n"
+                "Воздух густеет от напряжения: отступать некуда, хищник готов к смертельному прыжку."
             )
             kb = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="⚔️ Шагнуть в пещеру", callback_data="wolf_battle_start")],
@@ -790,36 +825,56 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
         ])
 
     elif data == "l1_5_spare":
-        if not game.is_story_flag_set("spared_wolf"):
-            consumables = [
-                item for item, count in game.inventory.items()
-                if count > 0 and is_item_consumable(item) and get_item_type(item) in ("food", "berry", "mushroom")
-            ]
-            consumables.sort(key=lambda it: (get_item_rank(it), it))
-            if consumables:
-                food_item = consumables[0]
-                game.inventory[food_item] -= 1
-                if game.inventory[food_item] <= 0:
-                    del game.inventory[food_item]
-                game.story_flags["spared_wolf_food"] = food_item
+        consumables = [
+            item for item, count in game.inventory.items()
+            if count > 0 and (is_item_consumable(item) and get_item_type(item) in ("food", "berry", "mushroom"))
+        ]
+        consumables.sort(key=lambda it: (get_item_rank(it), it))
+        if not consumables:
             game.set_story_flag("spared_wolf")
             game.adjust_narrative_karma("compassion", 5)
-
-        food_item = game.story_flags.get("spared_wolf_food")
-        if food_item:
-            text = (
-                "Ты опускаешь посох, делаешь предупреждающий жест и не приближаешься, давая волку пространство.\n"
-                "Свободной рукой ты достаёшь из рюкзака съестное и бросаешь к его лапам.\n"
-                "Волк жадно заглатывает кусок и медленно отползает в темноту глубины норы. Путь открыт.\n"
-                "──────────\n"
-                f"Отдано: {food_item} ×1"
-            )
-        else:
             text = (
                 "Ты опускаешь посох, делаешь предупреждающий жест и не приближаешься, давая волку пространство.\n"
                 "У тебя нет с собой еды, но зверь видит, что ты не станешь его добивать.\n"
                 "Волк с трудом поднимается и медленно отползает в темноту глубины норы. Путь открыт."
             )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="➡️ Шагнуть в расщелину", callback_data="l1_6_passage")]
+            ])
+        else:
+            text = (
+                "Ты решаешь пощадить зверя.\n\n"
+                "Старый волк слаб и голоден — чтобы он позволил пройти и не бросился в спину, нужно отдать ему что-то съедобное.\n\n"
+                "Выбери еду из инвентаря:"
+            )
+            buttons = []
+            for it in consumables:
+                c = game.inventory.get(it, 0)
+                marker = get_item_emoji(it)
+                buttons.append([InlineKeyboardButton(text=f"{marker} {it} ×{c}", callback_data=f"l1_5_feed:{it}")])
+            buttons.append([InlineKeyboardButton(text="🚫 Не отдавать (Отмена)", callback_data="l1_5_spare_cancel")])
+            kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    elif data == "l1_5_spare_cancel":
+        has_pet = bool(game.equipment.get("pet")) or game.is_story_flag_set("has_pet")
+        return handle_l1_wolf_lair("l1_5_kitten_plea" if has_pet else "l1_5_aftermath", game, uid)
+
+    elif data.startswith("l1_5_feed:"):
+        food_item = data.removeprefix("l1_5_feed:")
+        if game.inventory.get(food_item, 0) > 0:
+            game.inventory[food_item] -= 1
+            if game.inventory[food_item] <= 0:
+                del game.inventory[food_item]
+        game.story_flags["spared_wolf_food"] = food_item
+        game.set_story_flag("spared_wolf")
+        game.adjust_narrative_karma("compassion", 5)
+        text = (
+            "Ты опускаешь посох, делаешь предупреждающий жест и не приближаешься, давая волку пространство.\n"
+            f"Свободной рукой ты достаёшь из рюкзака {food_item} и бросаешь к его лапам.\n"
+            "Волк жадно заглатывает кусок и медленно отползает в темноту глубины норы. Путь открыт.\n"
+            "──────────\n"
+            f"Отдано: {food_item} ×1"
+        )
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="➡️ Шагнуть в расщелину", callback_data="l1_6_passage")]
         ])
@@ -868,8 +923,9 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
         game.unlocked_locations = ["Лесной старт", "Ручей"]
         game.set_story_flag("l1_7_completed")
         text = (
-            "Открыта новая глава: Ручей\n\n"
-            "В меню «Локации» открыта новая локация."
+            "🌲 Глава завершена: Тайны густого леса\n\n"
+            "Вы преодолели опасности чащи и вышли к шумящей воде.\n"
+            "В меню «Локации» теперь доступен Ручей."
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🏕 Осмотреться на новом месте", callback_data="l1_7_inspect")]

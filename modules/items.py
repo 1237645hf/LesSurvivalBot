@@ -506,6 +506,15 @@ ITEMS: Dict[str, Dict[str, Any]] = {
         "can_use": True,
         "stackable": True,
     },
+    "Жареное мясо": {
+        "description": "Кусок мяса, обжаренный на углях костра. Питательное и безопасное блюдо.",
+        "type": "food",
+        "rank": 2,
+        "effects": {"hunger": 30, "hp": 5},
+        "note": "🟢 Качественное блюдо. Хорошо восстанавливает сытость.",
+        "can_use": True,
+        "stackable": True,
+    },
 
     # ──────────────────────────────────────────────────────────────────────────
     # Готовые блюда костра (по рангам)
@@ -945,8 +954,8 @@ ITEM_EMOJIS: Dict[str, str] = {
     "Мох": "🧽", "Сухой мох": "🧽", "Сухая трава": "🧽", "Пещерный мох": "🧽", "Горный лишайник": "🧽",
     "Глина": "🏺", "Слизь": "🧪", "Кость": "🦴", "Кожа": "🟤", "Мех": "🧶",
     # Инструменты и экипировка
-    "Спички": "📦", "Факел": "🔦", "Костёр": "🔥", "Охотничья ловушка": "🪤", "Приманка для слизней": "🍯", "Схема": "📜",
-    "Крепкий посох": "🪵", "Рюкзак с красной заплаткой": "🎒",
+    "Спички": "📦", "Факел": "🕯️", "Костёр": "🔥", "Охотничья ловушка": "🪤", "Приманка для слизней": "🍯", "Схема": "📜",
+    "Крепкий посох": "🦯", "Окованный посох": "🦯", "Рюкзак с красной заплаткой": "🎒",
     "Плоская металлическая коробочка": "🗃️", "Записка с наброском местности": "📜",
     "Пустая бутылка": "🧴", "Бутылка воды": "🧴", "Бутылка дождевой воды": "🧴", "Вода": "💧",
     "Армейская фляга": "🟨",
@@ -962,7 +971,7 @@ ITEM_EMOJIS: Dict[str, str] = {
     "Сырое мясо": "🥩", "Мясо": "🥩",
     # Блюда и готовая кулинария
     "Печёные ягоды": "⚪", "Жареные грибы": "⚪",
-    "Ягодный отвар": "🟢", "Грибная похлёбка": "🟢", "Сухпай": "🟨",
+    "Ягодный отвар": "🟢", "Грибная похлёбка": "🟢", "Жареное мясо": "🟢", "Сухпай": "🟨",
     "Мясо на коре": "🔵", "Зелье здоровья": "🔵",
     "Охотничья похлёбка": "🟣", "Лесная тушёнка": "🟣",
     "Таёжный пир": "🟡",
@@ -988,18 +997,20 @@ def get_item_emoji(item_name: str) -> str:
     return "📦"
 
 
-def format_item_card(item_name: str) -> str:
+def format_item_card(item_name: str, game: Optional[Any] = None) -> str:
     """
     Форматирует информационную карточку предмета:
-    1. Заголовок: emoji/иконка (еда — маркер ранга ⚪🟢…; не еда — 🪵🪨 и т.д.).
-    2. ✨ Свойства: … (одна аккуратная строка).
-    3. ⚠️ Риск: … или ⚠️ Риск: отсутствует.
-    4. 📌 … короткое примечание без тавтологии.
-    5. Рамки ━━━━━━━━━━━━━━━━━━━ сверху и снизу.
+    1. Хот-бар характеристик игрока (если передан game).
+    2. Заголовок: emoji/иконка (еда — маркер ранга ⚪🟢…; не еда — 🪵🪨 и т.д.).
+    3. ✨ Свойства: … (одна аккуратная строка).
+    4. ⚠️ Риск: … или ⚠️ Риск: отсутствует.
+    5. 📌 … короткое примечание без тавтологии.
+    6. Рамки ━━━━━━━━━━━━━━━━━━━ сверху и снизу.
     """
     data = ITEMS.get(item_name, {})
+    header = f"{game.get_status_bar()}\n\n" if game and hasattr(game, "get_status_bar") else ""
     if not data:
-        return f"━━━━━━━━━━━━━━━━━━━\n📦 {item_name}\n\nИнформация отсутствует.\n━━━━━━━━━━━━━━━━━━━"
+        return f"{header}━━━━━━━━━━━━━━━━━━━\n📦 {item_name}\n\nИнформация отсутствует.\n━━━━━━━━━━━━━━━━━━━"
 
     item_clean = item_name.replace(" 🔥", "").replace("🔥", "").strip()
     marker = get_item_emoji(item_clean)
@@ -1045,7 +1056,7 @@ def format_item_card(item_name: str) -> str:
         lines.append(f"📌 Примечание: {clean_note}")
 
     body = "\n".join(lines)
-    return f"━━━━━━━━━━━━━━━━━━━\n{body}\n━━━━━━━━━━━━━━━━━━━"
+    return f"{header}━━━━━━━━━━━━━━━━━━━\n{body}\n━━━━━━━━━━━━━━━━━━━"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1079,18 +1090,19 @@ def use_consumable(item, game):
     """Использовать предмет с учётом динамических коэффициентов.
 
     Источник правды по эффектам — modules/items.py (get_item_effects).
+    Формат лога: 🍽️ Использовано: {item} ❤️ ... 🍖 ... 💧 ...
     """
     if item == "Вода":
-        hunger_mult = get_resource_multiplier(game, "hunger")
         water_cost = 1 + max(0, (30 - game.hunger) // 10)
         if game.inventory.get("Вода", 0) < water_cost:
             return f"Нужно воды: {water_cost}. В инвентаре недостаточно воды."
         game.inventory["Вода"] -= water_cost
         if game.inventory["Вода"] <= 0:
             del game.inventory["Вода"]
-        thirst_restore = 10 * get_resource_multiplier(game, "thirst")
+        thirst_restore = int(10 * get_resource_multiplier(game, "thirst"))
         game.thirst = min(100, game.thirst + thirst_restore)
-        result = f"Жажда восстановлена на {int(thirst_restore)}. Потрачено воды: {water_cost}."
+        game.add_log(f"🍽️ Использовано: Вода 💧 +{thirst_restore} (потрачено воды: {water_cost})")
+        return game.get_ui()
     else:
         effects = get_item_effects(item)
 
@@ -1102,64 +1114,74 @@ def use_consumable(item, game):
         if not effects:
             return None
 
-        restore_parts = []
+        hp_val = 0
+        hunger_val = 0
+        thirst_val = 0
+
+        if "hp" in effects:
+            hp_val = int(effects["hp"])
+            game.hp = max(0, min(100, game.hp + hp_val))
 
         if "hunger" in effects:
             hunger_mult = get_resource_multiplier(game, "hunger")
             hunger_val = int(effects["hunger"] * hunger_mult)
             game.hunger = min(100, game.hunger + hunger_val)
-            restore_parts.append(f"Голод утолен ({hunger_val} ед.)")
 
         if "thirst" in effects:
             thirst_mult = get_resource_multiplier(game, "thirst")
             thirst_val = int(effects["thirst"] * thirst_mult)
             game.thirst = min(100, game.thirst + thirst_val)
-            restore_parts.append(f"Жажда восстановлена ({thirst_val} ед.)")
-
-        if "hp" in effects:
-            hp_val = effects["hp"]
-            game.hp = min(100, game.hp + hp_val)
-            if hp_val >= 0:
-                restore_parts.append(f"Здоровье восстановлено ({hp_val} ед.)")
-            else:
-                restore_parts.append(f"Получен урон ({abs(hp_val)} ед.)")
 
         if "poison" in effects and effects["poison"]:
-            poison_val = effects["poison"]
+            poison_val = int(effects["poison"])
             game.hp = max(0, game.hp - poison_val)
-            restore_parts.append(f"Отравление ({poison_val} урона)")
+            hp_val -= poison_val
 
         # Проверка негативных эффектов (расстройство желудка, токсины, паразиты)
+        neg_msgs = []
         neg = get_item_negative_effects(item)
         if neg:
             chance = int(neg.get("chance", 0))
             if random.randint(1, 100) <= chance:
                 neg_effects = neg.get("effects", {})
                 if "thirst" in neg_effects:
-                    game.thirst = max(0, game.thirst + neg_effects["thirst"])
+                    neg_thirst = int(neg_effects["thirst"])
+                    game.thirst = max(0, game.thirst + neg_thirst)
+                    thirst_val += neg_thirst
                 if "hp" in neg_effects:
-                    game.hp = max(0, game.hp + neg_effects["hp"])
+                    neg_hp = int(neg_effects["hp"])
+                    game.hp = max(0, game.hp + neg_hp)
+                    hp_val += neg_hp
                 msg = neg.get("log_message") or neg.get("description")
-                restore_parts.append(f"⚠️ {msg}")
+                if msg:
+                    neg_msgs.append(f"⚠️ {msg}")
 
-        if not restore_parts:
-            return None
-
-        result = " ".join(restore_parts)
+        stat_parts = []
+        # Строгий порядок: ❤️ Здоровье, 🍖 Сытость, 💧 Жажда
+        if hp_val != 0:
+            stat_parts.append(f"❤️ {'+' if hp_val > 0 else ''}{hp_val}")
+        if hunger_val != 0:
+            stat_parts.append(f"🍖 {'+' if hunger_val > 0 else ''}{hunger_val}")
+        if thirst_val != 0:
+            stat_parts.append(f"💧 {'+' if thirst_val > 0 else ''}{thirst_val}")
 
         game.inventory[item] -= 1
         if game.inventory[item] <= 0:
             del game.inventory[item]
 
-    if "🍽️" in item:
-        game.inventory["Сланцевая тарелка"] = game.inventory.get("Сланцевая тарелка", 0) + 1
-        game.add_log(f"Использовано: {item}. {result} Ты доел, и тарелка снова свободна.")
-    elif item == "Янтарное зелье":
-        game.inventory["Пузырёк"] = game.inventory.get("Пузырёк", 0) + 1
-        game.add_log(f"Использовано: {item}. {result} Сланцевый пузырёк остался цел и вернулся в рюкзак.")
-    else:
-        game.add_log(f"Использовано: {item}. {result}")
-    return game.get_ui()
+        log_str = f"🍽️ Использовано: {item} " + "  ".join(stat_parts) if stat_parts else f"🍽️ Использовано: {item}"
+        if neg_msgs:
+            log_str += " " + " ".join(neg_msgs)
+
+        if "🍽️" in item:
+            game.inventory["Сланцевая тарелка"] = game.inventory.get("Сланцевая тарелка", 0) + 1
+            log_str += " Ты доел, и тарелка снова свободна."
+        elif item == "Янтарное зелье":
+            game.inventory["Пузырёк"] = game.inventory.get("Пузырёк", 0) + 1
+            log_str += " Сланцевый пузырёк остался цел и вернулся в рюкзак."
+
+        game.add_log(log_str.strip())
+        return game.get_ui()
 
 
 INVENTORY_CANONICAL_STACKS = {
@@ -1241,13 +1263,13 @@ async def handle_inventory_callback(
     elif data.startswith("inspect_item_"):
         item = data.removeprefix("inspect_item_")
         game.push_screen("item_card")
-        text = format_item_card(item)
+        text = format_item_card(item, game)
         kb = get_item_card_actions_kb(item, game)
 
     elif data.startswith("use_preview_"):
         item = data.removeprefix("use_preview_")
         game.push_screen("item_card")
-        text = format_item_card(item)
+        text = format_item_card(item, game)
         kb = get_item_card_actions_kb(item, game)
 
     elif data.startswith("pocket_insert_"):
@@ -1343,7 +1365,7 @@ async def handle_inventory_callback(
             result = use_consumable(item, game)
             if result is not None:
                 if game.inventory.get(item, 0) > 0:
-                    text = format_item_card(item)
+                    text = format_item_card(item, game)
                     kb = get_item_card_actions_kb(item, game)
                     game.nav_stack = list(INVENTORY_CANONICAL_STACKS.get("item_card", ["main", "inventory", "inspect", "item_card"]))
                 else:
@@ -1359,7 +1381,7 @@ async def handle_inventory_callback(
             else:
                 if callback:
                     await callback.answer("Этот предмет нельзя использовать.", show_alert=True)
-                text = format_item_card(item)
+                text = format_item_card(item, game)
                 kb = get_item_card_actions_kb(item, game)
 
     elif data == "equip_bottle_flask":

@@ -320,19 +320,26 @@ def test_stage_14_l1_5_kitten_plea_screen_and_contacts():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def test_stage_15_spare_branch_with_food_consumption():
-    """Этап 15: Пощада с едой списывает ровно 1 шт. низшего ранга ⚪ и ведёт в расщелину l1_6_passage."""
+    """Этап 15: Пощада с едой открывает выбор еды, выбор Сырого мяса отдаёт его и ведёт в l1_6_passage."""
     game = GameState()
     game.inventory["Жареное мясо"] = 1   # Ранг 2 (🟢)
     game.inventory["Сырое мясо"] = 1     # Ранг 1 (⚪)
 
     text, kb = handle_story("l1_5_spare", game, 101)
+    assert "Выбери еду из инвентаря" in text
+    cb_datas = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+    assert "l1_5_feed:Сырое мясо" in cb_datas
+    assert "l1_5_feed:Жареное мясо" in cb_datas
+    assert "l1_5_spare_cancel" in cb_datas
+
+    text_fed, kb_fed = handle_story("l1_5_feed:Сырое мясо", game, 101)
     assert game.is_story_flag_set("spared_wolf")
-    assert "Отдано: Сырое мясо ×1" in text
+    assert "Отдано: Сырое мясо ×1" in text_fed
     assert game.inventory.get("Сырое мясо", 0) == 0
     assert game.inventory.get("Жареное мясо") == 1  # Высший ранг сохранён
 
     # Контакт на расщелину
-    assert kb.inline_keyboard[0][0].callback_data == "l1_6_passage"
+    assert kb_fed.inline_keyboard[0][0].callback_data == "l1_6_passage"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -500,6 +507,7 @@ def test_wolf_torch_equipped_only_and_idempotent():
     karma_compassion = game.narrative_karma.get("compassion", 0)
     assert karma_intervention == 3
     assert karma_compassion == -2
+    assert kb1.inline_keyboard[0][0].callback_data == "l1_1b_1"
 
     # Повторный вызов wolf_torch при load_game (active_story_callback)
     text2, kb2 = handle_story("wolf_torch", game, 101)
@@ -508,6 +516,14 @@ def test_wolf_torch_equipped_only_and_idempotent():
     assert game.narrative_karma.get("intervention", 0) == karma_intervention
     assert game.narrative_karma.get("compassion", 0) == karma_compassion
     assert "Факел" not in game.inventory
-    assert kb2.inline_keyboard[0][0].callback_data == "peek_den"
+    assert kb2.inline_keyboard[0][0].callback_data == "l1_1b_1"
+
+    # Прохождение канонической цепочки L1.1b.1 -> L1.1b.2 -> L1.1b.3 -> peek_den
+    _, kb_b1 = handle_story("l1_1b_1", game, 101)
+    assert kb_b1.inline_keyboard[0][0].callback_data == "l1_1b_2"
+    _, kb_b2 = handle_story("l1_1b_2", game, 101)
+    assert kb_b2.inline_keyboard[0][0].callback_data == "l1_1b_3"
+    _, kb_b3 = handle_story("l1_1b_3", game, 101)
+    assert kb_b3.inline_keyboard[0][0].callback_data == "peek_den"
 
 

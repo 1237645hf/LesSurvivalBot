@@ -163,6 +163,7 @@ class GameState:
     wolf_battle: Optional[Dict[str, Any]] = None
     l2_puzzle_attempt: int = 0
     l2_puzzle_step: int = 1
+    header_message_id: Optional[int] = None
 
     # Имя персонажа (устанавливается при старте игры)
     player_name: str = "Выживший"
@@ -644,6 +645,7 @@ class GameState:
             "l2_puzzle_step": int(getattr(self, "l2_puzzle_step", 1)),
             "active_story_callback": getattr(self, "active_story_callback", None),
             "last_message_id": getattr(self, "last_message_id", None),
+            "header_message_id": getattr(self, "header_message_id", None),
         }
 
 
@@ -733,6 +735,7 @@ class GameState:
         game.torch_research_count = int(data.get("torch_research_count", 0))
         game.wolf_battle = dict(data["wolf_battle"]) if data.get("wolf_battle") else None
         game.active_story_callback = data.get("active_story_callback")
+        game.header_message_id = data.get("header_message_id")
 
         # Авто-исцеление (auto-heal) старых повреждённых сейвов:
         if isinstance(game.story_flags, dict):
@@ -928,7 +931,7 @@ class GameState:
             left_label = f"{left_emoji} Левая рука:"
             left_val = f"⚪ {left_item}"
         else:
-            left_label = "✋ Левая рука:"
+            left_label = "🫲 Левая рука:"
             left_val = "Пусто"
 
         right_item = self.equipment.get("hand_right")
@@ -948,7 +951,7 @@ class GameState:
                     extra = f"\n{' | '.join(notes)}"
             right_val = f"⚪ {right_item}{extra}"
         else:
-            right_label = "✋ Правая рука:"
+            right_label = "🫱 Правая рука:"
             right_val = "Пусто"
 
         slots_order = [
@@ -1283,13 +1286,14 @@ def handle_back_navigation(game: Any, uid: int) -> Tuple[Optional[str], Optional
     game.nav_stack = list(CANONICAL_STACKS.get(target, ["main"]))
 
     if target == "main":
-        if getattr(game, "active_story_callback", None):
+        if getattr(game, "active_story_callback", None) and current != "main":
             text, kb = handle_story(game.active_story_callback, game, uid)
             if text is None:
                 game.active_story_callback = None
                 text = game.get_ui()
                 kb = get_main_kb(game)
         else:
+            game.active_story_callback = None
             text = game.get_ui()
             kb = get_main_kb(game)
     elif target == "inventory":

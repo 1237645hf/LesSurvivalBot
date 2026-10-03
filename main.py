@@ -347,7 +347,12 @@ async def track_message_to_delete(state: FSMContext, message_id: int):
         logging.warning(f"Ошибка сохранения message_id в состояние: {exc}")
 
 
-async def clear_tracked_messages(chat_id: int, state: FSMContext, extra_ids: Optional[List[int]] = None):
+async def clear_tracked_messages(
+    chat_id: int,
+    state: FSMContext,
+    extra_ids: Optional[List[int]] = None,
+    protected_ids: Optional[List[int]] = None,
+):
     """Пакетно удалить сохраненные в состоянии сообщения через delete_messages (1 сетевой запрос).
 
     После удаления список сохранённых ID в состоянии очищается.
@@ -363,6 +368,9 @@ async def clear_tracked_messages(chat_id: int, state: FSMContext, extra_ids: Opt
         for mid in extra_ids:
             if isinstance(mid, int) and mid not in ids_to_delete:
                 ids_to_delete.append(mid)
+
+    if protected_ids:
+        ids_to_delete = [mid for mid in ids_to_delete if mid not in protected_ids]
 
     if ids_to_delete:
         await safe_delete_messages(chat_id=chat_id, message_ids=ids_to_delete)
@@ -531,7 +539,11 @@ async def cmd_start(message: Message, state: Optional[FSMContext] = None):
     if game and getattr(game, "last_message_id", None) and game.last_message_id not in extra_ids:
         extra_ids.append(game.last_message_id)
 
-    await clear_tracked_messages(chat_id=chat_id, state=state, extra_ids=extra_ids)
+    protected_ids = []
+    if game and getattr(game, "header_message_id", None):
+        protected_ids.append(game.header_message_id)
+
+    await clear_tracked_messages(chat_id=chat_id, state=state, extra_ids=extra_ids, protected_ids=protected_ids)
 
     loaded = load_game(uid)
     if loaded and getattr(loaded, "is_name_set", False):
@@ -541,12 +553,26 @@ async def cmd_start(message: Message, state: Optional[FSMContext] = None):
     else:
         text = GUIDE_TEXT
         kb = get_start_new_game_kb()
-    # Нижняя Reply-клавиатура полностью отключена — сбрасываем кэш у клиента
-    try:
-        rm_msg = await message.answer("🌲 LesSurvivalBot", reply_markup=ReplyKeyboardRemove())
-        await safe_delete_message(chat_id, rm_msg.message_id)
-    except Exception:
-        pass
+
+    # Нижняя Reply-клавиатура полностью отключена — сбрасываем кэш у клиента.
+    # Самое первое системное сообщение "🌲 LesSurvivalBot" всегда остаётся нетронутым в самом верху чата!
+    header_id = getattr(game, "header_message_id", None) if game else None
+    if not header_id and loaded and getattr(loaded, "header_message_id", None):
+        header_id = loaded.header_message_id
+        if game:
+            game.header_message_id = header_id
+
+    if not header_id:
+        try:
+            rm_msg = await message.answer("🌲 LesSurvivalBot", reply_markup=ReplyKeyboardRemove())
+            if game:
+                game.header_message_id = rm_msg.message_id
+                save_game(uid, game)
+            elif loaded:
+                loaded.header_message_id = rm_msg.message_id
+                save_game(uid, loaded)
+        except Exception:
+            pass
     await update_or_send_message(chat_id, uid, text, kb)
 
 
@@ -843,7 +869,7 @@ async def process_callback(callback: types.CallbackQuery):
         elif is_explore_callback(data):
             text, kb = await handle_explore_callback(data, game, uid, callback)
 
-        elif data == "back":
+        elif data in ("back", "back_to_inv", "inv_back"):
             text, kb = handle_back_navigation(game, uid)
 
         elif is_story_callback(data):

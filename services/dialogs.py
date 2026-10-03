@@ -706,6 +706,8 @@ def handle_session_callback(
             return text, kb
 
         new_game = Game()
+        if existing and getattr(existing, "header_message_id", None):
+            new_game.header_message_id = existing.header_message_id
         if games_dict is not None:
             games_dict[uid] = new_game
         new_game.story_state = "WAITING_FOR_CHARACTER_NAME"
@@ -737,6 +739,8 @@ def handle_session_callback(
 
     elif data == "start_new_game_confirmed":
         new_game = Game()
+        if existing and getattr(existing, "header_message_id", None):
+            new_game.header_message_id = existing.header_message_id
         if games_dict is not None:
             games_dict[uid] = new_game
         new_game.story_state = "WAITING_FOR_CHARACTER_NAME"

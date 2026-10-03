@@ -991,7 +991,7 @@ def test_12_unified_emojis_torch_and_navigation():
 
     # 1. Реестр эмодзи
     assert get_item_emoji("Ветка") == "🪵"
-    assert get_item_emoji("Факел") == "🔦"
+    assert get_item_emoji("Факел") == "🕯️"
     assert get_item_emoji("Кора") == "🍂"
     assert get_item_emoji("Кусок коры") == "🍂"
     assert get_item_emoji("Спички") == "📦"
@@ -1022,7 +1022,7 @@ def test_12_unified_emojis_torch_and_navigation():
     game = GameState()
     game.equipment["hand_left"] = "Факел"
     char_text = game.get_character_text()
-    assert "🔦 Левая рука:\n⚪ Факел\n⚡ AP: +1" in char_text
+    assert "🕯️ Левая рука:\n⚪ Факел\n⚡ AP: +1" in char_text
     assert "⚡ AP +1" in char_text or "• ⚡ AP: +1" in char_text
 
     # 4. Локационные эмодзи

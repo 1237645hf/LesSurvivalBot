@@ -714,12 +714,17 @@ async def handle_campfire_callback(
         return text, kb
 
     elif data in ("campfire_screen", "menu_campfire"):
+        game.story_state = None
+        game.story_flags.pop("cook_recipe_id", None)
+        game.story_flags.pop("fuel_item", None)
         game.push_screen("campfire")
         text = get_campfire_text(game)
         kb = get_campfire_kb(game)
         return text, kb
 
     elif data == "campfire_add_fuel_menu":
+        game.story_state = None
+        game.story_flags.pop("fuel_item", None)
         game.push_screen("campfire_fuel")
         inv = getattr(game, "inventory", {}) or {}
         sticks = inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)
@@ -982,6 +987,8 @@ async def handle_campfire_callback(
             return text, kb
 
     elif data == "campfire_recipes":
+        game.story_state = None
+        game.story_flags.pop("cook_recipe_id", None)
         game.push_screen("campfire_recipes")
         available_count = sum(1 for r_id in COOKING_RECIPES if can_cook(game, r_id))
         if available_count > 0:
