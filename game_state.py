@@ -1273,7 +1273,8 @@ def handle_back_navigation(game: Any, uid: int) -> Tuple[Optional[str], Optional
     from modules.cooking import get_campfire_text, COOKING_RECIPES, can_cook
     from story.location_stories import handle_story, handle_l1_wolf_lair
 
-    game.story_state = None
+    if getattr(game, "story_state", None) not in ("WAITING_FOR_CHARACTER_NAME", "WAITING_FOR_PET_NAME"):
+        game.story_state = None
     if hasattr(game, "story_flags") and isinstance(game.story_flags, dict):
         game.story_flags.pop("drop_item_name", None)
         game.story_flags.pop("fuel_item", None)
@@ -1286,16 +1287,11 @@ def handle_back_navigation(game: Any, uid: int) -> Tuple[Optional[str], Optional
     game.nav_stack = list(CANONICAL_STACKS.get(target, ["main"]))
 
     if target == "main":
-        if getattr(game, "active_story_callback", None) and current != "main":
-            text, kb = handle_story(game.active_story_callback, game, uid)
-            if text is None:
-                game.active_story_callback = None
-                text = game.get_ui()
-                kb = get_main_kb(game)
-        else:
-            game.active_story_callback = None
-            text = game.get_ui()
-            kb = get_main_kb(game)
+        game.active_story_callback = None
+        if getattr(game, "story_state", None) not in ("WAITING_FOR_CHARACTER_NAME", "WAITING_FOR_PET_NAME"):
+            game.story_state = None
+        text = game.get_ui()
+        kb = get_main_kb(game)
     elif target == "inventory":
         text = game.get_inventory_text()
         kb = inventory_inline_kb
