@@ -322,6 +322,13 @@ def get_craft_menu_text(game) -> str:
             continue
         if name == "Костёр" and has_campfire(game):
             continue
+        if name == "Зарядить фонарь":
+            has_lantern = (
+                game.equipment.get("hand_left") == "Старый фонарь"
+                or game.inventory.get("Старый фонарь", 0) > 0
+            )
+            if not has_lantern:
+                continue
         has_any = True
         icon = CRAFT_ICONS.get(name, "📦")
         ingredients = CRAFT_RECIPES[name]
@@ -359,6 +366,13 @@ def get_craft_menu_kb(game):
             continue
         if name == "Костёр" and has_campfire(game):
             continue
+        if name == "Зарядить фонарь":
+            has_lantern = (
+                game.equipment.get("hand_left") == "Старый фонарь"
+                or game.inventory.get("Старый фонарь", 0) > 0
+            )
+            if not has_lantern:
+                continue
         icon = CRAFT_ICONS.get(name, "📦")
         mark = craft_mark(game, name)
         keyboard.append([

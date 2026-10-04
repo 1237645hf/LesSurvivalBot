@@ -3851,6 +3851,24 @@ def handle_location_5_slug_pit(data, game, uid):
         game.set_story_flag("lantern_taken", False)
         game.story_state = None
 
+        has_lantern = (
+            game.equipment.get("hand_left") == "Старый фонарь"
+            or game.inventory.get("Старый фонарь", 0) > 0
+        )
+        crafts_to_unlock = ["Пузырёк", "Янтарное зелье", "Приманка для слизней"]
+        if has_lantern:
+            crafts_to_unlock.append("Зарядить фонарь")
+        for r in crafts_to_unlock:
+            if hasattr(game, "unlock_craft"):
+                game.unlock_craft(r)
+            elif r not in getattr(game, "unlocked_crafts", []):
+                game.unlocked_crafts.append(r)
+
+        unlocked = getattr(game, "unlocked_locations", []) or []
+        if "Мохнатая пещера" not in unlocked and "Мохнатая Пещера" not in unlocked:
+            unlocked.append("Мохнатая пещера")
+            game.unlocked_locations = unlocked
+
         text = (
             "Ты смотришь на пульсирующий кокон, на ручейки слизи и холодные бирюзовые отсветы грибов. "
             "Трогать это место больше не хочется.\n\n"
@@ -3937,8 +3955,9 @@ def handle_location_5_slug_pit(data, game, uid):
             "Ты бросаешься к кокону!\n\n"
             "Янтарная оболочка на ощупь тёплая и упругая, как сырая кожа. Ты впиваешься в неё пальцами — слизь натягивается, но не рвётся.\n\n"
             "Собрав силы, ты с размаху бьёшь локтем. Плёнка с влажным хрустом лопается!\n\n"
-            "Горячая жижа выплёскивается наружу, обжигая ладони немеющим жаром. В карманах сейчас нет янтарного ядра, "
-            "чтобы унять ожог, и ты терпишь боль. Сжав зубы, ты выдёргиваешь металлический фонарь за цепочку.\n\n"
+            "Горячая жижа выплёскивается наружу, обжигая ладони немеющим жаром. "
+            "Смола из карманов сейчас не поможет — в спешке и суматохе некогда вскрывать ядра, ладони саднит, но ты терпишь боль. "
+            "Сжав зубы, ты выдёргиваешь металлический фонарь за цепочку.\n\n"
             "Корпус вымазан в смоле, но стекло цело. Внутри сухо, резервуар полон чистого масла на 20 зажжений — если жечь бережно, "
             "света хватит надолго.\n\n"
             "Прижав добычу к груди, ты карабкаешься по скользкому склону прочь со дна.\n\n"
@@ -4067,7 +4086,14 @@ def handle_location_5_slug_pit(data, game, uid):
     elif data == "l5_5_left":
         game.set_story_flag("l5_completed", True)
         game.story_state = None
-        for r in ("Зарядить фонарь", "Пузырёк", "Янтарное зелье", "Приманка для слизней"):
+        has_lantern = (
+            game.equipment.get("hand_left") == "Старый фонарь"
+            or game.inventory.get("Старый фонарь", 0) > 0
+        )
+        crafts_to_unlock = ["Пузырёк", "Янтарное зелье", "Приманка для слизней"]
+        if has_lantern:
+            crafts_to_unlock.append("Зарядить фонарь")
+        for r in crafts_to_unlock:
             if hasattr(game, "unlock_craft"):
                 game.unlock_craft(r)
             elif r not in getattr(game, "unlocked_crafts", []):

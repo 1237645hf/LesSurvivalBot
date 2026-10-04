@@ -89,6 +89,45 @@ def test_location_5_story_force_branch():
     assert game.inventory.get("Старый фонарь", 0) == 1
     assert game.lantern_durability == 20
     assert game.story_flags.get("lantern_taken") is True
+    assert "Смола из карманов сейчас не поможет" in text
+    assert "в спешке и суматохе некогда вскрывать ядра" in text
+
+
+def test_location_5_story_leave_without_lantern():
+    """Проверка ухода без фонаря: крафт 'Зарядить фонарь' не разблокируется и не виден в меню."""
+    from crafts import get_craft_menu_text, get_craft_menu_kb
+
+    # 1. Уход через l5_5_left (после l5_3c_leave)
+    game = GameState()
+    game.current_location = "Яр Слизней"
+    text, kb = handle_location_5_slug_pit("l5_5_left", game, 101)
+    assert game.story_flags.get("l5_completed") is True
+    assert "Зарядить фонарь" not in game.unlocked_crafts
+    assert "Пузырёк" in game.unlocked_crafts
+    assert "Янтарное зелье" in game.unlocked_crafts
+    assert "Приманка для слизней" in game.unlocked_crafts
+    assert "Мохнатая пещера" in game.unlocked_locations
+
+    craft_text = get_craft_menu_text(game)
+    assert "Зарядить фонарь" not in craft_text
+    craft_kb = get_craft_menu_kb(game)
+    assert not any("Зарядить фонарь" in b.text for r in craft_kb.inline_keyboard for b in r)
+
+    # 2. Ранний уход через l5_leave_early
+    game2 = GameState()
+    game2.current_location = "Яр Слизней"
+    text2, kb2 = handle_location_5_slug_pit("l5_leave_early", game2, 101)
+    assert game2.story_flags.get("l5_completed") is True
+    assert "Зарядить фонарь" not in game2.unlocked_crafts
+    assert "Пузырёк" in game2.unlocked_crafts
+    assert "Янтарное зелье" in game2.unlocked_crafts
+    assert "Приманка для слизней" in game2.unlocked_crafts
+    assert "Мохнатая пещера" in game2.unlocked_locations
+
+    # 3. Даже если "Зарядить фонарь" принудительно добавить в unlocked_crafts, без фонаря он скрыт в меню
+    game2.unlocked_crafts.append("Зарядить фонарь")
+    assert "Зарядить фонарь" not in get_craft_menu_text(game2)
+    assert not any("Зарядить фонарь" in b.text for r in get_craft_menu_kb(game2).inline_keyboard for b in r)
 
 
 def test_lantern_equip_and_durability_and_charging():
