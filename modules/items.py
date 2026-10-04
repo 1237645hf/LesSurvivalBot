@@ -1445,7 +1445,7 @@ async def handle_inventory_callback(
         if game.equipment.get("flask") and getattr(game, "flask_water", 0) > 0:
             game.flask_water -= 1
             game.thirst = min(100, game.thirst + 30)
-            game.add_log(f"💧 Ты сделал глоток воды (+15 жажды). Во фляге: {game.flask_water}/20.")
+            game.add_log("💧 Ты сделал глоток 💧 +15")
             if game.flask_water <= 0:
                 container_name = game.equipment.get("flask") or "Бутылка воды"
                 if "Армейская" in container_name:
@@ -1475,7 +1475,7 @@ async def handle_inventory_callback(
             if water_left > 0:
                 game.flask_water = water_left - 1
                 game.thirst = min(100, game.thirst + 15)
-                game.add_log(f"💧 Ты сделал глоток воды из бутылки (+15 жажды). Во фляге: {game.flask_water}/20.")
+                game.add_log("💧 Ты сделал глоток 💧 +15")
                 if game.flask_water <= 0:
                     container_name = game.equipment.get("flask") or "Бутылка воды"
                     if "Армейская" in container_name:

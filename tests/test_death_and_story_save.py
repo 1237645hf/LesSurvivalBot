@@ -141,11 +141,34 @@ def test_death_text_and_kb_format():
     """Тест 8: Форматирование текста смерти и клавиатуры рестарта."""
     game = GameState()
     game.character_name = "Следопыт"
+    game.player_name = "Следопыт"
     game.day = 7
-    death_text = get_death_text(game, "🐺 Волк оказался быстрее.")
-    assert "💀 **Ты погиб.**" in death_text
+    game.equipment["pet"] = "Барсик"
+    game.kills_count = 3
+    game.spared_souls = 2
+    game.campfires_lit = 5
+    game.food_cooked = 8
+    game.karma = {"good": 4, "bad": 1}
+    game.narrative_karma = {"compassion": 6, "pragmatism": 2}
+    game.unlocked_locations = ["Волчье логово"]
+
+    death_text = get_death_text(game, "🐺 Волк оказался быстрее.", "Волчье логово")
+    assert "💀 *ВЫ ПОГИБЛИ* 💀" in death_text
     assert "🐺 Волк оказался быстрее." in death_text
-    assert "Выживание Следопыт подошло к концу на 7-й день." in death_text
+    assert "📊 *СЛЕД В ЭТОМ ЛЕСУ:*" in death_text
+    assert "• Имя: Следопыт" in death_text
+    assert "• Прожито дней: 7" in death_text
+    assert "• Спутник: Барсик" in death_text
+    assert "• Открыто локаций: 1" in death_text
+    assert "⚔️ *ПОСТУПКИ:*" in death_text
+    assert "• Повержено врагов: 3" in death_text
+    assert "• Спасено душ: 2" in death_text
+    assert "🔥 *ВЫЖИВАНИЕ:*" in death_text
+    assert "• Разведено костров: 5" in death_text
+    assert "• Приготовлено пищи: 8" in death_text
+    assert "⚖️ *ЧЕРТЫ ДУШИ:*" in death_text
+    assert "• Добро: 4 | Зло: 1" in death_text
+    assert "• Сострадание: 6 | Прагматизм: 2" in death_text
 
     kb = get_death_kb()
     assert kb.inline_keyboard[0][0].text == "🔄 Начать заново"
@@ -331,5 +354,84 @@ def test_boar_battle_no_wolf_desync_on_wolf_battle_screen():
     button_cbs = [btn.callback_data for row in kb.inline_keyboard for btn in row]
     assert any("boar_battle" in cb for cb in button_cbs)
     assert not any("wolf_battle" in cb for cb in button_cbs)
+
+
+def test_survival_counters_and_mechanics():
+    """Тест 15: Счётчики выживания (победы, пощады, костры, кулинария), их сериализация и логика."""
+    from modules.cooking import cook_portions
+
+    game = GameState()
+    assert game.kills_count == 0
+    assert game.spared_souls == 0
+    assert game.campfires_lit == 0
+    assert game.food_cooked == 0
+
+    # 1. Розжиг костра
+    game.inventory["Спички"] = 5
+    game.ap = 5
+    res = game.light_campfire()
+    assert res["success"] is True
+    assert game.campfires_lit == 1
+
+    # Печь
+    game.ap = 5
+    ok, _ = game.rekindle_stove()
+    assert ok is True
+    assert game.campfires_lit == 2
+
+    # 2. Приготовление пищи
+    game.inventory["Сырое мясо"] = 4
+    game.inventory["Сланцевая тарелка"] = 2
+    cooked, msg = cook_portions(game, "cook_roast_meat", 2)
+    assert cooked == 2
+    assert game.food_cooked == 2
+
+    # 3. Сериализация и десериализация
+    game.kills_count = 5
+    game.spared_souls = 3
+    doc = game.to_document()
+    assert doc["kills_count"] == 5
+    assert doc["spared_souls"] == 3
+    assert doc["campfires_lit"] == 2
+    assert doc["food_cooked"] == 2
+
+    restored = GameState.from_document(doc)
+    assert restored.kills_count == 5
+    assert restored.spared_souls == 3
+    assert restored.campfires_lit == 2
+    assert restored.food_cooked == 2
+
+    # 4. Проверка инкрементов в сюжетных развилках
+    # Пощада волка (через еду)
+    game_wolf = GameState()
+    handle_story("l1_5_feed:Сухари", game_wolf, 101)
+    assert game_wolf.spared_souls == 1
+
+    # Пощада волка (без еды)
+    game_wolf_empty = GameState()
+    game_wolf_empty.inventory.clear()
+    handle_story("l1_5_spare", game_wolf_empty, 101)
+    assert game_wolf_empty.spared_souls == 1
+
+    # Добивание волка
+    game_wolf_kill = GameState()
+    handle_story("l1_5_kill", game_wolf_kill, 101)
+    assert game_wolf_kill.kills_count == 1
+
+    # Победа над Секачом
+    game_boar = GameState()
+    handle_story("l3_11a_win", game_boar, 101)
+    assert game_boar.kills_count == 1
+
+    # Обход Секача
+    game_boar_cliff = GameState()
+    handle_story("l3_11b_cliff", game_boar_cliff, 101)
+    assert game_boar_cliff.spared_souls == 1
+
+    # Освобождение оленя
+    game_deer = GameState()
+    handle_story("l4_4_freed", game_deer, 101)
+    assert game_deer.spared_souls == 1
+
 
 

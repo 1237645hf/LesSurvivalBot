@@ -402,7 +402,7 @@ async def handle_explore_callback(
         if game.hp <= 0:
             game.hp = 0
             game.active_story_callback = None
-            text = get_death_text(game, "💀 Ты умер от голода и истощения.")
+            text = get_death_text(game, "Смертельное истощение от голода и жажды в ходе исследования.", getattr(game, "current_location", None))
             kb = get_death_kb()
             return text, kb
 

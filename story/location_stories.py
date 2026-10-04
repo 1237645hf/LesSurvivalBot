@@ -280,6 +280,7 @@ def handle_story(data: str, game, uid: int):
             game.set_story_flag("l1_completed")
             game.story_flags["l1_completed_day"] = getattr(game, "day", 1)
             game.adjust_narrative_karma("compassion", 2)
+            game.spared_souls = getattr(game, "spared_souls", 0) + 1
         game.story_state = "WAITING_FOR_PET_NAME"
         text = (
             "Ты держишь котёнка в ладонях. Хочется его погладить и как-то назвать…\n"
@@ -872,6 +873,8 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
         ]
         consumables.sort(key=lambda it: (get_item_rank(it), it))
         if not consumables:
+            if not game.is_story_flag_set("spared_wolf"):
+                game.spared_souls = getattr(game, "spared_souls", 0) + 1
             game.set_story_flag("spared_wolf")
             game.adjust_narrative_karma("compassion", 5)
             text = (
@@ -906,6 +909,8 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
             game.inventory[food_item] -= 1
             if game.inventory[food_item] <= 0:
                 del game.inventory[food_item]
+        if not game.is_story_flag_set("spared_wolf"):
+            game.spared_souls = getattr(game, "spared_souls", 0) + 1
         game.story_flags["spared_wolf_food"] = food_item
         game.set_story_flag("spared_wolf")
         game.adjust_narrative_karma("compassion", 5)
@@ -925,6 +930,7 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
         if not game.is_story_flag_set("killed_wolf"):
             game.set_story_flag("killed_wolf")
             game.adjust_narrative_karma("pragmatism", 5)
+            game.kills_count = getattr(game, "kills_count", 0) + 1
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="➡️ Шагнуть в расщелину", callback_data="l1_6_passage")]
         ])
@@ -2034,6 +2040,8 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
     elif data == "l3_11a_win":
         game.wolf_battle = None
         game.story_state = "l3_11a"
+        if not game.is_story_flag_set("boar_killed"):
+            game.kills_count = getattr(game, "kills_count", 0) + 1
         game.set_story_flag("boar_killed", True)
         game.adjust_narrative_karma("compassion", -1)
         game.adjust_narrative_karma("pragmatism", 3)
@@ -2066,6 +2074,8 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
 
     elif data == "l3_11b_cliff":
         game.story_state = "l3_11b"
+        if not game.is_story_flag_set("boar_bypassed"):
+            game.spared_souls = getattr(game, "spared_souls", 0) + 1
         game.set_story_flag("boar_bypassed", True)
         game.adjust_narrative_karma("observation", 2)
         game.adjust_narrative_karma("pragmatism", 2)
@@ -2573,6 +2583,8 @@ def handle_location_4_hunters_glade(data, game, uid):
     # L4.4 — Освобождение
     elif data == "l4_4_freed":
         game.story_state = "l4_4_freed"
+        if not game.is_story_flag_set("deer_freed"):
+            game.spared_souls = getattr(game, "spared_souls", 0) + 1
         game.set_story_flag("deer_freed", True)
         game.set_story_flag("helped_deer", True)
         game.adjust_narrative_karma("compassion", 3)
@@ -3269,6 +3281,8 @@ def handle_location_4_hunters_glade(data, game, uid):
 
         if b.get("grey_hp", 0) <= 0 and b.get("brown_hp", 0) <= 0 and b.get("leader_hp", 0) <= 0:
             b["last_log"] = "🎉 Все волки стаи повержены! Ты победил в жестокой схватке!"
+            if not game.is_story_flag_set("l4_wolves_defeated"):
+                game.kills_count = getattr(game, "kills_count", 0) + 3
             game.set_story_flag("l4_wolves_defeated", True)
 
         return _render_wolf_pack_battle(game)
@@ -3597,17 +3611,11 @@ def _render_slug_pack_battle(game):
         return text, kb
 
     if game.hp <= 0 or b.get("is_defeat"):
-        text = (
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            "⚔️ СКОПЛЕНИЕ СЛИЗНЕЙ\n"
-            f"{status_bar}\n\n"
-            "💀 ТЫ ПОГИБ!\n\n"
-            "Слизни погребли тебя под тоннами едкой янтарной жижи.\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        )
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💀 Начать заново", callback_data="restart_game")]
-        ])
+        game.hp = 0
+        game.active_story_callback = None
+        game.slug_pack_battle = None
+        text = get_death_text(game, "Слизни погребли тебя под тоннами едкой янтарной жижи.", "Яр слизней")
+        kb = get_death_kb()
         return text, kb
 
     slime_lines = []
@@ -4033,6 +4041,11 @@ def handle_location_5_slug_pit(data, game, uid):
             elif r not in getattr(game, "unlocked_crafts", []):
                 game.unlocked_crafts.append(r)
 
+        unlocked = getattr(game, "unlocked_locations", []) or []
+        if "Мохнатая пещера" not in unlocked and "Мохнатая Пещера" not in unlocked:
+            unlocked.append("Мохнатая пещера")
+            game.unlocked_locations = unlocked
+
         has_pet = bool(game.equipment.get("pet"))
         pet_note = (
             "\n\nКотёнок с любопытством тычется мокрым носом в прохладное стекло фонаря и забавно фыркает на своё отражение."
@@ -4059,6 +4072,11 @@ def handle_location_5_slug_pit(data, game, uid):
                 game.unlock_craft(r)
             elif r not in getattr(game, "unlocked_crafts", []):
                 game.unlocked_crafts.append(r)
+
+        unlocked = getattr(game, "unlocked_locations", []) or []
+        if "Мохнатая пещера" not in unlocked and "Мохнатая Пещера" not in unlocked:
+            unlocked.append("Мохнатая пещера")
+            game.unlocked_locations = unlocked
 
         text = (
             "Ты выбираешься из яра и долго стоишь у кромки обрыва, глядя в глубину.\n\n"
@@ -4124,6 +4142,9 @@ def handle_location_5_slug_pit(data, game, uid):
         alive_slimes = [s for s in slimes if s.get("alive")]
         if not alive_slimes:
             b["is_victory"] = True
+            if not game.is_story_flag_set("l5_slug_pack_defeated"):
+                game.kills_count = getattr(game, "kills_count", 0) + 1
+            game.set_story_flag("l5_slug_pack_defeated", True)
             cores_found = 0
             loot_log = []
             for s in slimes:
@@ -4166,6 +4187,9 @@ def handle_location_5_slug_pit(data, game, uid):
         alive_slimes = [s for s in slimes if s.get("alive")]
         if not alive_slimes:
             b["is_victory"] = True
+            if not game.is_story_flag_set("l5_slug_pack_defeated"):
+                game.kills_count = getattr(game, "kills_count", 0) + 1
+            game.set_story_flag("l5_slug_pack_defeated", True)
             game.slug_pack_battle = b
             return _render_slug_pack_battle(game)
 
@@ -4257,63 +4281,226 @@ def handle_location_5_slug_pit(data, game, uid):
 # ──────────────────────────────────────────────────────────────────────────────
 
 def handle_location_6_furry_cave(data, game, uid):
-    """Обработать события на локации 'Мохнатая Пещера'."""
+    """Обработать события на локации 'Мохнатая Пещера' (L6)."""
     text = None
     kb = None
-    
+
     if data in ("furry_cave_start", "location_enter_6"):
+        game.story_state = "furry_cave_start"
         text = (
             "Ты входишь в Мохнатую Пещеру. Воздух здесь тёплый, пахнет дымом, мехом\n"
             "и древними кострами. Стены покрыты слоями налёта, а пол — мягким мхом.\n\n"
             "Что будешь делать?"
         )
-        game.story_state = "furry_encounter"
-        kb = get_main_kb(game)
-    
-    elif data == "furry_examine":
-        game.adjust_narrative_karma("observation", 2)
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 Осмотреть пещеру", callback_data="furry_examine")],
+            [InlineKeyboardButton(text="🔥 Подойти к очагу", callback_data="furry_warm")],
+            [InlineKeyboardButton(text="💤 Сразу лечь отдохнуть", callback_data="furry_sleep")],
+            [InlineKeyboardButton(text="🚶 Уйти", callback_data="furry_leave")],
+        ])
+
+    elif data == "furry_leave":
         text = (
-            "Ты осматриваешь пещеру — меховые шкуры лежат тут и там, словно\n"
-            "кто-то только что ушёл на охоту. В углу — старый каменный очаг,\n"
-            "ещё тлеющий углём.\n\n"
-            "Мохнатая Пещера — убежище для тех, кто ищет тепла."
+            "Ты стоишь ещё мгновение на пороге, вдыхая тёплый воздух.\n"
+            "Потом разворачиваешься и выходишь.\n"
+            "Снаружи снова сыро и холодно."
         )
-        game.story_state = "furry_exploring"
+        game.story_state = None
         kb = get_main_kb(game)
-    
+
+    elif data == "furry_examine":
+        game.adjust_narrative_karma("observation", 1)
+        game.story_state = "furry_examine"
+        text = (
+            "Ты медленно обходишь пещеру.\n"
+            "Шкуры на стенах разной свежести. В дальнем углу, под нависшим камнем,\n"
+            "лежит небольшой свёрток из той же шкуры. Он аккуратно перевязан тонкой бечёвкой.\n"
+            "Рядом — несколько деревянных игл и обрезки меха.\n\n"
+            "Кто-то здесь работал недавно."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📦 Развернуть свёрток", callback_data="furry_bundle")],
+            [InlineKeyboardButton(text="✋ Не трогать свёрток", callback_data="furry_bundle_leave")],
+            [InlineKeyboardButton(text="🔥 Подойти к очагу", callback_data="furry_warm")],
+            [InlineKeyboardButton(text="↩️ Назад", callback_data="furry_cave_start")],
+        ])
+
+    elif data == "furry_bundle":
+        game.story_state = "furry_bundle"
+        text = (
+            "Ты развязываешь бечёвку.\n"
+            "Внутри — три хороших куска выделанного меха и короткая надпись,\n"
+            "нацарапанная углем на внутренней стороне шкуры:\n\n"
+            "«Бери, если нужно.\n"
+            "Оставь, если сможешь.»"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🎒 Забрать весь мех (+3)", callback_data="furry_take_all")],
+            [InlineKeyboardButton(text="✂️ Взять часть (+2)", callback_data="furry_take_part")],
+            [InlineKeyboardButton(text="🎁 Положить подарок взамен", callback_data="furry_leave_gift")],
+            [InlineKeyboardButton(text="✋ Оставить всё как есть", callback_data="furry_bundle_leave")],
+        ])
+
+    elif data == "furry_take_all":
+        game.adjust_narrative_karma("pragmatism", 2)
+        if not game.is_story_flag_set("furry_bundle_taken") and not game.is_story_flag_set("furry_bundle_part_taken"):
+            game.inventory["Мех"] = game.inventory.get("Мех", 0) + 3
+            game.set_story_flag("furry_bundle_taken")
+            text = (
+                "Ты убираешь мех в рюкзак. Свёрток остаётся пустым.\n\n"
+                "──────────\n"
+                "Получено: Мех ×3"
+            )
+        else:
+            text = "Свёрток уже пуст."
+        game.story_state = "furry_after_bundle"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔥 Подойти к очагу", callback_data="furry_warm")],
+            [InlineKeyboardButton(text="💤 Лечь отдохнуть", callback_data="furry_sleep")],
+        ])
+
+    elif data == "furry_take_part":
+        game.adjust_narrative_karma("compassion", 1)
+        if not game.is_story_flag_set("furry_bundle_taken") and not game.is_story_flag_set("furry_bundle_part_taken"):
+            game.inventory["Мех"] = game.inventory.get("Мех", 0) + 2
+            game.set_story_flag("furry_bundle_part_taken")
+            text = (
+                "Ты берёшь два куска, один оставляешь.\n"
+                "Аккуратно заворачиваешь свёрток обратно.\n\n"
+                "──────────\n"
+                "Получено: Мех ×2"
+            )
+        else:
+            text = "Ты уже взял свою долю."
+        game.story_state = "furry_after_bundle"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔥 Подойти к очагу", callback_data="furry_warm")],
+            [InlineKeyboardButton(text="💤 Лечь отдохнуть", callback_data="furry_sleep")],
+        ])
+
+    elif data == "furry_leave_gift":
+        game.adjust_narrative_karma("compassion", 2)
+        game.set_story_flag("left_something_in_bundle")
+        gift_name = None
+        for item in ["Жареное мясо", "Мясо", "Сушёное мясо", "Ягоды", "Палка", "Древесина"]:
+            if game.inventory.get(item, 0) > 0:
+                game.inventory[item] -= 1
+                if game.inventory[item] == 0:
+                    del game.inventory[item]
+                gift_name = item
+                break
+        gift_note = f"\n\nТы оставляешь {gift_name} внутри свёртка." if gift_name else ""
+        text = (
+            "Ты решаешь не брать мех, но оставить что-то взамен.\n"
+            f"Ты кладёшь свой дар внутрь, заворачиваешь свёрток и возвращаешь его на место.{gift_note}"
+        )
+        game.story_state = "furry_after_bundle"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔥 Подойти к очагу", callback_data="furry_warm")],
+            [InlineKeyboardButton(text="💤 Лечь отдохнуть", callback_data="furry_sleep")],
+        ])
+
+    elif data == "furry_bundle_leave":
+        text = "Ты оставляешь всё как нашёл и отходишь от свёртка."
+        game.story_state = "furry_after_bundle"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔥 Подойти к очагу", callback_data="furry_warm")],
+            [InlineKeyboardButton(text="💤 Лечь отдохнуть", callback_data="furry_sleep")],
+        ])
+
     elif data == "furry_warm":
         game.adjust_narrative_karma("pragmatism", 1)
-        game.adjust_narrative_karma("intervention", 2)
-        text = (
-            "Ты раздуваешь огонь, и пещера наполняется уютом. Меховые шкуры\n"
-            "обволакивают тебя, как мягкое одеяло. Жажда отступает, тело согревается.\n\n"
-            "Тепло — редкий гость в этом лесу."
-        )
         game.story_state = "furry_warmed"
-        kb = get_main_kb(game)
-    
+        text = (
+            "Ты подходишь к тлеющим уголькам.\n"
+            "Подбрасываешь немного сухого мха. Пламя неохотно, но поднимается.\n"
+            "Пещеру наполняет сухое, ровное тепло.\n"
+            "Огонь делает пространство меньше и уютнее."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔥 Посидеть у огня", callback_data="furry_fire_rest")],
+            [InlineKeyboardButton(text="💤 Лечь на мох", callback_data="furry_sleep")],
+            [InlineKeyboardButton(text="🚶 Выйти из пещеры", callback_data="furry_end")],
+        ])
+
+    elif data == "furry_fire_rest":
+        game.adjust_narrative_karma("observation", 1)
+        if hasattr(game, "heal"):
+            game.heal(10)
+        else:
+            game.hp = min(getattr(game, "max_hp", 100), game.hp + 10)
+        text = (
+            "Ты садишься ближе к теплу. Некоторое время просто смотришь на огонь\n"
+            "и слушаешь, как он тихо потрескивает.\n"
+            "Усталость немного отпускает.\n\n"
+            "──────────\n"
+            "+10 ХП"
+        )
+        game.story_state = "furry_fire_rested"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💤 Лечь на мох", callback_data="furry_sleep")],
+            [InlineKeyboardButton(text="🚶 Выйти из пещеры", callback_data="furry_end")],
+        ])
+
     elif data == "furry_sleep":
-        game.adjust_narrative_karma("compassion", 2)
+        pet_text = ""
+        if game.is_story_flag_set("has_pet"):
+            pet_name = game.equipment.get("pet") or "Котёнок"
+            pet_text = (
+                f"\n\n{pet_name} выбирается из-под одежды, топчется кругами на твоей груди\n"
+                "и устраивается тёплым клубком. Он мурлычет совсем тихо, почти неслышно.\n"
+            )
+        text = (
+            "Ты ложишься на густой мох. Он пружинит под спиной.\n"
+            f"В пещере тепло и почти тихо.{pet_text}\n"
+            "Ты закрываешь глаза...\n\n"
+            "Ты просыпаешься резко от тихого, настороженного звука!\n"
+            "У выхода из пещеры мелькает чья-то спина. Тёмная фигура на мгновение\n"
+            "заслоняет свет, а затем растворяется снаружи.\n\n"
+            "Ты вскакиваешь — но уже поздно. Снаружи быстро становится тихо."
+        )
+        game.story_state = "furry_awoken"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🎒 Проверить рюкзак", callback_data="furry_loss")],
+            [InlineKeyboardButton(text="📦 Осмотреть место свёртка", callback_data="furry_loss")],
+            [InlineKeyboardButton(text="🚶 Просто выйти", callback_data="furry_end")],
+        ])
+
+    elif data == "furry_loss":
         game.set_story_flag("something_was_taken")
         text = (
-            "Ты укладываешься на мягкий мох, подложив меховую шкуру под голову.\n"
-            "Сон приходит быстро — здесь тихо, тепло и безопасно.\n\n"
-            "Ночь в пещере — лучший отдых для уставшего путника."
+            "Ты быстро проверяешь вещи. Всё на месте… почти.\n"
+            "Пропала лишь мелкая часть припасов.\n\n"
+            "Рядом со свёртком теперь лежит маленький кусок меха — будто в обмен.\n"
+            "Ты понимаешь: кто-то зашёл, пока ты спал. Взял немного, и оставил что-то взамен."
         )
-        game.story_state = "furry_sleeping"
-        kb = get_main_kb(game)
-    
+        game.story_state = "furry_after_loss"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🚪 Выйти из пещеры", callback_data="furry_end")],
+        ])
+
     elif data == "furry_end":
+        game.set_story_flag("visited_furry_cave")
+        game.set_story_flag("l6_completed")
+        unlocked = getattr(game, "unlocked_locations", []) or []
+        if "Святилище" not in unlocked and "святилище" not in [x.lower() for x in unlocked]:
+            unlocked.append("Святилище")
+            game.unlocked_locations = unlocked
+            game.add_log("Открыт путь на вершину: Святилище!")
+
         text = (
-            "Ты покидаешь Пещеру, оставляя за собой лишь воспоминания о тёплом мехе\n"
-            "и каменном очаге. Меховые шкуры теперь часть твоего инвентаря."
+            "Ты ещё раз окидываешь взглядом пещеру.\n"
+            "Тепло. Мох. Тлеющие угли. Место больше не кажется просто пустым укрытием.\n"
+            "Кто-то здесь бывает. И живёт по законам взаимности.\n\n"
+            "Ты поправляешь рюкзак и выходишь наружу.\n"
+            "Перед тобой открывается крутая тропа на вершину Святилища!"
         )
         game.story_state = None
         if hasattr(game, "reset_nav"):
             game.reset_nav()
         kb = get_main_kb(game)
 
-    if kb == get_main_kb(game) or data in ("furry_end", "back") or getattr(game, "hp", 100) <= 0:
+    if kb == get_main_kb(game) or data in ("furry_end", "furry_leave", "back") or getattr(game, "hp", 100) <= 0:
         game.active_story_callback = None
     elif text is not None:
         game.active_story_callback = data
@@ -4326,7 +4513,7 @@ def handle_location_6_furry_cave(data, game, uid):
 # ──────────────────────────────────────────────────────────────────────────────
 
 def handle_location_7_sanctuary_peak(data, game, uid):
-    """Обработать события на локации 'Вершина Святилища'."""
+    """Обработать события на локации 'Вершина Святилища' (L7)."""
     text = None
     kb = None
     
@@ -4334,8 +4521,15 @@ def handle_location_7_sanctuary_peak(data, game, uid):
         ending_code = resolve_ending(game)
         game.story_flags["ending_code"] = ending_code
         game.story_state = "completed"
-        text = f"{ENDING_TITLES[ending_code]}\n\n{ending_text(ending_code)}"
-        kb = get_main_kb(game)
+        game.set_story_flag("game_completed")
+        title = ENDING_TITLES.get(ending_code, "Финал")
+        body = ending_text(ending_code)
+        text = f"🏆 **ФИНАЛ: {title}**\n\n{body}"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")],
+            [InlineKeyboardButton(text="🗺️ Локации", callback_data="locations_menu")],
+            [InlineKeyboardButton(text="🔄 Начать новую игру", callback_data="start_new_game_confirmed")],
+        ])
 
     elif data in ("sanctuary_peak_start", "location_enter_7"):
         text = (
@@ -4346,7 +4540,10 @@ def handle_location_7_sanctuary_peak(data, game, uid):
             "Твои решения и сюжетная карма определят, какая развязка тебя ждёт."
         )
         game.story_state = "sanctuary_choice"
-        kb = get_main_kb(game)
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✨ Прикоснуться к чаше (Узнать свою судьбу)", callback_data="sanctuary_resolve")],
+            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")],
+        ])
 
     if kb == get_main_kb(game) or data in ("sanctuary_resolve", "back") or getattr(game, "hp", 100) <= 0:
         game.active_story_callback = None
@@ -5455,13 +5652,19 @@ ENDING_TITLES = {
 
 def ending_text(code: str) -> str:
     """Вернуть художественный текст без блока критериев из исходного файла."""
+    import re
     source = ENDING_STORY_TEXT
     title = ENDING_TITLES[code]
-    marker = f"Исход {list(ENDING_TITLES).index(code) + 1}. {title}"
+    idx = list(ENDING_TITLES).index(code) + 1
+    marker = f"Исход {idx}. {title}"
     start = source.index(marker) + len(marker)
-    remainder = source[start:]
-    end = remainder.find("\n\nКритерии:")
-    return remainder[:end if end >= 0 else len(remainder)].strip()
+    next_marker = f"Исход {idx + 1}." if idx < len(ENDING_TITLES) else None
+    end = source.index(next_marker) if next_marker else len(source)
+    chunk = source[start:end]
+    crit_match = re.search(r"\n+(?:Критерии|\bIF\b)", chunk)
+    if crit_match:
+        chunk = chunk[:crit_match.start()]
+    return chunk.strip()
 
 
 # Загружаем канонические тексты L1-L6 после объявления финалов, чтобы

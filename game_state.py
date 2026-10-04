@@ -171,6 +171,11 @@ class GameState:
     # Флаг ожидания ввода имени при старте
     is_name_set: bool = False
 
+    # Статистика забега (выживание, бои, поступки)
+    kills_count: int = 0
+    spared_souls: int = 0
+    campfires_lit: int = 0
+    food_cooked: int = 0
 
     # Флаг инициализации
     is_initialized: bool = False
@@ -343,6 +348,7 @@ class GameState:
         self.campfire_active = True
         self.campfire_durability = 1
         self.campfire_max_durability = 30
+        self.campfires_lit = getattr(self, "campfires_lit", 0) + 1
         self.add_log("Печь растоплена. В глубине очага снова теплится огонёк (+1 к огню).")
         return True, "Печь успешно растоплена!"
 
@@ -420,6 +426,7 @@ class GameState:
         self.campfire_max_durability = 10
         self.campfire_durability = self.campfire_max_durability
         self.campfire_active = True
+        self.campfires_lit = getattr(self, "campfires_lit", 0) + 1
 
         result["success"] = True
         result["lit"] = True
@@ -504,7 +511,7 @@ class GameState:
         if not self.campfire_active:
             self.ap = max(1, int(self.ap) - 1)
             cold_penalty_applied = True
-            self.add_log("За ночь ты промёрз. Сегодня сил меньше (−1 ⚡).", "sleep")
+            self.add_log("🥶 За ночь ты промёрз, и поэтому меньше сил ⚡️−1", "sleep")
 
         # 6. Новый день — счётчик растёт
         self.day += 1
@@ -646,6 +653,10 @@ class GameState:
             "active_story_callback": getattr(self, "active_story_callback", None),
             "last_message_id": getattr(self, "last_message_id", None),
             "header_message_id": getattr(self, "header_message_id", None),
+            "kills_count": int(getattr(self, "kills_count", 0)),
+            "spared_souls": int(getattr(self, "spared_souls", 0)),
+            "campfires_lit": int(getattr(self, "campfires_lit", 0)),
+            "food_cooked": int(getattr(self, "food_cooked", 0)),
         }
 
 
@@ -736,6 +747,10 @@ class GameState:
         game.wolf_battle = dict(data["wolf_battle"]) if data.get("wolf_battle") else None
         game.active_story_callback = data.get("active_story_callback")
         game.header_message_id = data.get("header_message_id")
+        game.kills_count = int(data.get("kills_count", getattr(game, "kills_count", 0)) or 0)
+        game.spared_souls = int(data.get("spared_souls", getattr(game, "spared_souls", 0)) or 0)
+        game.campfires_lit = int(data.get("campfires_lit", getattr(game, "campfires_lit", 0)) or 0)
+        game.food_cooked = int(data.get("food_cooked", getattr(game, "food_cooked", 0)) or 0)
 
         # Авто-исцеление (auto-heal) старых повреждённых сейвов:
         if isinstance(game.story_flags, dict):
@@ -1170,19 +1185,94 @@ class GameState:
             count += 1
         return count
 
-    def get_death_text(self, reason: str = "") -> str:
-        return get_death_text(self, reason)
+    def get_death_text(self, reason: str = "", location_name: Optional[str] = None, flavor_text: Optional[str] = None) -> str:
+        return get_death_text(self, reason=reason, location_name=location_name, flavor_text=flavor_text)
 
 
-def get_death_text(game=None, reason: str = "") -> str:
-    """Единый экран гибели персонажа."""
-    hero = getattr(game, "character_name", "Выживший") if game else "Выживший"
-    day = getattr(game, "day", 1) if game else 1
-    parts = ["💀 **Ты погиб.**"]
-    if reason:
-        parts.append(reason)
-    parts.append(f"Выживание {hero} подошло к концу на {day}-й день.\nЛес оказался сильнее.")
-    return "\n\n".join(parts)
+def get_death_text(
+    game=None,
+    reason: str = "",
+    location_name: Optional[str] = None,
+    flavor_text: Optional[str] = None,
+) -> str:
+    """Единый канонический экран гибели персонажа (некролог со статистикой забега)."""
+    p_name = (
+        getattr(game, "player_name", None)
+        or getattr(game, "character_name", None)
+        or "Выживший"
+    ) if game else "Выживший"
+    day = int(getattr(game, "day", 1) or 1) if game else 1
+
+    loc = location_name or (getattr(game, "current_location", None) if game else None) or "Дикие дебри"
+    actual_reason = reason.strip() if reason and reason.strip() else "Критическое истощение жизненных сил."
+    flv = flavor_text or "Ты погиб. Холодная тень смыкается вокруг, и звуки чащи медленно затихают в бесконечной тишине. Лес оказался сильнее."
+
+    unlocked = getattr(game, "unlocked_locations", None) if game else None
+    loc_count = len(unlocked) if unlocked and len(unlocked) > 0 else 1
+
+    # Спутник
+    pet = None
+    if game:
+        eq = getattr(game, "equipment", {}) or {}
+        pet = (
+            eq.get("pet")
+            or getattr(game, "companion_name", None)
+            or getattr(game, "pet_name", None)
+        )
+        if pet in (None, "", "Пусто", "None"):
+            pet = None
+    companion_str = pet if pet else "В одиночку"
+
+    # Поступки и выживание
+    kills = int(getattr(game, "kills_count", 0)) if game else 0
+    spared = int(getattr(game, "spared_souls", 0)) if game else 0
+    camps = int(getattr(game, "campfires_lit", 0)) if game else 0
+    cooked = int(getattr(game, "food_cooked", 0)) if game else 0
+
+    # Черты души
+    good = 0
+    bad = 0
+    if game:
+        k = getattr(game, "karma", None)
+        if isinstance(k, dict):
+            good = int(k.get("good", 0))
+            bad = int(k.get("bad", 0))
+        elif isinstance(k, (int, float)):
+            if k > 0:
+                good = int(k)
+            elif k < 0:
+                bad = int(abs(k))
+
+    compassion = 0
+    pragmatism = 0
+    if game and isinstance(getattr(game, "narrative_karma", None), dict):
+        compassion = int(game.narrative_karma.get("compassion", 0))
+        pragmatism = int(game.narrative_karma.get("pragmatism", 0))
+
+    card = (
+        "💀 *ВЫ ПОГИБЛИ* 💀\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"📍 *Место:* {loc}\n"
+        f"⚠️ *Причина:* {actual_reason}\n\n"
+        f"_{flv}_\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "📊 *СЛЕД В ЭТОМ ЛЕСУ:*\n"
+        f"• Имя: {p_name}\n"
+        f"• Прожито дней: {day}\n"
+        f"• Спутник: {companion_str}\n"
+        f"• Открыто локаций: {loc_count}\n\n"
+        "⚔️ *ПОСТУПКИ:*\n"
+        f"• Повержено врагов: {kills}\n"
+        f"• Спасено душ: {spared}\n\n"
+        "🔥 *ВЫЖИВАНИЕ:*\n"
+        f"• Разведено костров: {camps}\n"
+        f"• Приготовлено пищи: {cooked}\n\n"
+        "⚖️ *ЧЕРТЫ ДУШИ:*\n"
+        f"• Добро: {good} | Зло: {bad}\n"
+        f"• Сострадание: {compassion} | Прагматизм: {pragmatism}\n"
+        "━━━━━━━━━━━━━━━━━━━━"
+    )
+    return card
 
 
 # Алиас для обратной совместимости: Game = GameState

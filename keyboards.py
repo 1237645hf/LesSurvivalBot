@@ -236,6 +236,15 @@ def get_main_kb(game):
                 InlineKeyboardButton(text="🧴 Набрать дождь (1 ⚡)", callback_data="action_fill_rain_bottle")
             )
         kb_rows.append(rain_btns)
+    cur_loc = str(getattr(game, "current_location", ""))
+    if "Святилище" in cur_loc:
+        kb_rows.append([
+            InlineKeyboardButton(text="✨ Прикоснуться к чаше", callback_data="sanctuary_resolve")
+        ])
+    elif "Мохнатая пещера" in cur_loc and not (hasattr(game, "is_story_flag_set") and game.is_story_flag_set("l6_completed")):
+        kb_rows.append([
+            InlineKeyboardButton(text="🦇 Исследовать пещеру", callback_data="furry_cave_start")
+        ])
     if getattr(game, "locations_unlocked", False):
         kb_rows.append([
             InlineKeyboardButton(text="🗺️ Локации", callback_data="locations_menu")

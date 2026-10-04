@@ -344,6 +344,7 @@ def cook_portions(game: Any, recipe_id: str, count: int) -> Tuple[int, str]:
 
     res_name = recipe["result"]
     if cooked > 0:
+        game.food_cooked = getattr(game, "food_cooked", 0) + cooked
         return cooked, f"Приготовлено: {res_name} ×{cooked}"
     return 0, "Не удалось приготовить блюдо."
 

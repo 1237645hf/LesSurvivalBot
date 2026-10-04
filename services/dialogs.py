@@ -191,6 +191,7 @@ async def handle_waiting_for_pet_name(
     game.equipment["pet"] = name
     if not game.is_story_flag_set("saved_kitten"):
         game.adjust_narrative_karma("compassion", 2)
+        game.spared_souls = getattr(game, "spared_souls", 0) + 1
     game.set_story_flag("saved_kitten")
     game.set_story_flag("has_pet")
     game.set_story_flag("l1_completed")
@@ -665,6 +666,7 @@ def is_session_callback(data: str) -> bool:
         "start_new_game",
         "confirm_new_game",
         "start_new_game_confirmed",
+        "restart_game",
         "cancel_new_game",
         "load_game",
     )
@@ -736,7 +738,7 @@ def handle_session_callback(
         kb = get_confirm_new_game_kb()
         return text, kb
 
-    elif data == "start_new_game_confirmed":
+    elif data in ("start_new_game_confirmed", "restart_game"):
         new_game = Game()
         if existing and getattr(existing, "header_message_id", None):
             new_game.header_message_id = existing.header_message_id

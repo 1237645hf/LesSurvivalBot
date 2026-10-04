@@ -273,7 +273,7 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
                     game.wolf_battle = None
                     from keyboards import get_death_kb
                     from game_state import get_death_text
-                    text = get_death_text(game, f"🐗 Секач растоптал тебя встречным тараном (−{ram_dmg} HP).")
+                    text = get_death_text(game, f"🐗 Секач растоптал тебя встречным тараном (−{ram_dmg} HP).", "Солонец (Секач)")
                     return text, get_death_kb()
             else:
                 # 15% шанс оглушения от Окованного посоха
@@ -313,7 +313,7 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
                         game.wolf_battle = None
                         from keyboards import get_death_kb
                         from game_state import get_death_text
-                        text = get_death_text(game, f"🐗 Секач распорол клыками в ближнем бою (−{b_dmg} HP).")
+                        text = get_death_text(game, f"🐗 Секач распорол клыками в ближнем бою (−{b_dmg} HP).", "Солонец (Секач)")
                         return text, get_death_kb()
 
             half_hp = enemy.get("max_hp", 350) // 2
@@ -358,7 +358,7 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
                 game.wolf_battle = None
                 from keyboards import get_death_kb
                 from game_state import get_death_text
-                text = get_death_text(game, f"🐗 Секач пробил твою защиту смертельным ударом (−{taken} HP).")
+                text = get_death_text(game, f"🐗 Секач пробил твою защиту смертельным ударом (−{taken} HP).", "Солонец (Секач)")
                 return text, get_death_kb()
 
             game.active_story_callback = screen_cb
@@ -417,7 +417,7 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
                 game.wolf_battle = None
                 from keyboards import get_death_kb
                 from game_state import get_death_text
-                text = get_death_text(game, f"🐺 Старый волк нанёс смертельный удар (−{w_dmg} HP).")
+                text = get_death_text(game, f"🐺 Старый волк нанёс смертельный удар (−{w_dmg} HP).", "Волчье логово")
                 kb = get_death_kb()
                 return text, kb
 
@@ -468,7 +468,7 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
                 game.wolf_battle = None
                 from keyboards import get_death_kb
                 from game_state import get_death_text
-                text = get_death_text(game, f"🐺 Волк пробил твою защиту смертельным ударом (−{w_dmg} HP).")
+                text = get_death_text(game, f"🐺 Волк пробил твою защиту смертельным ударом (−{w_dmg} HP).", "Волчье логово")
                 kb = get_death_kb()
                 return text, kb
 
