@@ -1260,7 +1260,6 @@ def handle_back_navigation(game: Any, uid: int) -> Tuple[Optional[str], Optional
         get_main_kb,
         inventory_inline_kb,
         character_inline_kb,
-        get_craft_menu_kb,
         get_inspect_menu_kb,
         get_drop_item_kb,
         get_campfire_kb,
@@ -1269,7 +1268,7 @@ def handle_back_navigation(game: Any, uid: int) -> Tuple[Optional[str], Optional
         get_locations_kb,
         get_settings_kb,
     )
-    from crafts import get_craft_menu_text
+    from crafts import get_craft_menu_text, get_craft_menu_kb
     from modules.cooking import get_campfire_text, COOKING_RECIPES, can_cook
     from story.location_stories import handle_story, handle_l1_wolf_lair
 
