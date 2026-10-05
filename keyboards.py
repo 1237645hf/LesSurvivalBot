@@ -1,3 +1,4 @@
+from typing import Optional
 from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
@@ -115,6 +116,8 @@ def get_item_card_actions_kb(item_name: str, game=None):
         keyboard.append([InlineKeyboardButton(text="🥾 Надеть ботинки", callback_data="use_item_Отремонтированные ботинки")])
     elif item_name == "Окованный посох":
         keyboard.append([InlineKeyboardButton(text="🦯 Взять в правую руку", callback_data="use_item_Окованный посох")])
+    elif item_name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
+        keyboard.append([InlineKeyboardButton(text="🔱 Взять в правую руку", callback_data="use_item_Охотничье сланцевое копьё")])
     elif item_name == "Клык волка":
         keyboard.append([InlineKeyboardButton(text="📿 Надеть амулет", callback_data="use_item_Клык волка")])
     elif item_name == "Охотничья ловушка":
@@ -420,8 +423,70 @@ def get_locations_kb(game):
     if is_loc_unlocked("святилищ"):
         keyboard.append([InlineKeyboardButton(text="🏛️ Святилище", callback_data="location_enter_7")])
 
+    # Подлокации Яра Слизней (в самом низу меню)
+    if game.is_story_flag_set("l5_arena_unlocked") and not game.is_story_flag_set("l5_boss_defeated"):
+        keyboard.append([InlineKeyboardButton(text="☣️ Заводь Исполина", callback_data="l5_arena_start")])
+    if game.is_story_flag_set("l5_ancient_unlocked") and not game.is_story_flag_set("l5_ancient_defeated"):
+        keyboard.append([InlineKeyboardButton(text="🕳️ Логово Древнего", callback_data="l5_ancient_lair")])
+
     keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_slime_battle_kb(phase: str = "1", core_side: str = "right", pocket_item: Optional[str] = None):
+    """Клавиатура пошагового боя с Исполинским слаймом (L5.2).
+
+    Структура интерфейса:
+    - Верхний ряд: [⚔️ Атаковать] | [🛡 Защита] (кроме фазы 2Б, где [⚠️ Приготовиться])
+    - Нижний ряд: контекстные манёвры направления/ухода
+    - Ещё ниже: кнопка съесть/принять предмет из кармана поножей (если есть)
+    - Самая нижняя: [🏃 Сбежать]
+    """
+    kb = []
+
+    # 1. Верхний ряд (основные действия)
+    if phase == "2B":
+        kb.append([InlineKeyboardButton(text="⚠️ Приготовиться", callback_data="slime_battle_prepare")])
+    else:
+        kb.append([
+            InlineKeyboardButton(text="⚔️ Атаковать", callback_data="slime_battle_attack"),
+            InlineKeyboardButton(text="🛡 Защита", callback_data="slime_battle_defend"),
+        ])
+
+    # 2. Контекстный ряд манёвров
+    if phase == "1":
+        # Выбор направления шага к ядру
+        kb.append([
+            InlineKeyboardButton(text="⬅️ Шаг влево", callback_data="slime_battle_step_left"),
+            InlineKeyboardButton(text="➡️ Шаг вправо", callback_data="slime_battle_step_right"),
+        ])
+    elif phase == "3A":
+        # Кислотный фонтан: отскок
+        kb.append([
+            InlineKeyboardButton(text="⬅️ Отскок влево", callback_data="slime_battle_dodge_left"),
+            InlineKeyboardButton(text="➡️ Отскок вправо", callback_data="slime_battle_dodge_right"),
+        ])
+    elif phase == "3B":
+        # Тяжёлый навал: отпрыгнуть назад
+        kb.append([
+            InlineKeyboardButton(text="🔙 Отпрыгнуть назад", callback_data="slime_battle_dodge_back"),
+        ])
+    elif phase in ("5A", "5B"):
+        # Следить за ядром
+        kb.append([
+            InlineKeyboardButton(text="👁️ Следить за ядром", callback_data="slime_battle_watch"),
+        ])
+
+    # 3. Карман на поножах (лечение / еда во время боя)
+    if pocket_item:
+        kb.append([
+            InlineKeyboardButton(text=f"🍽️ Принять {pocket_item}", callback_data="slime_battle_pocket")
+        ])
+
+    # 4. Самая нижняя кнопка — Побег
+    kb.append([InlineKeyboardButton(text="🏃 Сбежать", callback_data="slime_battle_flee")])
+
+    return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
 def get_wolf_battle_kb():
@@ -530,7 +595,13 @@ inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
 
 def get_inventory_kb(game=None, page: int = 0) -> InlineKeyboardMarkup:
     """Клавиатура инвентаря."""
-    return inventory_inline_kb
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✋ Осмотреть", callback_data="inv_inspect"),
+         InlineKeyboardButton(text="🔨 Крафт", callback_data="inv_craft")],
+        [InlineKeyboardButton(text="🗑 Выкинуть", callback_data="inv_drop"),
+         InlineKeyboardButton(text="👤 Персонаж", callback_data="menu_character")],
+        [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
+    ])
 
 
 character_inline_kb = InlineKeyboardMarkup(inline_keyboard=[

@@ -836,6 +836,23 @@ class GameState:
         return status_str
     def get_ui(self) -> str:
         """Статус-бар + разделитель + лог событий (8-12 строк) + разделитель без часов сервера."""
+        # Предупреждение о безоружности после Исполина
+        has_weapon = bool(self.equipment.get("hand_right"))
+        has_spear = (
+            self.inventory.get("Охотничье сланцевое копьё", 0) > 0
+            or self.inventory.get("🔱 Охотничье сланцевое копьё", 0) > 0
+            or self.equipment.get("hand_right") in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё")
+            or self.is_story_flag_set("crafted_hunting_spear")
+        )
+        if (
+            (self.is_story_flag_set("l5_boss_defeated") or self.is_story_flag_set("boss_giant_slime_defeated"))
+            and not has_weapon
+            and not has_spear
+        ):
+            spear_thought = "Посох сломан, ты безоружен! В голове зреет мысль: пора скрафтить копьё."
+            if not self.event_log or not any(spear_thought in l for l in self.event_log[-3:]):
+                self.add_log(spear_thought)
+
         recent_logs = self.event_log[-10:] if self.event_log else []
         clean_logs = [re.sub(r"^\[\d{2}:\d{2}\]\s*", "", line) for line in recent_logs]
         status = self.get_status_bar()
@@ -958,7 +975,9 @@ class GameState:
             if right_item in ITEMS:
                 eff = ITEMS[right_item].get("effects", {})
                 notes = []
-                if "damage" in eff:
+                if "damage_min" in eff and "damage_max" in eff:
+                    notes.append(f"⚔️ Урон {eff['damage_min']}–{eff['damage_max']}")
+                elif "damage" in eff:
                     notes.append(f"⚔️ Урон +{eff['damage']}")
                 if "stun_chance" in eff:
                     notes.append(f"💫 Оглушение +{eff['stun_chance']}%")

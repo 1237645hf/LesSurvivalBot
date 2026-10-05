@@ -457,7 +457,7 @@ def is_in_active_story(game: Optional[Game]) -> bool:
         return False
     if getattr(game, "active_story_callback", None):
         return True
-    if getattr(game, "story_state", None) in ("WAITING_FOR_PET_NAME", "wolf_battle", "boar_battle"):
+    if getattr(game, "story_state", None) in ("WAITING_FOR_PET_NAME", "wolf_battle", "boar_battle", "slime_battle"):
         return True
     return False
 
@@ -482,7 +482,7 @@ async def restore_active_story_screen(chat_id: int, uid: int, game: Game) -> boo
             res_text, res_kb = handle_location_3_slate_hollow(cb, game, uid)
         elif cb.startswith("l4_") or cb.startswith("hunters_") or cb.startswith("glade_"):
             res_text, res_kb = handle_location_4_hunters_glade(cb, game, uid)
-        elif cb.startswith("l5_") or cb.startswith("slug_") or cb.startswith("pit_"):
+        elif cb.startswith("l5_") or cb.startswith("slug_") or cb.startswith("pit_") or cb.startswith("slime_battle"):
             res_text, res_kb = handle_location_5_slug_pit(cb, game, uid)
         elif cb.startswith("l6_") or cb.startswith("furry_") or cb.startswith("cave_"):
             res_text, res_kb = handle_location_6_furry_cave(cb, game, uid)

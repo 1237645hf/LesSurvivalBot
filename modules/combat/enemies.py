@@ -42,6 +42,24 @@ ENEMIES: Dict[str, Dict[str, Any]] = {
         ),
         "screen_callback": "boar_battle_screen",
     },
+    "giant_slime": {
+        "id": "giant_slime",
+        "name": "Исполинский слайм",
+        "title": "☣️ ЗАВОДЬ ИСПОЛИНА",
+        "max_hp": 555,
+        "attack_min": 10,
+        "attack_max": 16,
+        "defended_min": 4,
+        "defended_max": 8,
+        "charge_damage": 26,
+        "start_log": "Слайм колышется, ядро смещается ВПРАВО.",
+        "victory_callback": "l5_2_7",
+        "flee_callback": "l5_arena_escape",
+        "flee_text": (
+            "Ты отступаешь по узкой осыпи прочь из заводи, пока тварь не успела отрезать путь назад."
+        ),
+        "screen_callback": "slime_battle_screen",
+    },
 }
 
 

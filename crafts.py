@@ -25,6 +25,12 @@ CRAFT_RECIPES = {
     "Пузырёк": [("Сланцевый слиток", 1)],
     "Янтарное зелье": [("Пузырёк", 3), ("Янтарное ядро", 1), ("Болотная ягода", 1)],
     "Приманка для слизней": [("Ягода", 10)],
+    "Охотничье сланцевое копьё": [
+        ("Ветка", 15),
+        ("Кожа", 2),
+        ("Сланцевый слиток", 2),
+        ("Светящийся гриб", 3),
+    ],
 }
 
 CRAFT_YIELDS = {
@@ -108,6 +114,16 @@ def can_craft(game, recipe_name: str) -> bool:
     if recipe_name == "Приманка для слизней":
         if getattr(game, "current_location", None) != "Яр Слизней":
             return False
+    if recipe_name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
+        has_spear = (
+            game.inventory.get("Охотничье сланцевое копьё", 0) > 0
+            or game.inventory.get("🔱 Охотничье сланцевое копьё", 0) > 0
+            or game.equipment.get("hand_right") in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё")
+        )
+        if has_spear:
+            return False
+        if not (game.is_story_flag_set("l5_boss_defeated") or game.is_story_flag_set("boss_giant_slime_defeated")):
+            return False
     if recipe_name == "Зарядить фонарь":
         has_lantern = (
             game.equipment.get("hand_left") == "Старый фонарь"
@@ -126,6 +142,16 @@ def craft_mark(game, recipe_name: str) -> str:
         return "❌ (уже есть)"
     if recipe_name == "Приманка для слизней" and getattr(game, "current_location", None) != "Яр Слизней":
         return "❌ (только в Яру Слизней)"
+    if recipe_name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
+        has_spear = (
+            game.inventory.get("Охотничье сланцевое копьё", 0) > 0
+            or game.inventory.get("🔱 Охотничье сланцевое копьё", 0) > 0
+            or game.equipment.get("hand_right") in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё")
+        )
+        if has_spear:
+            return "❌ (уже есть)"
+        if not (game.is_story_flag_set("l5_boss_defeated") or game.is_story_flag_set("boss_giant_slime_defeated")):
+            return "❌ (заблокировано)"
     if recipe_name == "Зарядить фонарь":
         has_lantern = (
             game.equipment.get("hand_left") == "Старый фонарь"
@@ -173,6 +199,16 @@ def do_craft(game, recipe_name: str):
     if recipe_name == "Приманка для слизней":
         if getattr(game, "current_location", None) != "Яр Слизней":
             return False, "Приманку для слизней можно изготовить только находясь в Яру Слизней!"
+    if recipe_name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
+        has_spear = (
+            game.inventory.get("Охотничье сланцевое копьё", 0) > 0
+            or game.inventory.get("🔱 Охотничье сланцевое копьё", 0) > 0
+            or game.equipment.get("hand_right") in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё")
+        )
+        if has_spear:
+            return False, "У вас уже есть охотничье сланцевое копьё! Нельзя создать второе."
+        if not (game.is_story_flag_set("l5_boss_defeated") or game.is_story_flag_set("boss_giant_slime_defeated")):
+            return False, "Рецепт заблокирован! Победите Исполинского слайма."
     if not can_craft(game, recipe_name):
         missing = []
         for n, q in ingredients:
@@ -266,6 +302,8 @@ def do_craft(game, recipe_name: str):
     game.inventory[recipe_name] = game.inventory.get(recipe_name, 0) + yield_qty
     if hasattr(game, "unlock_craft"):
         game.unlock_craft(recipe_name)
+    if recipe_name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
+        game.set_story_flag("crafted_hunting_spear", True)
 
     # Особая логика зажигания факела при создании
     if recipe_name == "Факел":
@@ -300,6 +338,8 @@ CRAFT_ICONS = {
     "Охотничья ловушка": "🪤",
     "Приманка для слизней": "🍯",
     "Окованный посох": "🦯",
+    "Охотничье сланцевое копьё": "🔱",
+    "🔱 Охотничье сланцевое копьё": "🔱",
     "Кожаный капюшон": "🧢",
     "Кожаный нагрудник": "🦺",
     "Кожаные поножи": "👖",
@@ -313,6 +353,13 @@ CRAFT_ICONS = {
 def get_craft_menu_text(game) -> str:
     """Формирует текст экрана крафта: показывает сколько есть / сколько надо для каждого ингредиента."""
     unlocked = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
+    has_spear = (
+        game.inventory.get("Охотничье сланцевое копьё", 0) > 0
+        or game.inventory.get("🔱 Охотничье сланцевое копьё", 0) > 0
+        or game.equipment.get("hand_right") in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё")
+    )
+    if (game.is_story_flag_set("l5_boss_defeated") or game.is_story_flag_set("boss_giant_slime_defeated")) and not has_spear and "Охотничье сланцевое копьё" not in unlocked:
+        unlocked.append("Охотничье сланцевое копьё")
     lines = ["🔨 Крафт (только открытые рецепты):", ""]
     has_any = False
     for name in unlocked:
@@ -321,6 +368,8 @@ def get_craft_menu_text(game) -> str:
         if name == "Факел" and has_torch(game):
             continue
         if name == "Костёр" and has_campfire(game):
+            continue
+        if name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё") and has_spear:
             continue
         if name == "Зарядить фонарь":
             has_lantern = (
@@ -358,6 +407,13 @@ def get_craft_menu_kb(game):
     """Клавиатура крафта: иконка предмета + короткое название + статус ✅/❌ n/m."""
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     unlocked = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
+    has_spear = (
+        game.inventory.get("Охотничье сланцевое копьё", 0) > 0
+        or game.inventory.get("🔱 Охотничье сланцевое копьё", 0) > 0
+        or game.equipment.get("hand_right") in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё")
+    )
+    if (game.is_story_flag_set("l5_boss_defeated") or game.is_story_flag_set("boss_giant_slime_defeated")) and not has_spear and "Охотничье сланцевое копьё" not in unlocked:
+        unlocked.append("Охотничье сланцевое копьё")
     keyboard = []
     for name in unlocked:
         if name not in CRAFT_RECIPES:
@@ -365,6 +421,8 @@ def get_craft_menu_kb(game):
         if name == "Факел" and has_torch(game):
             continue
         if name == "Костёр" and has_campfire(game):
+            continue
+        if name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё") and has_spear:
             continue
         if name == "Зарядить фонарь":
             has_lantern = (
@@ -415,9 +473,38 @@ def handle_craft(data, game, uid):
         buttons = []
         if branches >= 8:
             buttons.append([InlineKeyboardButton(text="🔨 Скрафтить", callback_data="confirm_craft_Крепкий посох")])
+    elif data in ("craft_Охотничье сланцевое копьё", "craft_🔱 Охотничье сланцевое копьё"):
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        sticks = game.inventory.get("Ветка", 0) + game.inventory.get("Палка", 0) + game.inventory.get("Палки", 0)
+        leather = game.inventory.get("Кожа", 0)
+        bars = game.inventory.get("Сланцевый слиток", 0)
+        mushrooms = game.inventory.get("Светящийся гриб", 0)
+
+        can_make = sticks >= 15 and leather >= 2 and bars >= 2 and mushrooms >= 3
+        req_sticks = "✅" if sticks >= 15 else "❌"
+        req_leather = "✅" if leather >= 2 else "❌"
+        req_bars = "✅" if bars >= 2 else "❌"
+        req_mushrooms = "✅" if mushrooms >= 3 else "❌"
+
+        text = (
+            "━━━━━━━━━━━━━━━━━━━\n"
+            "🔱 Охотничье сланцевое копьё\n\n"
+            "Длинное копьё с клиновидным наконечником из сланца, вымоченным в соке светящихся грибов. "
+            "Дробящие удары вязли в желе, но узкое тяжёлое остриё легко достанет ядро сквозь любую толщу, "
+            "а кожаная обмотка не даст древку выскользнуть из мокрых рук.\n\n"
+            f"📦 Требования:\n"
+            f"• {req_sticks} Ветка ({sticks}/15)\n"
+            f"• {req_leather} Кожа ({leather}/2)\n"
+            f"• {req_bars} Сланцевый слиток ({bars}/2)\n"
+            f"• {req_mushrooms} Светящийся гриб ({mushrooms}/3)\n\n"
+            "⚔️ Свойства: Урон в бою: 19–24 ед. (Правая рука)\n"
+            "━━━━━━━━━━━━━━━━━━━"
+        )
+        buttons = []
+        if can_make:
+            buttons.append([InlineKeyboardButton(text="🔨 Скрафтить", callback_data="confirm_craft_Охотничье сланцевое копьё")])
         buttons.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
-        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-        return text, kb
+        return text, InlineKeyboardMarkup(inline_keyboard=buttons)
     elif data.startswith("confirm_craft_") or data.startswith("craft_"):
         recipe = data.removeprefix("confirm_craft_").removeprefix("craft_")
         ok, msg = do_craft(game, recipe)
@@ -464,6 +551,25 @@ def handle_craft(data, game, uid):
             kb = get_main_kb(game)
         else:
             game.add_log("В инвентаре нет крепкого посоха.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data in ("use_item_Охотничье сланцевое копьё", "use_item_🔱 Охотничье сланцевое копьё"):
+        item_key = "Охотничье сланцевое копьё"
+        if game.inventory.get(item_key, 0) <= 0 and game.inventory.get("🔱 Охотничье сланцевое копьё", 0) > 0:
+            item_key = "🔱 Охотничье сланцевое копьё"
+        if game.inventory.get(item_key, 0) > 0:
+            old_item = game.equipment.get("hand_right")
+            if old_item:
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory[item_key] -= 1
+            if game.inventory[item_key] <= 0:
+                del game.inventory[item_key]
+            game.equipment["hand_right"] = "Охотничье сланцевое копьё"
+            game.add_log("Вы взяли охотничье сланцевое копьё в правую руку (⚔️ Урон 19–24).")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет охотничьего сланцевого копья.")
             text = game.get_ui()
             kb = get_main_kb(game)
     elif data == "use_item_Рюкзак с красной заплаткой":

@@ -6,7 +6,7 @@ from typing import Tuple
 import random
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from modules.combat.enemies import get_enemy
-from keyboards import get_wolf_battle_kb, get_boar_battle_kb
+from keyboards import get_wolf_battle_kb, get_boar_battle_kb, get_slime_battle_kb
 
 
 def _calc_player_damage(game) -> int:
@@ -15,7 +15,9 @@ def _calc_player_damage(game) -> int:
     # Проверяем оружие в правой руке
     weapon = eq.get("hand_right")
     base_dmg = 5
-    if weapon == "Окованный посох":
+    if weapon in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
+        base_dmg = random.randint(19, 24)
+    elif weapon == "Окованный посох":
         base_dmg = random.randint(9, 11)
     elif weapon == "Крепкий посох":
         base_dmg = random.randint(5, 7)
@@ -38,6 +40,13 @@ def get_battle_kb(game, enemy_id: str = "old_wolf") -> InlineKeyboardMarkup:
             is_stunned=battle.get("is_stunned", False),
             is_charging=battle.get("is_charging", False),
         )
+    if enemy_id == "giant_slime":
+        phase = battle.get("phase", "1")
+        core_side = battle.get("core_side", "right")
+        pocket_item = None
+        if game.equipment.get("pants") == "Кожаные поножи":
+            pocket_item = getattr(game, "pants_pocket", None)
+        return get_slime_battle_kb(phase=phase, core_side=core_side, pocket_item=pocket_item)
     return get_wolf_battle_kb()
 
 
@@ -69,8 +78,28 @@ def get_battle_text(game, enemy_id: str = "old_wolf") -> str:
         else:
             status_text = battle.get("boar_status", "⏳ Готовится к броску")
         status_line = f"📍 Статус зверя: {status_text}\n"
+    elif enemy_id == "giant_slime":
+        phase = battle.get("phase", "1")
+        phase_names = {
+            "1": "Отвод ядра",
+            "2A": "Ядро на прицеле",
+            "3A": "Кислотный фонтан",
+            "4A": "Ступор твари",
+            "5A": "Восстановление формы",
+            "2B": "Потеря цели",
+            "3B": "Тяжёлый навал",
+            "4B": "Вязкая пауза",
+            "5B": "Сбор массы",
+        }
+        phase_name = phase_names.get(phase, "Сражение")
+        if phase == "4A":
+            st = battle.get("stun_turns", 1)
+            status_text = f"💫 Ступор твари (шока осталось: {st})"
+        else:
+            status_text = f"📍 Фаза: {phase_name}"
+        status_line = f"{status_text}\n"
 
-    enemy_icon = "🐗" if enemy_id == "ancient_boar" else "🐺"
+    enemy_icon = "🐗" if enemy_id == "ancient_boar" else ("☣️" if enemy_id == "giant_slime" else "🐺")
     return (
         f"{title}{phase_str}\n"
         "━━━━━━━━━━━━━━━━━━━\n"
@@ -99,22 +128,59 @@ def start_battle(game, enemy_id: str = "old_wolf") -> Tuple[str, InlineKeyboardM
 
     if enemy_id == "ancient_boar":
         start_log = "🐗 Секач сорвался с места и на полной скорости несётся на тебя на таран!"
+        game.wolf_battle = {
+            "enemy_id": enemy_id,
+            "wolf_hp": wolf_hp,
+            "wolf_max_hp": enemy["max_hp"],
+            "player_dmg_dealt": player_dmg,
+            "wolf_dmg_dealt": wolf_dmg,
+            "turn_count": 0,
+            "dodge_count": 0,
+            "phase": 1,
+            "is_charging": is_charging,
+            "is_lunging": False,
+            "is_flattened": False,
+            "is_stunned": False,
+            "is_enraged": False,
+            "boar_status": "⚡ Мчится на таран!" if is_charging else "",
+            "last_log": start_log,
+        }
+    elif enemy_id == "giant_slime":
+        side = random.choice(["right", "left"])
+        side_txt = "ВПРАВО" if side == "right" else "ВЛЕВО"
+        start_log = f"Слайм колышется, ядро смещается {side_txt}."
+        game.wolf_battle = {
+            "enemy_id": enemy_id,
+            "wolf_hp": 555,
+            "wolf_max_hp": 555,
+            "player_dmg_dealt": 0,
+            "wolf_dmg_dealt": 0,
+            "turn_count": 0,
+            "dodge_count": 0,
+            "phase": "1",
+            "core_side": side,
+            "stun_turns": 0,
+            "last_log": start_log,
+        }
+    else:
+        game.wolf_battle = {
+            "enemy_id": enemy_id,
+            "wolf_hp": wolf_hp,
+            "wolf_max_hp": enemy["max_hp"],
+            "player_dmg_dealt": player_dmg,
+            "wolf_dmg_dealt": wolf_dmg,
+            "turn_count": 0,
+            "dodge_count": 0,
+            "phase": 1,
+            "is_charging": False,
+            "is_lunging": False,
+            "is_flattened": False,
+            "is_stunned": False,
+            "is_enraged": False,
+            "boar_status": "",
+            "last_log": start_log,
+        }
 
-    game.wolf_battle = {
-        "enemy_id": enemy_id,
-        "wolf_hp": wolf_hp,
-        "wolf_max_hp": enemy["max_hp"],
-        "player_dmg_dealt": player_dmg,
-        "wolf_dmg_dealt": wolf_dmg,
-        "turn_count": 0,
-        "dodge_count": 0,
-        "phase": 1,
-        "is_charging": is_charging,
-        "is_stunned": False,
-        "is_enraged": False,
-        "boar_status": "⚡ Мчится на таран!" if is_charging else "",
-        "last_log": start_log,
-    }
     game.active_story_callback = enemy.get("screen_callback", "wolf_battle_screen" if enemy_id == "old_wolf" else "boar_battle_screen")
     text = get_battle_text(game, enemy_id)
     kb = get_battle_kb(game, enemy_id)
@@ -133,7 +199,7 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
 
     # Нормализуем имя действия
     clean_action = action
-    for prefix in ("wolf_battle_", "boar_battle_"):
+    for prefix in ("wolf_battle_", "boar_battle_", "slime_battle_"):
         if clean_action.startswith(prefix):
             clean_action = clean_action.removeprefix(prefix)
             break
@@ -364,6 +430,268 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
             game.active_story_callback = screen_cb
             battle["last_log"] = "\n".join(log_lines)
             return get_battle_text(game, enemy_id), get_battle_kb(game, enemy_id)
+
+    # =========================================================================
+    # БОЙ С ИСПОЛИНСКИМ СЛАЙМОМ (Локация 5: Заводь Исполина)
+    # =========================================================================
+    # =========================================================================
+    # БОЙ С ИСПОЛИНСКИМ СЛАЙМОМ (Локация 5: Заводь Исполина)
+    # =========================================================================
+    if enemy_id == "giant_slime":
+        if clean_action == "flee":
+            game.ap = 0
+            game.wolf_battle = None
+            game.story_state = "l5_arena_escape"
+            game.active_story_callback = None
+            from story.location_stories import handle_location_5_slug_pit
+            return handle_location_5_slug_pit("l5_arena_escape", game, getattr(game, "user_id", None))
+
+        cur_phase = str(battle.get("phase", "1"))
+        core_side = battle.get("core_side", "right")
+        battle["turn_count"] = battle.get("turn_count", 0) + 1
+        log_lines = []
+
+        def _check_victory():
+            if battle["wolf_hp"] <= 0:
+                battle["wolf_hp"] = 0
+                vic_cb = enemy.get("victory_callback", "l5_2_7")
+                game.active_story_callback = vic_cb
+                game.story_state = vic_cb
+                text = (
+                    "⚔️ ПОБЕДА НАД ИСПОЛИНОМ!\n"
+                    "━━━━━━━━━━━━━━━━━━━\n"
+                    f"• Нанесено тобой: {battle['player_dmg_dealt']} ед.\n"
+                    f"• Нанёс слайм: {battle['wolf_dmg_dealt']} ед.\n"
+                    "━━━━━━━━━━━━━━━━━━━\n"
+                    "Точный удар сокрушил ядро твари, разбрызгивая едкую пену."
+                )
+                kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="💥 Нанести добивающий удар ➔", callback_data=vic_cb)]
+                ])
+                return text, kb
+            return None
+
+        def _check_death(reason: str):
+            if game.hp <= 0:
+                game.hp = 0
+                game.wolf_battle = None
+                game.active_story_callback = None
+                from keyboards import get_death_kb
+                from game_state import get_death_text
+                return get_death_text(game, reason, "Заводь Исполина"), get_death_kb()
+            return None
+
+        def _use_pocket_item():
+            p_item = getattr(game, "pants_pocket", None)
+            if not p_item:
+                return "В кармане поножей ничего нет."
+            from modules.items import ITEMS
+            if p_item == "Янтарное зелье":
+                heal_amt = min(game.max_hp - game.hp, 70)
+                game.hp += heal_amt
+                game.inventory["Пузырёк"] = game.inventory.get("Пузырёк", 0) + 1
+                msg = f"🧪 Ты принимаешь Янтарное зелье! (+{heal_amt} HP). Пустой пузырёк убран в рюкзак."
+            else:
+                eff = ITEMS.get(p_item, {}).get("effects", {})
+                hp_gain = eff.get("hp", 20)
+                heal_amt = min(game.max_hp - game.hp, hp_gain)
+                game.hp += heal_amt
+                msg = f"🍽️ Ты принимаешь {p_item} из кармана! (+{heal_amt} HP)."
+            game.pants_pocket = None
+            return msg
+
+        # --- ФАЗА 1: Отвод ядра ---
+        if cur_phase == "1":
+            if clean_action in ("step_left", "step_right"):
+                is_correct = (clean_action == "step_right" and core_side == "right") or (clean_action == "step_left" and core_side == "left")
+                if is_correct:
+                    battle["phase"] = "2A"
+                    log_lines.append("⚡ Ты делаешь точный шаг в сторону открытого ядра! Тонкая плёнка натянута — ядро беззащитно!\nЯдро натягивает оболочку! Самое время бить!")
+                else:
+                    battle["phase"] = "2B"
+                    log_lines.append("⚠️ Ты шагнул не в ту сторону! Тварь повернулась тушей оленя, плотная масса надёжно закрыла ядро!\nОшибся с направлением, ядро скрыто! Слайм вздымается!")
+            elif clean_action == "attack":
+                p_dmg = random.randint(5, 8)
+                battle["wolf_hp"] = max(0, battle["wolf_hp"] - p_dmg)
+                battle["player_dmg_dealt"] += p_dmg
+                v = _check_victory()
+                if v:
+                    return v
+                battle["phase"] = "2B"
+                log_lines.append(f"⚔️ Удар в лоб вязнет в плотной массе слизи (−{p_dmg} HP), ядро заслонено!\nОшибся с направлением, ядро скрыто! Слайм вздымается!")
+            elif clean_action == "defend":
+                battle["phase"] = "2B"
+                log_lines.append("🛡 Ты уходишь в защиту, теряя ядро из вида! Тварь перегруппировывается.\nОшибся с направлением, ядро скрыто! Слайм вздымается!")
+            elif clean_action == "pocket":
+                log_lines.append(_use_pocket_item())
+
+        # --- ФАЗА 2А: Ядро на прицеле ---
+        elif cur_phase == "2A":
+            if clean_action in ("attack", "crit"):
+                p_dmg = random.randint(35, 40)
+                battle["wolf_hp"] = max(0, battle["wolf_hp"] - p_dmg)
+                battle["player_dmg_dealt"] += p_dmg
+                v = _check_victory()
+                if v:
+                    return v
+                battle["phase"] = "3A"
+                log_lines.append(f"💥 Точный выпад прямо в обнажённое ядро: −{p_dmg} HP!\nИз раны хлещет пена с брызгами во все стороны!")
+            elif clean_action == "defend":
+                battle["phase"] = "1"
+                side = random.choice(["right", "left"])
+                battle["core_side"] = side
+                side_txt = "ВПРАВО" if side == "right" else "ВЛЕВО"
+                log_lines.append(f"🛡 Ты закрываешься и упускаешь момент! Тварь оправилась.\nСлайм колышется, ядро смещается {side_txt}.")
+            elif clean_action == "pocket":
+                log_lines.append(_use_pocket_item())
+
+        # --- ФАЗА 3А: Кислотный фонтан ---
+        elif cur_phase == "3A":
+            if clean_action in ("dodge_left", "dodge_right"):
+                battle["phase"] = "4A"
+                battle["stun_turns"] = random.randint(1, 3)
+                log_lines.append("⚡ Ты ловко уходишь от фонтана кислоты в сторону (0 урона)!\nУ твари шок! Кипящие капли хлещут, тварь парализована!")
+            elif clean_action == "attack":
+                taken = 50
+                game.hp = max(0, game.hp - taken)
+                battle["wolf_dmg_dealt"] += taken
+                d = _check_death("☣️ Едкая струя кислоты сожгла тебя при попытке безрассудной атаки (−50 HP).")
+                if d:
+                    return d
+                battle["phase"] = "4A"
+                battle["stun_turns"] = random.randint(1, 3)
+                log_lines.append(f"💥 Жадная атака дорого обошлась: струя кислоты накрывает тебя с ног до головы (−{taken} HP)!\nУ твари шок! Кипящие капли хлещут, тварь парализована!")
+            elif clean_action == "defend":
+                taken = 25
+                game.hp = max(0, game.hp - taken)
+                battle["wolf_dmg_dealt"] += taken
+                d = _check_death("☣️ Кислотные брызги прожгли твою защиту (−25 HP).")
+                if d:
+                    return d
+                battle["phase"] = "4A"
+                battle["stun_turns"] = random.randint(1, 3)
+                log_lines.append(f"🛡 Брызги кислоты заливают блок: −{taken} HP!\nУ твари шок! Кипящие капли хлещут, тварь парализована!")
+            elif clean_action == "pocket":
+                log_lines.append(_use_pocket_item())
+
+        # --- ФАЗА 4А: Ступор твари ---
+        elif cur_phase == "4A":
+            if clean_action == "attack":
+                p_dmg = 12
+                battle["wolf_hp"] = max(0, battle["wolf_hp"] - p_dmg)
+                battle["player_dmg_dealt"] += p_dmg
+                v = _check_victory()
+                if v:
+                    return v
+                battle["stun_turns"] = battle.get("stun_turns", 1) - 1
+                if battle["stun_turns"] > 0:
+                    log_lines.append(f"⚔️ Удар по краю туши: −{p_dmg} HP! Тварь всё ещё бьётся в конвульсиях (осталось ходов: {battle['stun_turns']}).")
+                else:
+                    battle["phase"] = "5A"
+                    log_lines.append(f"⚔️ Удар по краю туши: −{p_dmg} HP!\nРеакция угасла. Слайм судорожно собирает желе.")
+            elif clean_action == "pocket":
+                p_msg = _use_pocket_item()
+                battle["stun_turns"] = battle.get("stun_turns", 1) - 1
+                if battle["stun_turns"] > 0:
+                    log_lines.append(f"{p_msg}\nТварь всё ещё в шоке (осталось ходов: {battle['stun_turns']}).")
+                else:
+                    battle["phase"] = "5A"
+                    log_lines.append(f"{p_msg}\nРеакция угасла. Слайм судорожно собирает желе.")
+            elif clean_action == "defend":
+                battle["stun_turns"] = battle.get("stun_turns", 1) - 1
+                if battle["stun_turns"] > 0:
+                    log_lines.append(f"🛡 Ты восстанавливаешь силы, выжидая момент (осталось ходов: {battle['stun_turns']}).")
+                else:
+                    battle["phase"] = "5A"
+                    log_lines.append("🛡 Ты восстанавливаешь силы.\nРеакция угасла. Слайм судорожно собирает желе.")
+
+        # --- ФАЗА 5А: Восстановление формы ---
+        elif cur_phase == "5A":
+            if clean_action == "watch":
+                battle["phase"] = "1"
+                side = random.choice(["right", "left"])
+                battle["core_side"] = side
+                side_txt = "ВПРАВО" if side == "right" else "ВЛЕВО"
+                log_lines.append(f"👁️ Ты следишь за ядром и не теряешь позицию!\nСлайм колышется, ядро смещается {side_txt}.")
+            elif clean_action == "attack":
+                battle["phase"] = "3B"
+                log_lines.append("⚔️ Слепой удар вязнет в стягивающейся массе! Тварь резко вздымается!\nДвухметровая масса накатывает высокой волной!")
+            elif clean_action == "defend":
+                battle["phase"] = "3B"
+                log_lines.append("🛡 Ты застываешь в обороне, отдавая инициативу! Слайм вздымается над тобой!\nДвухметровая масса накатывает высокой волной!")
+            elif clean_action == "pocket":
+                log_lines.append(_use_pocket_item())
+
+        # --- ФАЗА 2Б: Потеря цели ---
+        elif cur_phase == "2B":
+            if clean_action == "prepare":
+                battle["phase"] = "3B"
+                log_lines.append("⚠️ Ты группируешься перед ударом!\nДвухметровая масса накатывает высокой волной!")
+            elif clean_action == "pocket":
+                log_lines.append(_use_pocket_item())
+
+        # --- ФАЗА 3Б: Тяжёлый навал ---
+        elif cur_phase == "3B":
+            if clean_action == "dodge_back":
+                battle["phase"] = "4B"
+                log_lines.append("⚡ Ты вовремя отпрыгиваешь назад (0 урона)! Волна слизи с грохотом шлёпается о камни!\nТварь распласталась. Кругом шипящие лужи кислоты!")
+            elif clean_action == "attack":
+                taken = 50
+                game.hp = max(0, game.hp - taken)
+                battle["wolf_dmg_dealt"] += taken
+                d = _check_death("☣️ Тяжёлая волна слизи раздавила тебя при лобовой атаке (−50 HP).")
+                if d:
+                    return d
+                battle["phase"] = "4B"
+                log_lines.append(f"💥 Волна массы сбивает тебя с ног и накрывает с головой: −{taken} HP!\nТварь распласталась. Кругом шипящие лужи кислоты!")
+            elif clean_action == "defend":
+                taken = 25
+                game.hp = max(0, game.hp - taken)
+                battle["wolf_dmg_dealt"] += taken
+                d = _check_death("☣️ Масса слизи расплющила твою защиту (−25 HP).")
+                if d:
+                    return d
+                battle["phase"] = "4B"
+                log_lines.append(f"🛡 Ты пытаешься блокировать всей массой посоха, но тебя придавливает тяжестью: −{taken} HP!\nТварь распласталась. Кругом шипящие лужи кислоты!")
+            elif clean_action == "pocket":
+                log_lines.append(_use_pocket_item())
+
+        # --- ФАЗА 4Б: Вязкая пауза ---
+        elif cur_phase == "4B":
+            if clean_action == "attack":
+                p_dmg = 8
+                battle["wolf_hp"] = max(0, battle["wolf_hp"] - p_dmg)
+                battle["player_dmg_dealt"] += p_dmg
+                v = _check_victory()
+                if v:
+                    return v
+                battle["phase"] = "5B"
+                log_lines.append(f"⚔️ Тычок посохом по растекшейся жиже: −{p_dmg} HP.\nСлайм стягивает жижу в кучу. Кругом кислотные лужи!")
+            elif clean_action == "defend":
+                battle["phase"] = "5B"
+                log_lines.append("🛡 Ты держишь дистанцию, не рискуя наступать в кислоту.\nСлайм стягивает жижу в кучу. Кругом кислотные лужи!")
+            elif clean_action == "pocket":
+                log_lines.append(_use_pocket_item())
+
+        # --- ФАЗА 5Б: Сбор массы ---
+        elif cur_phase == "5B":
+            if clean_action in ("watch", "defend"):
+                battle["phase"] = "1"
+                side = random.choice(["right", "left"])
+                battle["core_side"] = side
+                side_txt = "ВПРАВО" if side == "right" else "ВЛЕВО"
+                act_desc = "Ты внимательно следишь за перетеканием массы" if clean_action == "watch" else "Ты выжидаешь за блоком"
+                log_lines.append(f"👁️ {act_desc}!\nСлайм колышется, ядро смещается {side_txt}.")
+            elif clean_action == "attack":
+                battle["phase"] = "3B"
+                log_lines.append("⚔️ Несвоевременная атака срывает позицию! Слайм резко вздымается!\nДвухметровая масса накатывает высокой волной!")
+            elif clean_action == "pocket":
+                log_lines.append(_use_pocket_item())
+
+        game.active_story_callback = screen_cb
+        battle["last_log"] = "\n".join(log_lines)
+        return get_battle_text(game, enemy_id), get_battle_kb(game, enemy_id)
+
 
     # =========================================================================
     # СТАНДАРТНАЯ ЛОГИКА ДЛЯ СТАРОГО ВОЛКА (Локация 1.5)
