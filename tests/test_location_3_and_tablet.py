@@ -23,6 +23,7 @@ from services.database import (
 def test_stove_properties_and_rekindle():
     """Тест свойств печи: макс. прочность 30, розжиг при 0 за 2 AP."""
     game = GameState()
+    game.current_location = "Скромная лощина"
     game.set_story_flag("l3_shelter_unlocked", True)
     assert game.is_stove is True
 

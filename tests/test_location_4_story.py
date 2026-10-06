@@ -243,7 +243,7 @@ def test_l3_unlocks_l4_navigation():
     btn_texts = [b.text for row in loc_kb.inline_keyboard for b in row]
     btn_cbs = [b.callback_data for row in loc_kb.inline_keyboard for b in row]
 
-    assert "🏹 Просека охотников" in btn_texts
+    assert "4. 🏹 Просека охотников" in btn_texts
     assert "location_enter_4" in btn_cbs
 
 

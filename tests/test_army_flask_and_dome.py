@@ -156,8 +156,8 @@ def test_dome_in_locations_kb_at_top():
     # Открыли
     game.set_story_flag("l1_dome_discovered", True)
     kb_open = get_locations_kb(game)
-    first_btn = kb_open.inline_keyboard[0][0]
-    assert "Забытый купол" in first_btn.text  # В самом верху!
+    dome_btn = kb_open.inline_keyboard[1][0]
+    assert "• 🪂 Забытый купол" in dome_btn.text  # Под Стартовым лесом с точкой
 
     # Завершили сюжетку (забрали флягу)
     game.set_story_flag("l1_dome_completed", True)
@@ -286,8 +286,9 @@ def test_dome_staff_progression_and_loot():
     t_loot, kb_loot = handle_story("l1_dome_loot", game, 123)
     assert "Армейская фляга" in t_loot
     assert "воздав последние почести" in t_loot
-    assert game.equipment.get("flask") == "Армейская фляга"
-    assert game.flask_water == 20
+    assert game.inventory.get("Армейская фляга") == 1
+    assert game.army_flask_water == 0
+    assert game.equipment.get("flask") is None
     assert game.is_story_flag_set("l1_dome_completed") is True
     assert "Вернуться в лагерь" in kb_loot.inline_keyboard[0][0].text
 

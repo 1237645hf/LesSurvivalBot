@@ -183,7 +183,7 @@ def test_stage_08_wolf_lair_entry_screen_unarmed_vs_armed():
 
     # 1. Без посоха в руке
     loc_kb = get_locations_kb(game)
-    assert "🐾 Волчье логово (Опасно)" in loc_kb.inline_keyboard[0][0].text
+    assert "• 🐾 Волчье логово (Опасно)" in loc_kb.inline_keyboard[1][0].text
 
     text_unarmed, kb_unarmed = handle_story("wolf_lair_enter", game, 101)
     assert "Без надёжного оружия соваться в логово самоубийственно" in text_unarmed
@@ -192,7 +192,7 @@ def test_stage_08_wolf_lair_entry_screen_unarmed_vs_armed():
     # 2. С посохом в правой руке
     game.equipment["hand_right"] = "Крепкий посох"
     loc_kb_armed = get_locations_kb(game)
-    assert loc_kb_armed.inline_keyboard[0][0].text == "🐾 Волчье логово"
+    assert loc_kb_armed.inline_keyboard[1][0].text == "• 🐾 Волчье логово"
 
     text_armed, kb_armed = handle_story("wolf_lair_enter", game, 101)
     assert "Сжимая в руке тяжёлый посох" in text_armed

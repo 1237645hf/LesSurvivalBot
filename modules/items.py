@@ -1025,7 +1025,7 @@ def format_item_card(item_name: str, game: Optional[Any] = None) -> str:
     6. Рамки ━━━━━━━━━━━━━━━━━━━ сверху и снизу.
     """
     data = ITEMS.get(item_name, {})
-    header = f"{game.get_status_bar()}\n\n" if game and hasattr(game, "get_status_bar") else ""
+    header = f"{game.get_status_bar()}\n" if game and hasattr(game, "get_status_bar") else ""
     if not data:
         return f"{header}━━━━━━━━━━━━━━━━━━━\n📦 {item_name}\n\nИнформация отсутствует.\n━━━━━━━━━━━━━━━━━━━"
 
@@ -1047,6 +1047,11 @@ def format_item_card(item_name: str, game: Optional[Any] = None) -> str:
         lines.append("✨ Свойства: ⚔️ Урон в ближнем бою: 4–6 ед.")
     elif item_clean in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
         lines.append("✨ Свойства: ⚔️ Урон в бою: 19–24 ед.")
+    elif item_clean == "Армейская фляга":
+        flask_w = int(game.flask_water if game and game.equipment.get("flask") == "Армейская фляга" else getattr(game, "army_flask_water", 0) if game else 0)
+        lines.append(f"✨ Свойства: 💧 Вместимость: 20 глотков (сейчас: {flask_w}/20). Можно кипятить воду на костре.")
+    elif item_clean == "Бутылка воды":
+        lines.append("✨ Свойства: 💧 Чистая питьевая вода (20 глотков). Экипируется в слот фляги.")
     else:
         effects = data.get("effects", {})
         eff_parts = []
@@ -1404,13 +1409,22 @@ async def handle_inventory_callback(
                 kb = get_item_card_actions_kb(item, game)
 
     elif data == "equip_bottle_flask":
-        if game.inventory.get("Бутылка воды", 0) > 0:
-            game.inventory["Бутылка воды"] -= 1
-            if game.inventory["Бутылка воды"] <= 0:
-                del game.inventory["Бутылка воды"]
-            game.equipment["flask"] = "Бутылка воды"
-            game.flask_water = 20
-            game.add_log("🧴 Бутылка воды экипирована в слот фляги (20/20). Теперь кнопка «Пить» доступна на главном экране!")
+        has_started = bool(getattr(game, "clean_bottles_charges", []))
+        has_full = game.inventory.get("Бутылка воды", 0) > 0
+        if has_started or has_full:
+            if hasattr(game, "unequip_flask_to_inventory"):
+                game.unequip_flask_to_inventory()
+            if has_started:
+                charges = game.clean_bottles_charges.pop(0)
+                game.equipment["flask"] = "Бутылка воды"
+                game.flask_water = charges
+            else:
+                game.inventory["Бутылка воды"] -= 1
+                if game.inventory["Бутылка воды"] <= 0:
+                    del game.inventory["Бутылка воды"]
+                game.equipment["flask"] = "Бутылка воды"
+                game.flask_water = 20
+            game.add_log("🧴 Бутылка воды экипирована в слот фляги")
         else:
             game.add_log("В инвентаре нет бутылки воды.")
         text = game.get_ui()
@@ -1418,15 +1432,14 @@ async def handle_inventory_callback(
 
     elif data == "equip_army_flask":
         if game.inventory.get("Армейская фляга", 0) > 0:
-            old_flask = game.equipment.get("flask")
-            if old_flask:
-                game.inventory[old_flask] = game.inventory.get(old_flask, 0) + 1
+            if hasattr(game, "unequip_flask_to_inventory"):
+                game.unequip_flask_to_inventory()
             game.inventory["Армейская фляга"] -= 1
             if game.inventory["Армейская фляга"] <= 0:
                 del game.inventory["Армейская фляга"]
             game.equipment["flask"] = "Армейская фляга"
-            game.flask_water = int(getattr(game, "flask_water", 0) or 0)
-            game.add_log(f"🟨 Армейская фляга надета на пояс ({game.flask_water}/20)!")
+            game.flask_water = int(getattr(game, "army_flask_water", 0) or 0)
+            game.add_log("🟨 Армейская фляга экипирована в слот фляги")
         else:
             game.add_log("В инвентаре нет армейской фляги.")
         text = game.get_ui()
@@ -1463,24 +1476,41 @@ async def handle_inventory_callback(
     elif data == "drink_bottle_single":
         if game.equipment.get("flask") and getattr(game, "flask_water", 0) > 0:
             game.flask_water -= 1
-            game.thirst = min(100, game.thirst + 30)
+            if "Армейская" in (game.equipment.get("flask") or ""):
+                game.army_flask_water = game.flask_water
+            game.thirst = min(100, game.thirst + 15)
             game.add_log("💧 Ты сделал глоток 💧 +15")
             if game.flask_water <= 0:
                 container_name = game.equipment.get("flask") or "Бутылка воды"
                 if "Армейская" in container_name:
                     game.flask_water = 0
+                    game.army_flask_water = 0
                     game.add_log(f"Ёмкость «{container_name}» опустела (0/20)! Вскипяти дождевую воду на костре, чтобы наполнить её.")
                 else:
                     game.equipment["flask"] = None
                     game.inventory["Пустая бутылка"] = game.inventory.get("Пустая бутылка", 0) + 1
                     game.add_log(f"Ёмкость «{container_name}» опустошена! В инвентаре осталась пустая бутылка.")
+        elif getattr(game, "clean_bottles_charges", []):
+            if hasattr(game, "unequip_flask_to_inventory"):
+                game.unequip_flask_to_inventory()
+            charges = game.clean_bottles_charges.pop(0)
+            game.equipment["flask"] = "Бутылка воды"
+            game.flask_water = charges - 1
+            game.thirst = min(100, game.thirst + 15)
+            game.add_log(f"🧴 Ты экипировал бутылку на пояс и сделал глоток (+15 жажды). Во фляге: {game.flask_water}/20.")
+            if game.flask_water <= 0:
+                game.equipment["flask"] = None
+                game.inventory["Пустая бутылка"] = game.inventory.get("Пустая бутылка", 0) + 1
+                game.add_log("Ёмкость «Бутылка воды» опустошена! В инвентаре осталась пустая бутылка.")
         elif game.inventory.get("Бутылка воды", 0) > 0:
+            if hasattr(game, "unequip_flask_to_inventory"):
+                game.unequip_flask_to_inventory()
             game.inventory["Бутылка воды"] -= 1
             if game.inventory["Бутылка воды"] <= 0:
                 del game.inventory["Бутылка воды"]
             game.equipment["flask"] = "Бутылка воды"
             game.flask_water = 19
-            game.thirst = min(100, game.thirst + 30)
+            game.thirst = min(100, game.thirst + 15)
             game.add_log("🧴 Ты экипировал бутылку на пояс и сделал глоток (+15 жажды). Во фляге: 19/20.")
         else:
             game.add_log("Нет доступной воды для питья.")
@@ -1493,12 +1523,15 @@ async def handle_inventory_callback(
             water_left = int(getattr(game, "flask_water", 0) or 0)
             if water_left > 0:
                 game.flask_water = water_left - 1
+                if "Армейская" in (game.equipment.get("flask") or ""):
+                    game.army_flask_water = game.flask_water
                 game.thirst = min(100, game.thirst + 15)
                 game.add_log("💧 Ты сделал глоток 💧 +15")
                 if game.flask_water <= 0:
                     container_name = game.equipment.get("flask") or "Бутылка воды"
                     if "Армейская" in container_name:
                         game.flask_water = 0
+                        game.army_flask_water = 0
                         game.add_log(f"Ёмкость «{container_name}» опустела (0/20)! Вскипяти дождевую воду на костре, чтобы наполнить её.")
                     else:
                         game.equipment["flask"] = None
@@ -1508,11 +1541,24 @@ async def handle_inventory_callback(
                 container_name = game.equipment.get("flask") or "Бутылка воды"
                 if "Армейская" in container_name:
                     game.flask_water = 0
+                    game.army_flask_water = 0
                     game.add_log(f"Ёмкость «{container_name}» пуста (0/20)! Вскипяти дождевую воду на костре, чтобы наполнить её.")
                 else:
                     game.equipment["flask"] = None
                     game.inventory["Пустая бутылка"] = game.inventory.get("Пустая бутылка", 0) + 1
                     game.add_log(f"Ёмкость «{container_name}» опустошена! В инвентаре осталась пустая бутылка.")
+        elif getattr(game, "clean_bottles_charges", []):
+            if hasattr(game, "unequip_flask_to_inventory"):
+                game.unequip_flask_to_inventory()
+            charges = game.clean_bottles_charges.pop(0)
+            game.equipment["flask"] = "Бутылка воды"
+            game.flask_water = charges - 1
+            game.thirst = min(100, game.thirst + 15)
+            game.add_log(f"🧴 Ты экипировал бутылку на пояс и сделал глоток (+15 жажды). Во фляге: {game.flask_water}/20.")
+            if game.flask_water <= 0:
+                game.equipment["flask"] = None
+                game.inventory["Пустая бутылка"] = game.inventory.get("Пустая бутылка", 0) + 1
+                game.add_log("Ёмкость «Бутылка воды» опустошена! В инвентаре осталась пустая бутылка.")
         elif game.inventory.get("Бутылка воды", 0) > 0:
             game.add_log("Бутылка в инвентаре не надета! Перейди в инвентарь и нажми «Бутылка воды» -> «Надеть на пояс».")
         elif game.inventory.get("Вода", 0) > 0:

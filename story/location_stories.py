@@ -589,7 +589,7 @@ def handle_l1_dome(data: str, game, uid: int):
             if has_staff:
                 buttons.append([InlineKeyboardButton(text="🥢 Сбить посохом (1 ⚡)", callback_data="l1_dome_staff_solve")])
             if has_pet:
-                buttons.append([InlineKeyboardButton(text="🐱 Отправить котёнка", callback_data="l1_dome_cat_solve")])
+                buttons.append([InlineKeyboardButton(text="🐱 Отпустить котёнка погулять", callback_data="l1_dome_cat_solve")])
             buttons.append([InlineKeyboardButton(text="🪨 Бросать камни (1 ⚡)", callback_data="l1_dome_stone_throw")])
             buttons.append([InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")])
             kb = InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -729,16 +729,9 @@ def handle_l1_dome(data: str, game, uid: int):
             return text, kb
 
         game.consume_action(1)
-        # Экипируем флягу, если слот пуст, либо даем в инвентарь
-        if not game.equipment.get("flask") or game.equipment.get("flask") == "Бутылка воды":
-            # Если надета обычная пластиковая бутылка, снимаем в инвентарь (или пустую)
-            old_flask = game.equipment.get("flask")
-            if old_flask:
-                game.inventory[old_flask] = game.inventory.get(old_flask, 0) + 1
-            game.equipment["flask"] = "Армейская фляга"
-            game.flask_water = 20
-        else:
-            game.inventory["Армейская фляга"] = game.inventory.get("Армейская фляга", 0) + 1
+        # Армейская фляга падает в инвентарь сухой: 0/20, без автоэкипировки
+        game.inventory["Армейская фляга"] = game.inventory.get("Армейская фляга", 0) + 1
+        game.army_flask_water = 0
 
         game.adjust_narrative_karma("pragmatism", 3)
         game.set_story_flag("l1_dome_completed", True)
@@ -746,11 +739,10 @@ def handle_l1_dome(data: str, game, uid: int):
         game.active_story_callback = None
         game.reset_nav()
         text = (
-            "Разбросав ветви валежника, ты открываешь тяжелые пряжки ранца. Внутри — надежная металлическая **Армейская фляга**, "
-            "до краев наполненная чистой водой!\n\n"
+            "Разбросав ветви валежника, ты открываешь тяжелые пряжки ранца. Внутри — надежная металлическая **Армейская фляга** (пустая, 0/20)!\n\n"
             "Ты бережно укладываешь упавшие останки парашютиста под сенью дуба и присыпаешь их землей и камнями, воздав последние почести. "
             "На душе становится спокойнее.\n\n"
-            "*(Эффекты: -1 AP, получена Армейская фляга 20/20, +3 кармы)*"
+            "*(Эффекты: -1 AP, получена Армейская фляга 0/20, +3 кармы)*"
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")],
@@ -805,16 +797,17 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
         ])
 
     elif data == "l1_5_leave":
-        if hasattr(game, "unlock_craft"):
-            game.unlock_craft("Крепкий посох")
-        elif "Крепкий посох" not in getattr(game, "unlocked_crafts", []):
+        if "Крепкий посох" not in getattr(game, "unlocked_crafts", []):
             game.unlocked_crafts = list(getattr(game, "unlocked_crafts", [])) + ["Крепкий посох"]
         game.locations_unlocked = True
         game.wolf_lair_unlocked = True
         game.wolf_lair_active = True
         game.story_state = None
         game.reset_nav()
-        game.add_log("Ты вернулся в лагерь. Открыт крафт: 🪵 Крепкий посох. В меню «Локации» появилось Волчье логово.")
+        if not game.is_story_flag_set("l1_staff_lair_notified"):
+            game.set_story_flag("l1_staff_lair_notified", True)
+            game.add_log("🔨 Открыт крафт: 🪵 Крепкий посох")
+            game.add_log("🐾 В меню «Локации» появилось Волчье логово")
         text = game.get_ui()
         kb = get_main_kb(game)
 
@@ -1367,11 +1360,6 @@ def handle_location_2_ruchey(data: str, game, uid: int):
     text = None
     kb = None
 
-    # Открытие рецептов сланцевой брони при посещении Локации 2
-    for rec in ("Сланцевая маска", "Сланцевый панцирь", "Сланцевые поножи", "Сланцевые ботинки"):
-        if rec not in getattr(game, "unlocked_crafts", []):
-            game.unlocked_crafts.append(rec)
-
     # 1. Вход на локацию
     if data in ("location_enter_2", "river_ferocious", "l2_enter", "l2_thorns_approach"):
         # Если мост уже активирован — спокойный вид переправы
@@ -1399,6 +1387,10 @@ def handle_location_2_ruchey(data: str, game, uid: int):
 
         # Стена терновника
         game.set_story_flag("l2_thorns_seen", True)
+        # Открытие рецептов сланцевой брони строго при встрече с препятствием Стены терновника
+        for rec in ("Сланцевая маска", "Сланцевый панцирь", "Сланцевые поножи", "Сланцевые ботинки"):
+            if rec not in getattr(game, "unlocked_crafts", []):
+                game.unlocked_crafts.append(rec)
         slate_count = get_l2_slate_armor_count(game)
         thorn_damage = get_l2_thorn_damage(slate_count)
 

@@ -128,13 +128,13 @@ def test_l5_arena_menu_unlock_and_start():
     # До l5_2_6 арены нет в меню
     locs_kb = get_locations_kb(game)
     buttons = [btn.text for row in locs_kb.inline_keyboard for btn in row]
-    assert "☣️ Заводь Исполина" not in buttons
+    assert "• ☣️ Заводь Исполина" not in buttons
     
     # Разблокируем
     game.set_story_flag("l5_arena_unlocked", True)
     locs_kb = get_locations_kb(game)
     buttons = [btn.text for row in locs_kb.inline_keyboard for btn in row]
-    assert "☣️ Заводь Исполина" in buttons
+    assert "• ☣️ Заводь Исполина" in buttons
     
     # Вход на арену
     text, kb = handle_location_5_slug_pit("l5_arena_start", game, 123)
@@ -303,6 +303,7 @@ def test_l5_boss_pocket_item_mechanic():
 def test_l5_ch2_aftermath_and_ancient_lair_unlock():
     """Тест экранов l5_2_8 -> l5_2_9 -> l5_2_10 и открытия Логова Древнего."""
     game = GameState()
+    game.unlocked_locations = ["Яр слизней"]
     uid = 555
 
     # Экран 8: l5_2_8
@@ -331,7 +332,7 @@ def test_l5_ch2_aftermath_and_ancient_lair_unlock():
     # Проверка разблокировки [🕳️ Логово Древнего] в меню локаций
     locs_kb = get_locations_kb(game)
     buttons = [btn.text for row in locs_kb.inline_keyboard for btn in row]
-    assert "🕳️ Логово Древнего" in buttons
+    assert "• 🕳️ Логово Древнего" in buttons
 
     # Проверка окна осмотра Логова Древнего
     text_lair, kb_lair = handle_location_5_slug_pit("l5_ancient_lair", game, uid)
@@ -342,7 +343,7 @@ def test_l5_ch2_aftermath_and_ancient_lair_unlock():
     game.set_story_flag("l5_ancient_defeated", True)
     locs_kb_after = get_locations_kb(game)
     buttons_after = [btn.text for row in locs_kb_after.inline_keyboard for btn in row]
-    assert "🕳️ Логово Древнего" not in buttons_after
+    assert "• 🕳️ Логово Древнего" not in buttons_after
 
 
 def test_l5_post_boss_unarmed_camp_and_spear_craft():

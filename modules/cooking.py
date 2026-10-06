@@ -440,13 +440,21 @@ def cook_item(game: Any, recipe_id: str) -> Tuple[bool, str]:
             take = min(flask_water_available, remaining_needed)
             game.flask_water = flask_water_available - take
             remaining_needed -= take
-            if game.flask_water <= 0:
-                container_name = getattr(game, "equipment", {}).get("flask") or "Бутылка воды"
-                if hasattr(game, "equipment"):
-                    game.equipment["flask"] = None
-                inv["Пустая бутылка"] = inv.get("Пустая бутылка", 0) + 1
-                if hasattr(game, "add_log"):
-                    game.add_log(f"Ёмкость «{container_name}» опустошена! В инвентаре осталась пустая бутылка.")
+            container_name = getattr(game, "equipment", {}).get("flask") or "Бутылка воды"
+            if "Армейская" in container_name:
+                game.army_flask_water = game.flask_water
+                if game.flask_water <= 0:
+                    game.flask_water = 0
+                    game.army_flask_water = 0
+                    if hasattr(game, "add_log"):
+                        game.add_log(f"Ёмкость «{container_name}» опустела (0/20)!")
+            else:
+                if game.flask_water <= 0:
+                    if hasattr(game, "equipment"):
+                        game.equipment["flask"] = None
+                    inv["Пустая бутылка"] = inv.get("Пустая бутылка", 0) + 1
+                    if hasattr(game, "add_log"):
+                        game.add_log(f"Ёмкость «{container_name}» опустошена! В инвентаре осталась пустая бутылка.")
 
         # 2. Если нужно ещё — добираем из бутылки в инвентаре
         while remaining_needed > 0 and inv.get("Бутылка воды", 0) > 0:
@@ -1023,14 +1031,17 @@ async def handle_campfire_callback(
             return None, None
 
         if game.equipment.get("flask") != "Армейская фляга":
-            old_flask = game.equipment.get("flask")
-            if old_flask:
-                game.inventory[old_flask] = game.inventory.get(old_flask, 0) + 1
+            if hasattr(game, "unequip_flask_to_inventory"):
+                game.unequip_flask_to_inventory()
+            else:
+                old_flask = game.equipment.get("flask")
+                if old_flask:
+                    game.inventory[old_flask] = game.inventory.get(old_flask, 0) + 1
             game.inventory["Армейская фляга"] -= 1
             if game.inventory["Армейская фляга"] <= 0:
                 del game.inventory["Армейская фляга"]
             game.equipment["flask"] = "Армейская фляга"
-            game.flask_water = int(getattr(game, "flask_water", 0) or 0)
+            game.flask_water = int(getattr(game, "army_flask_water", 0) or 0)
 
         cur_w = int(getattr(game, "flask_water", 0) or 0)
         if cur_w >= 20:
@@ -1053,6 +1064,7 @@ async def handle_campfire_callback(
         transfer = min(space, available)
         new_flask_water = cur_w + transfer
         game.flask_water = new_flask_water
+        game.army_flask_water = new_flask_water
 
         game.campfire_durability = max(0, game.campfire_durability - 1)
         if game.campfire_durability <= 0 and not getattr(game, "is_stove", False):

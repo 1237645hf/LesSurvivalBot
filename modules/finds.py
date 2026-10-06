@@ -369,7 +369,7 @@ async def handle_explore_callback(
 
     if data == "action_1":
         if game.ap <= 0:
-            ap_warning = "Не хватает очков действий! Нужно поспать (Отдых)."
+            ap_warning = "💤 Не хватает очков действий, нужно поспать"
             game.add_log(ap_warning)
             if callback:
                 await callback.answer(ap_warning, show_alert=True)
@@ -485,7 +485,7 @@ async def handle_explore_callback(
     elif data == "action_collect_water":
         if game.weather in {"rain", "storm"}:
             game.thirst = min(100, game.thirst + 20)
-            game.add_log("🌧️ Ты подставил ладони под дождь и напился свежей воды (+20 жажды).")
+            game.add_log("🌧 Ты подставил ладони, чтобы напиться дождём 💧 +20")
         else:
             game.add_log("⚠️ Дождь уже закончился.")
         text = game.get_ui()

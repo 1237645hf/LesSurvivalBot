@@ -78,9 +78,19 @@ def get_inspect_menu_kb(game):
             marker = get_item_rank_marker(item_clean)
         else:
             marker = get_item_emoji(item_clean)
-        qty_str = f" ×{count}" if count > 1 else ""
+        if item == "Армейская фляга":
+            qty_str = f" ({getattr(game, 'army_flask_water', 0)}/20)"
+        elif item == "Бутылка воды":
+            qty_str = f" (20/20) ×{count}" if count > 1 else " (20/20)"
+        else:
+            qty_str = f" ×{count}" if count > 1 else ""
         keyboard.append([
             InlineKeyboardButton(text=f"{marker} {item}{qty_str}", callback_data=f"inspect_item_{item}")
+        ])
+    for charge in getattr(game, "clean_bottles_charges", []):
+        marker = get_item_emoji("Бутылка воды")
+        keyboard.append([
+            InlineKeyboardButton(text=f"{marker} Бутылка воды ({charge}/20)", callback_data="inspect_item_Бутылка воды")
         ])
     keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -386,48 +396,51 @@ def get_locations_kb(game):
                 return True
         return False
 
-    # 0. Забытый купол (В САМОМ ВЕРХУ, пока не получен лут)
-    if game.is_story_flag_set("l1_dome_discovered") and not game.is_story_flag_set("l1_dome_completed"):
-        keyboard.append([InlineKeyboardButton(text="🪂 Забытый купол", callback_data="l1_dome_enter")])
-
-    # Волчье логово (если открыто и не побеждено)
-    wolf_unlocked = getattr(game, "wolf_lair_unlocked", False) or getattr(game, "wolf_lair_active", False)
-    wolf_defeated = getattr(game, "wolf_lair_defeated", False) or game.is_story_flag_set("wolf_lair_defeated")
-    if wolf_unlocked and not wolf_defeated:
-        has_staff = game.equipment.get("hand_right") == "Крепкий посох"
-        btn_text = "🐾 Волчье логово" if has_staff else "🐾 Волчье логово (Опасно)"
-        keyboard.append([InlineKeyboardButton(text=btn_text, callback_data="wolf_lair_enter")])
-
     # 1. Стартовый лес
     if is_loc_unlocked("лес", "старт") or not unlocked:
-        keyboard.append([InlineKeyboardButton(text="🌲 Стартовый лес", callback_data="location_enter_1")])
+        keyboard.append([InlineKeyboardButton(text="1. 🌲 Стартовый лес", callback_data="location_enter_1")])
+        # • Забытый купол (пока активен лут)
+        if game.is_story_flag_set("l1_dome_discovered") and not game.is_story_flag_set("l1_dome_completed"):
+            keyboard.append([InlineKeyboardButton(text="• 🪂 Забытый купол", callback_data="l1_dome_enter")])
+        # • Волчье логово (пока активен квест/босс)
+        wolf_unlocked = getattr(game, "wolf_lair_unlocked", False) or getattr(game, "wolf_lair_active", False)
+        wolf_defeated = getattr(game, "wolf_lair_defeated", False) or game.is_story_flag_set("wolf_lair_defeated")
+        if wolf_unlocked and not wolf_defeated:
+            has_staff = game.equipment.get("hand_right") == "Крепкий посох"
+            btn_text = "• 🐾 Волчье логово" if has_staff else "• 🐾 Волчье логово (Опасно)"
+            keyboard.append([InlineKeyboardButton(text=btn_text, callback_data="wolf_lair_enter")])
+
     # 2. Ручей со змеями
     if is_loc_unlocked("ручей"):
-        keyboard.append([InlineKeyboardButton(text="🏞️ Ручей со змеями", callback_data="location_enter_2")])
+        keyboard.append([InlineKeyboardButton(text="2. 🏞️ Ручей со змеями", callback_data="location_enter_2")])
+
     # 3. Скромная лощина
     if is_loc_unlocked("лощин"):
-        keyboard.append([InlineKeyboardButton(text="⛰️ Скромная лощина", callback_data="location_enter_3")])
-    # Босс: Солонец (Секач)
-    if is_loc_unlocked("секач", "солонец") and not game.is_story_flag_set("l3_ridge_completed"):
-        keyboard.append([InlineKeyboardButton(text="🐗 Солонец (Секач)", callback_data="location_enter_boar")])
+        keyboard.append([InlineKeyboardButton(text="3. ⛰️ Скромная лощина", callback_data="location_enter_3")])
+        # • Босс: Солонец (Секач)
+        if is_loc_unlocked("секач", "солонец") and not game.is_story_flag_set("l3_ridge_completed"):
+            keyboard.append([InlineKeyboardButton(text="• 🐗 Солонец (Секач)", callback_data="location_enter_boar")])
+
     # 4. Просека охотников
     if is_loc_unlocked("просек", "охотник"):
-        keyboard.append([InlineKeyboardButton(text="🏹 Просека охотников", callback_data="location_enter_4")])
+        keyboard.append([InlineKeyboardButton(text="4. 🏹 Просека охотников", callback_data="location_enter_4")])
+
     # 5. Яр слизней
     if is_loc_unlocked("яр", "слизн"):
-        keyboard.append([InlineKeyboardButton(text="🐌 Яр слизней", callback_data="location_enter_5")])
+        keyboard.append([InlineKeyboardButton(text="5. 🐌 Яр слизней", callback_data="location_enter_5")])
+        # • Подлокации Яра Слизней
+        if game.is_story_flag_set("l5_arena_unlocked") and not game.is_story_flag_set("l5_boss_defeated"):
+            keyboard.append([InlineKeyboardButton(text="• ☣️ Заводь Исполина", callback_data="l5_arena_start")])
+        if game.is_story_flag_set("l5_ancient_unlocked") and not game.is_story_flag_set("l5_ancient_defeated"):
+            keyboard.append([InlineKeyboardButton(text="• 🕳️ Логово Древнего", callback_data="l5_ancient_lair")])
+
     # 6. Мохнатая пещера
     if is_loc_unlocked("пещер", "мохнат"):
-        keyboard.append([InlineKeyboardButton(text="🦇 Мохнатая пещера", callback_data="location_enter_6")])
+        keyboard.append([InlineKeyboardButton(text="6. 🦇 Мохнатая пещера", callback_data="location_enter_6")])
+
     # 7. Святилище
     if is_loc_unlocked("святилищ"):
-        keyboard.append([InlineKeyboardButton(text="🏛️ Святилище", callback_data="location_enter_7")])
-
-    # Подлокации Яра Слизней (в самом низу меню)
-    if game.is_story_flag_set("l5_arena_unlocked") and not game.is_story_flag_set("l5_boss_defeated"):
-        keyboard.append([InlineKeyboardButton(text="☣️ Заводь Исполина", callback_data="l5_arena_start")])
-    if game.is_story_flag_set("l5_ancient_unlocked") and not game.is_story_flag_set("l5_ancient_defeated"):
-        keyboard.append([InlineKeyboardButton(text="🕳️ Логово Древнего", callback_data="l5_ancient_lair")])
+        keyboard.append([InlineKeyboardButton(text="7. 🏛️ Святилище", callback_data="location_enter_7")])
 
     keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)

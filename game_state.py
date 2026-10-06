@@ -99,10 +99,11 @@ class GameState:
         "observation": 0,
     })
 
-    # Состояние Костра
+    # Состояние Костров по локациям
     campfire_active: bool = False
     campfire_durability: int = 0
     campfire_max_durability: int = 10
+    campfires: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     # Состояние Фонаря
     lantern_durability: int = 20
@@ -112,8 +113,10 @@ class GameState:
     pants_pocket: Optional[str] = None
     slug_bait_active: bool = False
 
-    # Вода во фляге (макс 10 делений)
+    # Вода во фляге и емкостях
     flask_water: int = 10
+    army_flask_water: int = 0
+    clean_bottles_charges: List[int] = field(default_factory=list)
     rain_bottles: List[int] = field(default_factory=list)
 
     # Открытые рецепты крафта (старт: Костёр, Факел)
@@ -142,10 +145,7 @@ class GameState:
     
     # Поля совместимости из Game (ранее отсутствовали в GameState)
     location: str = "Стартовый лес"
-    unlocked_locations: List[str] = field(default_factory=lambda: [
-        "Стартовый лес", "Ручей со змеями", "Скромная лощина",
-        "Просека охотников", "Яр слизней", "Мохнатая пещера", "Святилище",
-    ])
+    unlocked_locations: List[str] = field(default_factory=lambda: ["Стартовый лес"])
     last_message_id: Optional[int] = None
     current_location_state: str = "forest_start"
     found_branch_once: bool = False
@@ -182,11 +182,9 @@ class GameState:
     is_initialized: bool = False
 
     
-    # Метод сброса навигации (для завершения локации)
+    # Метод сброса навигации (для завершения локации/экранов)
     def reset_nav(self):
-        """Сбрасывает навигацию для следующей локации."""
-        self.current_location = "Лесной старт"
-        self.location_index = 0
+        """Сбрасывает навигацию (стек экранов) на главный экран."""
         self.nav_stack = ["main"]
 
     def push_screen(self, screen: str):
@@ -330,14 +328,93 @@ class GameState:
 
         return result
 
+    def get_current_hearth_key(self, loc_name: Optional[str] = None) -> str:
+        loc = str(loc_name if loc_name is not None else getattr(self, "current_location", "") or "").lower()
+        if "лощин" in loc:
+            return "loc_3"
+        elif "ручей" in loc:
+            return "loc_2"
+        elif "просек" in loc:
+            return "loc_4"
+        elif "яр" in loc:
+            return "loc_5"
+        elif "пещер" in loc:
+            return "loc_6"
+        elif "святилищ" in loc:
+            return "loc_7"
+        return "loc_1"
+
     @property
     def is_stove(self) -> bool:
-        flags = getattr(self, "story_flags", {}) or {}
-        if flags.get("has_stove") or flags.get("l3_shelter_unlocked"):
-            return True
-        loc_idx = int(getattr(self, "location_index", 0) or 0)
-        cur_loc = str(getattr(self, "current_location", "") or "")
-        return loc_idx == 2 or "Лощина" in cur_loc
+        cur_loc = str(getattr(self, "current_location", "") or "").lower()
+        return "лощин" in cur_loc
+
+    def switch_location_hearth(self, old_loc: str, new_loc: str):
+        """Синхронизирует состояние очагов при смене локации."""
+        if not hasattr(self, "campfires") or self.campfires is None:
+            self.campfires = {}
+        old_key = self.get_current_hearth_key(old_loc)
+        self.campfires[old_key] = {
+            "active": bool(getattr(self, "campfire_active", False)),
+            "durability": int(getattr(self, "campfire_durability", 0)),
+            "max_durability": int(getattr(self, "campfire_max_durability", 10)),
+        }
+        new_key = self.get_current_hearth_key(new_loc)
+        new_is_stove = "лощин" in new_loc.lower()
+        def_max = 30 if new_is_stove else 10
+        new_hearth = self.campfires.get(new_key)
+        if new_hearth is not None:
+            self.campfire_active = bool(new_hearth.get("active", False))
+            self.campfire_durability = int(new_hearth.get("durability", 0))
+            self.campfire_max_durability = int(new_hearth.get("max_durability", def_max))
+        else:
+            self.campfire_active = False
+            self.campfire_durability = 0
+            self.campfire_max_durability = def_max
+            self.campfires[new_key] = {
+                "active": False,
+                "durability": 0,
+                "max_durability": def_max,
+            }
+
+    def __setattr__(self, name, value):
+        if name == "current_location":
+            old_loc = self.__dict__.get("current_location")
+            if old_loc and old_loc != value:
+                self.switch_location_hearth(old_loc, value)
+        super().__setattr__(name, value)
+
+    def unequip_flask_to_inventory(self):
+        """Снимает экипированную емкость из слота 'flask' и честно возвращает её в инвентарь."""
+        old_flask = self.equipment.get("flask")
+        if not old_flask:
+            return
+
+        current_water = int(getattr(self, "flask_water", 0) or 0)
+        if "Армейская" in old_flask:
+            self.army_flask_water = max(0, min(20, current_water))
+            self.inventory["Армейская фляга"] = self.inventory.get("Армейская фляга", 0) + 1
+        elif "Бутылка воды" in old_flask or old_flask == "flask":
+            if current_water >= 20:
+                self.inventory["Бутылка воды"] = self.inventory.get("Бутылка воды", 0) + 1
+            elif current_water > 0:
+                if not hasattr(self, "clean_bottles_charges") or self.clean_bottles_charges is None:
+                    self.clean_bottles_charges = []
+                self.clean_bottles_charges.append(current_water)
+            else:
+                self.inventory["Пустая бутылка"] = self.inventory.get("Пустая бутылка", 0) + 1
+        elif "Бутылка с дождевой водой" in old_flask or "Бутылка дождевой воды" in old_flask:
+            if not hasattr(self, "rain_bottles") or self.rain_bottles is None:
+                self.rain_bottles = []
+            if current_water > 0:
+                self.rain_bottles.append(current_water)
+            else:
+                self.inventory["Пустая бутылка"] = self.inventory.get("Пустая бутылка", 0) + 1
+        else:
+            self.inventory[old_flask] = self.inventory.get(old_flask, 0) + 1
+
+        self.equipment["flask"] = None
+        self.flask_water = 0
 
     def rekindle_stove(self):
         """Растопить остывшую печь: 2 AP, +7 голода, +18 жажды, даёт 1 огонь."""
@@ -632,11 +709,14 @@ class GameState:
             "campfire_active": bool(getattr(self, "campfire_active", False)),
             "campfire_durability": int(getattr(self, "campfire_durability", 0)),
             "campfire_max_durability": int(getattr(self, "campfire_max_durability", 10)),
+            "campfires": dict(getattr(self, "campfires", {})),
             "lantern_durability": int(getattr(self, "lantern_durability", 20)),
             "lantern_max_durability": int(getattr(self, "lantern_max_durability", 20)),
             "pants_pocket": getattr(self, "pants_pocket", None),
             "slug_bait_active": bool(getattr(self, "slug_bait_active", False)),
             "flask_water": int(getattr(self, "flask_water", 10)),
+            "army_flask_water": int(self.flask_water if self.equipment.get("flask") == "Армейская фляга" else getattr(self, "army_flask_water", 0)),
+            "clean_bottles_charges": list(getattr(self, "clean_bottles_charges", [])),
             "rain_bottles": list(getattr(self, "rain_bottles", [])),
             "unlocked_crafts": list(getattr(self, "unlocked_crafts", ["Костёр", "Факел"])),
             "player_name": str(getattr(self, "player_name", getattr(self, "character_name", "Выживший"))),
@@ -739,7 +819,10 @@ class GameState:
         game.pants_pocket = data.get("pants_pocket", getattr(game, "pants_pocket", None))
         game.slug_bait_active = bool(data.get("slug_bait_active", getattr(game, "slug_bait_active", False)))
         game.flask_water = int(getattr(game, "flask_water", 10) or 10)
+        game.army_flask_water = int(data.get("army_flask_water", getattr(game, "army_flask_water", 0)) or 0)
+        game.clean_bottles_charges = [int(x) for x in data.get("clean_bottles_charges", getattr(game, "clean_bottles_charges", []))]
         game.rain_bottles = [int(x) for x in data.get("rain_bottles", [])]
+        game.campfires = dict(data.get("campfires", getattr(game, "campfires", {})))
         game.locations_unlocked = bool(data.get("locations_unlocked", False))
         game.wolf_lair_unlocked = bool(data.get("wolf_lair_unlocked", False))
         game.wolf_lair_active = bool(data.get("wolf_lair_active", False))
@@ -897,8 +980,19 @@ class GameState:
                 marker = get_item_rank_marker(item_clean)
             else:
                 marker = get_item_emoji(item_clean)
-            line = f"• {marker} {item} x{count}{equipped_mark}" if count > 1 else f"• {marker} {item}{equipped_mark}"
+            if item == "Армейская фляга":
+                flask_amt = int(getattr(self, "army_flask_water", 0) or 0)
+                line = f"• {marker} {item} ({flask_amt}/20){equipped_mark}"
+            elif item == "Бутылка воды":
+                qty_str = f" x{count}" if count > 1 else ""
+                line = f"• {marker} {item} (20/20){qty_str}{equipped_mark}"
+            else:
+                line = f"• {marker} {item} x{count}{equipped_mark}" if count > 1 else f"• {marker} {item}{equipped_mark}"
             lines.append(line)
+
+        for charge in getattr(self, "clean_bottles_charges", []):
+            marker = get_item_emoji("Бутылка воды")
+            lines.append(f"• {marker} Бутылка воды ({charge}/20)")
         content = "Инвентарь:\n" + "\n".join(lines) if lines else "Инвентарь пуст"
         return f"━━━━━━━━━━━━━━━━━━━\n{content}\n━━━━━━━━━━━━━━━━━━━"
     
