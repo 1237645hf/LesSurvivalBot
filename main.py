@@ -427,27 +427,39 @@ async def update_or_send_message(
     need_recreate = time_expired or no_active_binding
 
     if need_recreate:
+        # 1. Точечно удалить гарантированные ID
+        guaranteed_ids = set()
+        if game:
+            if getattr(game, "last_message_id", None):
+                guaranteed_ids.add(game.last_message_id)
+            if getattr(game, "header_message_id", None):
+                guaranteed_ids.add(game.header_message_id)
+        if active_msg_id:
+            guaranteed_ids.add(active_msg_id)
+        if current_msg_id:
+            guaranteed_ids.add(current_msg_id)
+
+        for gid in guaranteed_ids:
+            try:
+                await bot.delete_message(chat_id=chat_id, message_id=gid)
+            except Exception:
+                pass
+
+        # 2. Определить опорный ID (curr_id) и пройтись циклом назад на 40 сообщений
         curr_id = (
             current_msg_id
             or active_msg_id
             or (getattr(game, "last_message_id", None) if game else None)
+            or (max(guaranteed_ids) if guaranteed_ids else None)
         )
         if curr_id:
-            try:
-                await bot.delete_messages(
-                    chat_id=chat_id,
-                    message_ids=list(range(max(1, curr_id - 100), curr_id + 1)),
-                )
-            except Exception:
+            for mid in range(curr_id, max(1, curr_id - 40), -1):
                 try:
-                    await bot.delete_messages(
-                        chat_id=chat_id,
-                        message_ids=list(range(max(1, curr_id - 100), curr_id + 1))[-100:],
-                    )
+                    await bot.delete_message(chat_id=chat_id, message_id=mid)
                 except Exception:
-                    pass
+                    continue
 
-        # Сразу после этого отправь чистую шапку
+        # 3. Сразу после очистки отправить чистую шапку
         try:
             rm_msg = await bot.send_message(
                 chat_id,
