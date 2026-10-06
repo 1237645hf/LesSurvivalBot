@@ -739,6 +739,11 @@ def handle_session_callback(
         return text, kb
 
     elif data in ("start_new_game_confirmed", "restart_game"):
+        existing = load_game(uid)
+        if existing is None and games_dict is not None:
+            existing = games_dict.get(uid)
+        elif existing is None and game:
+            existing = game
         new_game = Game()
         if existing and getattr(existing, "header_message_id", None):
             new_game.header_message_id = existing.header_message_id
