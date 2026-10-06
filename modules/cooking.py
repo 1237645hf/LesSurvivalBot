@@ -561,6 +561,8 @@ def is_campfire_callback(data: str) -> bool:
         )
         or data.startswith((
             "cook_",
+            "cook_recipe:",
+            "recipe:",
             "fuel_menu:",
             "feed_fuel_action:",
             "feed_fuel:",
@@ -590,7 +592,23 @@ async def handle_campfire_callback(
     text = None
     kb = None
 
-    if data.startswith("cook_qty:"):
+    if data.startswith(("cook_recipe_view_", "cook_recipe:", "recipe:")):
+        if data.startswith("cook_recipe_view_"):
+            recipe_id = data.removeprefix("cook_recipe_view_")
+        elif data.startswith("cook_recipe:"):
+            recipe_id = data.removeprefix("cook_recipe:")
+        else:
+            recipe_id = data.removeprefix("recipe:")
+
+        game.push_screen("recipe_card")
+        game.story_state = "WAITING_FOR_COOK_COUNT"
+        game.story_flags["cook_recipe_id"] = recipe_id
+        max_count = get_recipe_max_count(game, recipe_id)
+        text = format_recipe_card(recipe_id, game)
+        kb = get_campfire_recipe_view_kb(recipe_id, max_count)
+        return text, kb
+
+    elif data.startswith("cook_qty:"):
         parts = data.split(":", 2)
         recipe_id = parts[1]
         qty_mode = parts[2]
@@ -618,7 +636,7 @@ async def handle_campfire_callback(
         kb = get_campfire_kb(game)
         return text, kb
 
-    elif data.startswith("cook_exec_") or (data.startswith("cook_") and not data.startswith("cook_recipe_view_") and not data.startswith("cook_qty:")):
+    elif data.startswith("cook_exec_") or (data.startswith("cook_") and not data.startswith("cook_recipe_view_") and not data.startswith("cook_qty:") and not data.startswith("cook_recipe:")):
         recipe_id = data.removeprefix("cook_exec_")
         if not getattr(game, "campfire_active", False) or getattr(game, "campfire_durability", 0) <= 0:
             if callback:
@@ -637,15 +655,6 @@ async def handle_campfire_callback(
         text = get_campfire_text(game, action_header=header)
         kb = get_campfire_kb(game)
         return text, kb
-
-    elif data.startswith("cook_recipe_view_"):
-        recipe_id = data.removeprefix("cook_recipe_view_")
-        game.push_screen("recipe_card")
-        game.story_state = "WAITING_FOR_COOK_COUNT"
-        game.story_flags["cook_recipe_id"] = recipe_id
-        max_count = get_recipe_max_count(game, recipe_id)
-        text = format_recipe_card(recipe_id, game)
-        kb = get_campfire_recipe_view_kb(recipe_id, max_count)
     elif data == "action_light_campfire":
         has_torch = (
             game.equipment.get("hand_left") == "Факел"
@@ -900,7 +909,7 @@ async def handle_campfire_callback(
                 sticks = inv.get("Ветка", 0) + inv.get("Палки", 0) + inv.get("Палка", 0)
                 text = f"🪵 Введите количество палок для костра в чат:\n(Доступно: {sticks} шт., нужно до максимума: {needed} шт.)"
             kb = types.InlineKeyboardMarkup(inline_keyboard=[
-                [types.InlineKeyboardButton(text="↩️ Назад", callback_data="back")]
+                [types.InlineKeyboardButton(text="↩️ Назад", callback_data="campfire_screen")]
             ])
             return text, kb
         elif fuel_kind == "coal":

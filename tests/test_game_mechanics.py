@@ -530,9 +530,8 @@ def test_8_1_character_screen_format():
 
     assert "👤 ВЫЖИВШИЙ: Следопыт" in text
     assert "```" not in text
-    assert "🧢 Голова:" in text
-    assert "⚪ Грязная кепка" in text
-    assert "🐾 Котёнок:" in text
+    assert "🧢 ГОЛОВА: 🧢 Грязная кепка" in text
+    assert "🐾 КОТЁНОК: Пусто" in text
     assert "Пусто" in text
     assert "\nКот" not in text
     assert text.startswith("━━━━━━━━━━━━━━━━━━━\n")
@@ -574,8 +573,8 @@ def test_8_3_format_game_text_no_truncation_for_character_screen():
     formatted = format_game_text(char_text, game)
     assert formatted == char_text
     assert "…" not in formatted
-    assert "🧢 Голова:" in formatted
-    assert "🐾 Котёнок:" in formatted
+    assert "🧢 ГОЛОВА: 🧢 Грязная кепка" in formatted
+    assert "🐾 КОТЁНОК: Пусто" in formatted
 
 
 def test_8_4_sticks_drop_one_to_three():
@@ -942,16 +941,16 @@ def test_11_3_character_screen_no_default_cat_and_frames():
 
     # Имя и стартовая одежда
     assert "👤 ВЫЖИВШИЙ: Бродяга" in char_text
-    assert "🧢 Голова:\n⚪ Грязная кепка" in char_text
-    assert "👕 Торс:\n⚪ Потасканная куртка" in char_text
-    assert "👖 Штаны:\n⚪ Рваные штаны" in char_text
-    assert "🥾 Ботинки:\n⚪ Стоптанные ботинки" in char_text
+    assert "🧢 ГОЛОВА: 🧢 Грязная кепка" in char_text
+    assert "👕 ТОРС: 👕 Потасканная куртка" in char_text
+    assert "👖 ШТАНЫ: 👖 Рваные штаны" in char_text
+    assert "🥾 БОТИНКИ: 🥾 Стоптанные ботинки" in char_text
 
     # Фляга
-    assert "🧴 Фляга:\n🧴 Бутылка воды (18/20)" in char_text
+    assert "🧴 ФЛЯГА: 🧴 Бутылка воды (18/20)" in char_text
 
     # Питомец: строго Пусто (никакого кота по умолчанию)
-    assert "🐾 Котёнок:\nПусто" in char_text
+    assert "🐾 КОТЁНОК: Пусто" in char_text
     assert "\nКот" not in char_text
 
     # Бонусы снаряжения
@@ -1022,7 +1021,7 @@ def test_12_unified_emojis_torch_and_navigation():
     game = GameState()
     game.equipment["hand_left"] = "Факел"
     char_text = game.get_character_text()
-    assert "🕯️ Левая рука:\n⚪ Факел\n⚡ AP: +1" in char_text
+    assert "🫲 ЛЕВАЯ РУКА: 🕯️ Факел" in char_text
     assert "⚡ AP +1" in char_text or "• ⚡ AP: +1" in char_text
 
     # 4. Локационные эмодзи

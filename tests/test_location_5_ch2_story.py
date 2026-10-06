@@ -439,8 +439,7 @@ def test_l5_post_boss_unarmed_camp_and_spear_craft():
 
     # 9. Проверяем карточку персонажа и боевой урон (19–24)
     char_text = game.get_character_text()
-    assert "🔱 Правая рука:" in char_text
-    assert "Охотничье сланцевое копьё" in char_text
+    assert "🫱 ПРАВАЯ РУКА: 🔱 Охотничье сланцевое копьё" in char_text
     assert "19–24" in char_text
 
     dmg = _calc_player_damage(game)

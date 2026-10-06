@@ -164,6 +164,7 @@ class GameState:
     l2_puzzle_attempt: int = 0
     l2_puzzle_step: int = 1
     header_message_id: Optional[int] = None
+    last_action_time: Optional[float] = None
 
     # Имя персонажа (устанавливается при старте игры)
     player_name: str = "Выживший"
@@ -653,6 +654,7 @@ class GameState:
             "active_story_callback": getattr(self, "active_story_callback", None),
             "last_message_id": getattr(self, "last_message_id", None),
             "header_message_id": getattr(self, "header_message_id", None),
+            "last_action_time": getattr(self, "last_action_time", None),
             "kills_count": int(getattr(self, "kills_count", 0)),
             "spared_souls": int(getattr(self, "spared_souls", 0)),
             "campfires_lit": int(getattr(self, "campfires_lit", 0)),
@@ -747,6 +749,7 @@ class GameState:
         game.wolf_battle = dict(data["wolf_battle"]) if data.get("wolf_battle") else None
         game.active_story_callback = data.get("active_story_callback")
         game.header_message_id = data.get("header_message_id")
+        game.last_action_time = data.get("last_action_time")
         game.kills_count = int(data.get("kills_count", getattr(game, "kills_count", 0)) or 0)
         game.spared_souls = int(data.get("spared_souls", getattr(game, "spared_souls", 0)) or 0)
         game.campfires_lit = int(data.get("campfires_lit", getattr(game, "campfires_lit", 0)) or 0)
@@ -901,7 +904,7 @@ class GameState:
     
     def get_character_text(self) -> str:
         """Экран персонажа: имя + экипировка по слотам + стартовая одежда + фляга + бонусы."""
-        from modules.items import get_item_emoji
+        from modules.items import get_item_emoji, ITEMS
 
         p_name = getattr(self, "player_name", None)
         c_name = getattr(self, "character_name", None)
@@ -916,120 +919,112 @@ class GameState:
         else:
             hero_name = "Выживший"
 
-        # Стартовая одежда (если слот пуст)
         starting_clothes = {
-            "head": "⚪ Грязная кепка",
-            "torso": "⚪ Потасканная куртка",
-            "pants": "⚪ Рваные штаны",
-            "boots": "⚪ Стоптанные ботинки",
-            "back": "⚪ Пакет «BMW»",
+            "head": "Грязная кепка",
+            "torso": "Потасканная куртка",
+            "pants": "Рваные штаны",
+            "boots": "Стоптанные ботинки",
+            "back": "Пакет «BMW»",
         }
 
-        # Питомец: только Пусто или реальное имя (никакого кота по умолчанию)
+        def _clean_title(val: Optional[str]) -> str:
+            if not val or val == "Пусто":
+                return "Пусто"
+            clean = str(val).strip()
+            for prefix in ("⚪ ", "🟢 ", "🔵 ", "🟣 ", "🟡 ", "🟨 ", "📦 ", "🐾 ", "🕯️ ", "🔦 ", "🛍️ ", "🧢 ", "👕 ", "👖 ", "🥾 ", "🎒 ", "🧴 ", "💍 ", "🧿 ", "🦷 "):
+                if clean.startswith(prefix):
+                    clean = clean[len(prefix):].strip()
+            if not clean or clean == "Пусто":
+                return "Пусто"
+            if clean.isupper() and clean != "BMW":
+                clean = clean.capitalize()
+            elif not (clean.startswith("«") or clean.startswith("“")):
+                clean = clean[0].upper() + clean[1:]
+            return clean
+
+        def _format_slot_line(slot_label: str, raw_item: Optional[str]) -> str:
+            clean = _clean_title(raw_item)
+            if clean == "Пусто":
+                return f"{slot_label} Пусто"
+            emoji = get_item_emoji(clean)
+            if emoji:
+                return f"{slot_label} {emoji} {clean}"
+            return f"{slot_label} {clean}"
+
+        # 1. Голова, Торс, Штаны, Ботинки, Спина
+        head_item = self.equipment.get("head") or starting_clothes["head"]
+        torso_item = self.equipment.get("torso") or starting_clothes["torso"]
+        pants_item = self.equipment.get("pants") or starting_clothes["pants"]
+        boots_item = self.equipment.get("boots") or starting_clothes["boots"]
+        back_item = self.equipment.get("back") or starting_clothes["back"]
+
+        # Штаны с футляром
+        pants_line = _format_slot_line("👖 ШТАНЫ:", pants_item)
+        if _clean_title(pants_item) == "Кожаные поножи":
+            pocket_item = getattr(self, "pants_pocket", None)
+            if pocket_item:
+                pants_line += f" (👝 Футляр: {pocket_item})"
+
+        # 2. Правая рука
+        right_item = self.equipment.get("hand_right")
+        right_line = _format_slot_line("🫱 ПРАВАЯ РУКА:", right_item)
+
+        # 3. Левая рука
+        left_item = self.equipment.get("hand_left")
+        if left_item == "Старый фонарь":
+            dur = int(getattr(self, "lantern_durability", 20) or 0)
+            max_d = int(getattr(self, "lantern_max_durability", 20) or 20)
+            left_line = f"🫲 ЛЕВАЯ РУКА: 🔦 Старый фонарь [{dur}/{max_d}]"
+        else:
+            left_line = _format_slot_line("🫲 ЛЕВАЯ РУКА:", left_item)
+
+        # 4. Фляга
+        flask_item = self.equipment.get("flask")
+        flask_w = int(getattr(self, "flask_water", 0) or 0)
+        if flask_item:
+            if "Армейская" in flask_item:
+                flask_line = f"🧴 ФЛЯГА: 🟨 Армейская фляга ({flask_w}/20)"
+            elif "Бутылк" in flask_item or flask_item == "flask":
+                if flask_w > 0:
+                    flask_line = f"🧴 ФЛЯГА: 🧴 Бутылка воды ({flask_w}/20)"
+                else:
+                    flask_line = "🧴 ФЛЯГА: Пусто"
+            else:
+                emoji = get_item_emoji(flask_item) or "🧴"
+                flask_line = f"🧴 ФЛЯГА: {emoji} {_clean_title(flask_item)} ({flask_w}/20)"
+        else:
+            flask_line = "🧴 ФЛЯГА: Пусто"
+
+        # 5. Безделушка
+        trinket_item = self.equipment.get("trinket")
+        trinket_line = _format_slot_line("💍 БЕЗДЕЛУШКА:", trinket_item)
+
+        # 6. Котёнок
         pet_val = self.equipment.get("pet")
         if not pet_val:
             c_name = getattr(self, "companion_name", None)
             has_pet = getattr(self, "has_story_flag", lambda f: False)("has_pet") or getattr(self, "story_flags", {}).get("has_pet")
             if c_name and c_name != "Кот" and has_pet:
                 pet_val = c_name
-        pet_str = pet_val or "Пусто"
-
-        # Фляга
-        flask_item = self.equipment.get("flask")
-        if flask_item:
-            flask_w = int(getattr(self, "flask_water", 0) or 0)
-            if "Бутылк" in flask_item or flask_item == "flask":
-                flask_str = f"🧴 Бутылка воды ({flask_w}/20)"
-            elif "Армейская" in flask_item:
-                flask_str = f"🟨 Армейская фляга ({flask_w}/20)"
-            else:
-                flask_str = f"{flask_item} ({flask_w}/20)"
+        if pet_val and pet_val != "Пусто":
+            pet_line = f"🐾 КОТЁНОК: 🐾 {_clean_title(pet_val)}"
         else:
-            flask_str = "Пусто"
+            pet_line = "🐾 КОТЁНОК: Пусто"
 
-        left_item = self.equipment.get("hand_left")
-        if left_item == "Факел":
-            left_emoji = get_item_emoji("Факел")
-            left_label = f"{left_emoji} Левая рука:"
-            left_val = "⚪ Факел\n⚡ AP: +1"
-        elif left_item == "Старый фонарь":
-            left_emoji = get_item_emoji("Старый фонарь")
-            left_label = f"{left_emoji} Левая рука:"
-            dur = int(getattr(self, "lantern_durability", 20) or 0)
-            max_d = int(getattr(self, "lantern_max_durability", 20) or 20)
-            left_val = f"⚪ Старый фонарь [{dur}/{max_d}]\n⚡ AP: +2"
-        elif left_item:
-            left_emoji = get_item_emoji(left_item)
-            left_label = f"{left_emoji} Левая рука:"
-            left_val = f"⚪ {left_item}"
-        else:
-            left_label = "🫲 Левая рука:"
-            left_val = "Пусто"
-
-        right_item = self.equipment.get("hand_right")
-        from modules.items import ITEMS
-        if right_item:
-            right_emoji = get_item_emoji(right_item)
-            right_label = f"{right_emoji} Правая рука:"
-            extra = ""
-            if right_item in ITEMS:
-                eff = ITEMS[right_item].get("effects", {})
-                notes = []
-                if "damage_min" in eff and "damage_max" in eff:
-                    notes.append(f"⚔️ Урон {eff['damage_min']}–{eff['damage_max']}")
-                elif "damage" in eff:
-                    notes.append(f"⚔️ Урон +{eff['damage']}")
-                if "stun_chance" in eff:
-                    notes.append(f"💫 Оглушение +{eff['stun_chance']}%")
-                if notes:
-                    extra = f"\n{' | '.join(notes)}"
-            right_val = f"⚪ {right_item}{extra}"
-        else:
-            right_label = "🫱 Правая рука:"
-            right_val = "Пусто"
-
-        slots_order = [
-            ("head", "🧢 Голова:"),
-            ("torso", "👕 Торс:"),
-            ("pants", "👖 Штаны:"),
-            ("boots", "🥾 Ботинки:"),
-            ("back", "🎒 Спина:"),
-            ("hand_right", right_label),
-            ("hand_left", left_label),
-            ("flask", "🧴 Фляга:"),
-            ("trinket", "💍 Безделушка:"),
-            ("pet", "🐾 Котёнок:"),
+        slot_lines = [
+            _format_slot_line("🧢 ГОЛОВА:", head_item),
+            _format_slot_line("👕 ТОРС:", torso_item),
+            pants_line,
+            _format_slot_line("🥾 БОТИНКИ:", boots_item),
+            _format_slot_line("🎒 СПИНА:", back_item),
+            right_line,
+            left_line,
+            flask_line,
+            trinket_line,
+            pet_line,
         ]
 
-        blocks = [f"👤 ВЫЖИВШИЙ: {hero_name}"]
-        for slot_key, label in slots_order:
-            if slot_key == "hand_left":
-                val = left_val
-            elif slot_key == "hand_right":
-                val = right_val
-            elif slot_key in starting_clothes:
-                item_val = self.equipment.get(slot_key) or starting_clothes[slot_key]
-                if slot_key == "pants" and item_val == "Кожаные поножи":
-                    pocket_item = getattr(self, "pants_pocket", None)
-                    pocket_str = f"\n👝 Футляр: {pocket_item}" if pocket_item else "\n👝 Футляр: пусто"
-                    val = f"{item_val}{pocket_str}"
-                else:
-                    val = item_val
-            elif slot_key == "flask":
-                val = flask_str
-            elif slot_key == "trinket":
-                tr = self.equipment.get("trinket")
-                if tr == "Костяной амулет охотника":
-                    val = "⚪ Костяной амулет охотника\n🏃 Уворот: +5% | 🔍 Чуткий поиск"
-                elif tr == "Клык волка":
-                    val = "⚪ Клык волка\n⚔️ Урон +1"
-                else:
-                    val = tr or "Пусто"
-            elif slot_key == "pet":
-                val = pet_str
-            else:
-                val = self.equipment.get(slot_key) or "Пусто"
-            blocks.append(f"{label}\n{val}")
+        blocks = [f"👤 ВЫЖИВШИЙ: {hero_name}", "\n".join(slot_lines)]
 
         # Общие бонусы снаряжения в порядке хотбара: ❤️ 🍖 💧 ⚡
         bonus_lines = []
@@ -1102,6 +1097,10 @@ class GameState:
 
         if right_item and right_item in ITEMS:
             r_eff = ITEMS[right_item].get("effects", {})
+            if "damage_min" in r_eff and "damage_max" in r_eff:
+                set_block_lines.append(f"• ⚔️ Урон оружия: {r_eff['damage_min']}–{r_eff['damage_max']}")
+            elif "damage" in r_eff:
+                set_block_lines.append(f"• ⚔️ Урон оружия: +{r_eff['damage']}")
             if "stun_chance" in r_eff:
                 set_block_lines.append(f"• 💫 Шанс оглушения: +{r_eff['stun_chance']}%")
 
@@ -1375,6 +1374,7 @@ def handle_back_navigation(game: Any, uid: int) -> Tuple[Optional[str], Optional
         get_campfire_kb,
         get_campfire_recipes_kb,
         get_campfire_fuel_kb,
+        get_fuel_quantity_kb,
         get_locations_kb,
         get_settings_kb,
     )
@@ -1440,6 +1440,10 @@ def handle_back_navigation(game: Any, uid: int) -> Tuple[Optional[str], Optional
         max_d = getattr(game, "campfire_max_durability", 10)
         text = f"🔥 КОСТЁР ({cur_d}/{max_d})\nВыберите топливо для поддержания огня:"
         kb = get_campfire_fuel_kb(game)
+    elif target == "fuel_qty":
+        fuel_item = getattr(game, "story_flags", {}).get("fuel_item", "sticks")
+        text = "Подкидывание топлива в костёр:"
+        kb = get_fuel_quantity_kb(fuel_item, game)
     elif target == "locations":
         text = "Куда направиться?"
         kb = get_locations_kb(game)

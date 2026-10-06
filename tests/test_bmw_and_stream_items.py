@@ -43,28 +43,28 @@ def test_bmw_package_is_ui_only_not_an_item():
     assert "Пакет «BMW»" not in game.inventory
     assert "Пакет BMW" not in game.inventory
 
-    # 3. В интерфейсе экрана персонажа слот спины отображает «⚪ Пакет «BMW»»
+    # 3. В интерфейсе экрана персонажа слот спины отображает «🎒 СПИНА: 🛍️ Пакет «BMW»»
     char_text = game.get_character_text()
-    assert "🎒 Спина:\n⚪ Пакет «BMW»" in char_text
+    assert "🎒 СПИНА: 🛍️ Пакет «BMW»" in char_text
 
 
 def test_back_slot_equip_and_unequip_backpack():
-    """Тест 2: Надеть рюкзак -> отображается рюкзак. Снять -> возвращается «⚪ Пакет «BMW»»."""
+    """Тест 2: Надеть рюкзак -> отображается рюкзак. Снять -> возвращается «🎒 СПИНА: 🛍️ Пакет «BMW»»."""
     game = GameState()
 
     # По умолчанию пустой слот -> Пакет «BMW»
-    assert "⚪ Пакет «BMW»" in game.get_character_text()
+    assert "🎒 СПИНА: 🛍️ Пакет «BMW»" in game.get_character_text()
 
     # Надеваем рюкзак
     game.equipment["back"] = "Рюкзак с красной заплаткой"
     text_equipped = game.get_character_text()
-    assert "🎒 Спина:\nРюкзак с красной заплаткой" in text_equipped
-    assert "⚪ Пакет «BMW»" not in text_equipped
+    assert "🎒 СПИНА: 🎒 Рюкзак с красной заплаткой" in text_equipped
+    assert "Пакет «BMW»" not in text_equipped
 
     # Снимаем рюкзак (слот снова None) -> снова Пакет «BMW»
     game.equipment["back"] = None
     text_unequipped = game.get_character_text()
-    assert "🎒 Спина:\n⚪ Пакет «BMW»" in text_unequipped
+    assert "🎒 СПИНА: 🛍️ Пакет «BMW»" in text_unequipped
 
 
 def test_stream_items_registry_canonical_data():

@@ -194,8 +194,7 @@ def do_craft(game, recipe_name: str):
         if game.inventory["Янтарное ядро"] <= 0:
             del game.inventory["Янтарное ядро"]
         game.lantern_durability = 20
-        game.add_log("Вы заправили старый фонарь чистым янтарным маслом (20/20 исследований).")
-        return True, "Старый фонарь успешно заправлен янтарным маслом (20/20)!"
+        return True, "Заправлен янтарным маслом."
     if recipe_name == "Приманка для слизней":
         if getattr(game, "current_location", None) != "Яр Слизней":
             return False, "Приманку для слизней можно изготовить только находясь в Яру Слизней!"
@@ -308,20 +307,21 @@ def do_craft(game, recipe_name: str):
     # Особая логика зажигания факела при создании
     if recipe_name == "Факел":
         if getattr(game, "campfire_active", False) and getattr(game, "campfire_durability", 0) > 0:
-            extra_msg = " Огонь взят от углей костра без траты спичек и сил."
+            extra_msg = "Огонь взят от углей костра."
         elif game.inventory.get("Спички", 0) > 0:
             game.inventory["Спички"] -= 1
             if game.inventory["Спички"] <= 0:
                 del game.inventory["Спички"]
-            extra_msg = " Зажжён спичкой (−1 спичка, 0 ⚡ AP)."
+            extra_msg = "Зажжён спичкой."
         else:
             game.ap = max(0, game.ap - 1)
-            extra_msg = " С трудом зажжён искрами трения (−1 ⚡ AP)."
-        game.add_log(f"Скрафчен факел.{extra_msg}")
-        return True, f"Успешно создан Факел!{extra_msg}"
+            extra_msg = "С трудом зажжён искрами трения. ⚡ -1"
+        return True, extra_msg
 
-    game.add_log(f"Скрафчено: {recipe_name}.")
-    return True, f"Успешно создано: {recipe_name}"
+    if recipe_name == "Костёр":
+        return True, "Заготовлен для стоянки."
+
+    return True, "Предмет добавлен в инвентарь."
 
 
 CRAFT_ICONS = {
@@ -473,6 +473,8 @@ def handle_craft(data, game, uid):
         buttons = []
         if branches >= 8:
             buttons.append([InlineKeyboardButton(text="🔨 Скрафтить", callback_data="confirm_craft_Крепкий посох")])
+        buttons.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
+        return text, InlineKeyboardMarkup(inline_keyboard=buttons)
     elif data in ("craft_Охотничье сланцевое копьё", "craft_🔱 Охотничье сланцевое копьё"):
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         sticks = game.inventory.get("Ветка", 0) + game.inventory.get("Палка", 0) + game.inventory.get("Палки", 0)
@@ -510,14 +512,20 @@ def handle_craft(data, game, uid):
         ok, msg = do_craft(game, recipe)
         if ok:
             from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-            text = f"🔨 {msg}\n\nПредмет успешно добавлен в инвентарь."
+            context_str = f" {msg}".strip() if msg else ""
+            if context_str:
+                text = f"> 🔨 Скрафчено: {recipe}. {context_str}"
+            else:
+                text = f"> 🔨 Скрафчено: {recipe}."
             kb = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="↩️ В инвентарь", callback_data="back")]
             ])
+            return text, kb
         else:
             game.add_log(msg)
             text = f"❌ {msg}\n\n{get_craft_menu_text(game)}"
             kb = get_craft_menu_kb(game)
+            return text, kb
     elif data == "use_item_Факел":
         if game.inventory.get("Факел", 0) > 0:
             # Факел помещается ТОЛЬКО в левую руку
