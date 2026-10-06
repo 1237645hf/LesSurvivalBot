@@ -34,13 +34,41 @@ from game_math import (
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# ЛОКАЦИЯ 1: ЛЕСНОЙ СТАРТ
+# ИМПОРТЫ ЛОКАЦИЙ (L1–L7)
 # ──────────────────────────────────────────────────────────────────────────────
 
 from story.locations.loc1_forest import (
     handle_location_1_forest_start,
     handle_l1_dome,
     handle_l1_wolf_lair,
+)
+from story.locations.loc2_stream import (
+    handle_location_2_ruchey,
+    L2_PUZZLE_BANK,
+    get_l2_slate_armor_count,
+    get_l2_thorn_damage,
+)
+from story.locations.loc3_hollow import handle_location_3_slate_hollow
+from story.locations.loc4_hunters import (
+    handle_location_4_hunters_glade,
+    SLUG_ACTIONS,
+    _render_slug_battle,
+    _render_wolf_pack_battle,
+)
+from story.locations.loc5_slug_pit import (
+    handle_location_5_slug_pit,
+    start_slug_pack_battle,
+    _render_slug_pack_battle,
+    SLIME_NAMES_POOL,
+)
+from story.locations.loc6_furry_cave import handle_location_6_furry_cave
+from story.locations.loc7_sanctuary import (
+    handle_location_7_sanctuary_peak,
+    resolve_ending,
+    ending_text,
+    ENDING_STORY_TEXT,
+    ENDING_TITLES,
+    THRESHOLDS,
 )
 
 
@@ -99,7 +127,7 @@ def handle_story(data: str, game, uid: int):
         or data.startswith("l1_7")
         or data.startswith("wolf_lair")
         or data.startswith("wolf_battle")
-        or data in ("location_enter_1", "location_enter_2")
+        or data in ("location_enter_1",)
     ):
         res = handle_l1_wolf_lair(data, game, uid)
     else:
@@ -316,70 +344,3 @@ def is_story_callback(data: str) -> bool:
         ))
     )
 
-
-
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# ЛОКАЦИЯ 2: РУЧЕЙ (ПЛОТИНА И ПЕРЕПРАВА В СКРОМНУЮ ЛОЩИНУ)
-# ──────────────────────────────────────────────────────────────────────────────
-
-from story.locations.loc2_stream import (
-    handle_location_2_ruchey,
-    L2_PUZZLE_BANK,
-    get_l2_slate_armor_count,
-    get_l2_thorn_damage,
-)
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# ЛОКАЦИЯ 3: СКРОМНАЯ ЛОЩИНА
-# ──────────────────────────────────────────────────────────────────────────────
-
-from story.locations.loc3_hollow import handle_location_3_slate_hollow
-
-
-from story.locations.loc4_hunters import (
-    handle_location_4_hunters_glade,
-    SLUG_ACTIONS,
-    _render_slug_battle,
-    _render_wolf_pack_battle,
-)
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# ЛОКАЦИЯ 5: ЯР СЛИЗНЕЙ
-# ──────────────────────────────────────────────────────────────────────────────
-
-from story.locations.loc5_slug_pit import (
-    handle_location_5_slug_pit,
-    start_slug_pack_battle,
-    _render_slug_pack_battle,
-    SLIME_NAMES_POOL,
-)
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# ЛОКАЦИЯ 6: МОХНАТАЯ ПЕЩЕРА
-# ──────────────────────────────────────────────────────────────────────────────
-
-from story.locations.loc6_furry_cave import handle_location_6_furry_cave
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# ЛОКАЦИЯ 7: ВЕРШИНА СВЯТИЛИЩА + ФИНАЛЫ
-# ──────────────────────────────────────────────────────────────────────────────
-
-from story.locations.loc7_sanctuary import (
-    handle_location_7_sanctuary_peak,
-    resolve_ending,
-    ending_text,
-    ENDING_STORY_TEXT,
-    ENDING_TITLES,
-    THRESHOLDS,
-)
-
-
-# Загружаем канонические тексты L1-L6 после объявления финалов, чтобы
-# story/location_sources.py мог безопасно получить текст L7 без циклического импорта.
-from story.location_sources import LOCATION_SOURCE_TEXTS, get_location_source_text
