@@ -983,17 +983,17 @@ class GameState:
         flask_w = int(getattr(self, "flask_water", 0) or 0)
         if flask_item:
             if "Армейская" in flask_item:
-                flask_line = f"🧴 ФЛЯГА: 🟨 Армейская фляга ({flask_w}/20)"
+                flask_line = f"💧 ФЛЯГА: 🟨 Армейская фляга ({flask_w}/20)"
             elif "Бутылк" in flask_item or flask_item == "flask":
                 if flask_w > 0:
-                    flask_line = f"🧴 ФЛЯГА: 🧴 Бутылка воды ({flask_w}/20)"
+                    flask_line = f"💧 ФЛЯГА: 🧴 Бутылка воды ({flask_w}/20)"
                 else:
-                    flask_line = "🧴 ФЛЯГА: Пусто"
+                    flask_line = "💧 ФЛЯГА: Пусто"
             else:
                 emoji = get_item_emoji(flask_item) or "🧴"
-                flask_line = f"🧴 ФЛЯГА: {emoji} {_clean_title(flask_item)} ({flask_w}/20)"
+                flask_line = f"💧 ФЛЯГА: {emoji} {_clean_title(flask_item)} ({flask_w}/20)"
         else:
-            flask_line = "🧴 ФЛЯГА: Пусто"
+            flask_line = "💧 ФЛЯГА: Пусто"
 
         # 5. Безделушка
         trinket_item = self.equipment.get("trinket")
@@ -1007,7 +1007,7 @@ class GameState:
             if c_name and c_name != "Кот" and has_pet:
                 pet_val = c_name
         if pet_val and pet_val != "Пусто":
-            pet_line = f"🐾 КОТЁНОК: 🐾 {_clean_title(pet_val)}"
+            pet_line = f"🐾 КОТЁНОК: 🐱 {_clean_title(pet_val)}"
         else:
             pet_line = "🐾 КОТЁНОК: Пусто"
 

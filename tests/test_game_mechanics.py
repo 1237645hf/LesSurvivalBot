@@ -947,7 +947,7 @@ def test_11_3_character_screen_no_default_cat_and_frames():
     assert "🥾 БОТИНКИ: 🥾 Стоптанные ботинки" in char_text
 
     # Фляга
-    assert "🧴 ФЛЯГА: 🧴 Бутылка воды (18/20)" in char_text
+    assert "💧 ФЛЯГА: 🧴 Бутылка воды (18/20)" in char_text
 
     # Питомец: строго Пусто (никакого кота по умолчанию)
     assert "🐾 КОТЁНОК: Пусто" in char_text

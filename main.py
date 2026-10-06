@@ -406,46 +406,71 @@ async def safe_edit_message(chat_id: int, msg_id: int, text: str, reply_markup=N
         return False
 
 
-async def update_or_send_message(chat_id: int, uid: int, text: str, reply_markup=None, parse_mode: Optional[str] = None):
+async def update_or_send_message(
+    chat_id: int,
+    uid: int,
+    text: str,
+    reply_markup=None,
+    parse_mode: Optional[str] = None,
+    current_msg_id: Optional[int] = None,
+):
     game = games.get(uid)
     text = format_game_text(text, game)
     now = time.time()
     last_action = getattr(game, "last_action_time", None) if game else None
     header_id = getattr(game, "header_message_id", None) if game else None
+    active_msg_id = last_active_msg_id.get(uid)
 
-    # Если прошло более 5 минут (300 сек) или шапка отсутствует — полное пересоздание
+    # Условие пересоздания: прошло более 5 минут (300 сек) или нет привязки к активному окну
     time_expired = (last_action is None) or ((now - last_action) > 300)
-    need_full_recreate = time_expired or (not header_id)
+    no_active_binding = (active_msg_id is None) or (header_id is None)
+    need_recreate = time_expired or no_active_binding
 
-    if need_full_recreate:
-        # 1. Обязательно удали старое основное окно last_active_msg_id.get(uid) через safe_delete_message
-        old_msg_id = last_active_msg_id.pop(uid, None)
-        if old_msg_id:
-            await safe_delete_message(chat_id, old_msg_id)
-        elif game and getattr(game, "last_message_id", None):
-            await safe_delete_message(chat_id, game.last_message_id)
+    if need_recreate:
+        curr_id = (
+            current_msg_id
+            or active_msg_id
+            or (getattr(game, "last_message_id", None) if game else None)
+        )
+        if curr_id:
+            try:
+                await bot.delete_messages(
+                    chat_id=chat_id,
+                    message_ids=list(range(max(1, curr_id - 100), curr_id + 1)),
+                )
+            except Exception:
+                try:
+                    await bot.delete_messages(
+                        chat_id=chat_id,
+                        message_ids=list(range(max(1, curr_id - 100), curr_id + 1))[-100:],
+                    )
+                except Exception:
+                    pass
 
-        # 2. Проверь и удали старую шапку game.header_message_id (если есть сохранённый ID)
-        if header_id:
-            await safe_delete_message(chat_id, header_id)
-            if game:
-                game.header_message_id = None
-
-        # 3. Отправь НОВУЮ шапку: rm_msg = await bot.send_message(chat_id, "🌲 LesSurvivalBot", reply_markup=ReplyKeyboardRemove())
+        # Сразу после этого отправь чистую шапку
         try:
-            rm_msg = await bot.send_message(chat_id, "🌲 LesSurvivalBot", reply_markup=ReplyKeyboardRemove())
+            rm_msg = await bot.send_message(
+                chat_id,
+                "🌲 LesSurvivalBot",
+                reply_markup=ReplyKeyboardRemove(),
+            )
             if game:
                 game.header_message_id = rm_msg.message_id
         except Exception as exc:
             logging.exception(f"Ошибка отправки новой шапки: {exc}")
 
-        # 4. Отправь НОВОЕ основное игровое окно через bot.send_message, сохранив его в last_active_msg_id[uid] и game.last_message_id
+        # Следом отправь актуальное игровое окно через send_message
         try:
-            msg = await bot.send_message(chat_id, text, reply_markup=reply_markup, parse_mode=parse_mode)
+            msg = await bot.send_message(
+                chat_id,
+                text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+            )
             last_active_msg_id[uid] = msg.message_id
             if game:
                 game.last_message_id = msg.message_id
-                game.last_action_time = now
+                game.last_action_time = time.time()
                 save_game(uid, game)
             return msg.message_id
         except TelegramRetryAfter as exc:
@@ -456,7 +481,7 @@ async def update_or_send_message(chat_id: int, uid: int, text: str, reply_markup
                 last_active_msg_id[uid] = msg.message_id
                 if game:
                     game.last_message_id = msg.message_id
-                    game.last_action_time = now
+                    game.last_action_time = time.time()
                     save_game(uid, game)
                 return msg.message_id
             except Exception as exc2:
@@ -466,24 +491,25 @@ async def update_or_send_message(chat_id: int, uid: int, text: str, reply_markup
             logging.exception(f"Ошибка send_message: {exc}")
             return None
 
-    # Если прошло МЕНЕЕ 5 минут: стандартное поведение (safe_edit_message, fallback на send_message)
-    msg_id = last_active_msg_id.get(uid)
+    # В штатном режиме: второе игровое окно непрерывно редактируется через safe_edit_message
+    msg_id = active_msg_id
     if msg_id:
         edited = await safe_edit_message(chat_id, msg_id, text, reply_markup, parse_mode=parse_mode)
         if edited:
             if game:
                 game.last_message_id = msg_id
-                game.last_action_time = now
+                game.last_action_time = time.time()
                 save_game(uid, game)
             return msg_id
         last_active_msg_id.pop(uid, None)
 
+    # Fallback если редактирование не удалось
     try:
         msg = await bot.send_message(chat_id, text, reply_markup=reply_markup, parse_mode=parse_mode)
         last_active_msg_id[uid] = msg.message_id
         if game:
             game.last_message_id = msg.message_id
-            game.last_action_time = now
+            game.last_action_time = time.time()
             save_game(uid, game)
         return msg.message_id
     except TelegramRetryAfter as exc:
@@ -494,7 +520,7 @@ async def update_or_send_message(chat_id: int, uid: int, text: str, reply_markup
             last_active_msg_id[uid] = msg.message_id
             if game:
                 game.last_message_id = msg.message_id
-                game.last_action_time = now
+                game.last_action_time = time.time()
                 save_game(uid, game)
             return msg.message_id
         except Exception as exc2:
@@ -619,7 +645,7 @@ async def cmd_start(message: Message, state: Optional[FSMContext] = None):
     # Шапка "🌲 LesSurvivalBot" гарантированно отправляется/обновляется в update_or_send_message (защита от дублей)
     if game and not getattr(game, "header_message_id", None) and loaded and getattr(loaded, "header_message_id", None):
         game.header_message_id = loaded.header_message_id
-    await update_or_send_message(chat_id, uid, text, kb)
+    await update_or_send_message(chat_id, uid, text, kb, current_msg_id=message.message_id)
 
 
 @dp.message(Command("main", "menu", "home"))
