@@ -1,0 +1,1024 @@
+# =============================================================================
+# ЛОКАЦИЯ 5: Яр Слизней
+# =============================================================================
+#
+# ПРАВИЛА ЭТОГО ФАЙЛА:
+# 1. Здесь лежит ВСЁ, что относится ТОЛЬКО к Локации 5.
+# 2. Никакого кода других локаций.
+# 3. Общие хелперы импортируются только из story.common (пока можно оставить прямые импорты).
+# 4. Не создавать отдельные .txt файлы.
+#
+# Структура:
+#   1. Локальные константы (если есть)
+#   2. Все handle_* функции этой локации
+# =============================================================================
+
+import random
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+import keyboards
+
+def get_main_kb(*args, **kwargs):
+    try:
+        import story.location_stories as _ls
+        if hasattr(_ls, 'get_main_kb'):
+            return _ls.get_main_kb(*args, **kwargs)
+    except Exception:
+        pass
+    return keyboards.get_main_kb(*args, **kwargs)
+
+from keyboards import get_death_kb
+from game_state import get_death_text
+from modules.combat import (
+    start_battle,
+    apply_action,
+    get_battle_text,
+    get_battle_kb,
+)
+
+
+SLIME_NAMES_POOL = [
+    "Едкий Прыгун", "Болотный Чавка", "Мутный Липун", "Янтарный Желвак",
+    "Слизень-Шалун", "Бурый Пузырь", "Зелёный Соплевик", "Глиняный Ползун",
+    "Шипящий Студень", "Смоляной Каплевик", "Хлюпающий Желевик", "Едкий Брызгун",
+    "Тёмный Сгусток", "Пещерный Дрожалка", "Трухлявый Слизень", "Толстый Бульк",
+    "Ржавый Клякса", "Ядовитый Кап", "Вязкий Мякиш", "Хвойный Слизевик",
+    "Моховой Жвачник", "Липкий Колобок", "Болотный Дрожж", "Серный Пузырник",
+    "Гнилой Холодец", "Торфяной Плевок", "Кислотный Сгусток", "Сырой Клейковик",
+    "Вялый Чавк", "Тягучий Капель", "Осклизлый Бугорок", "Топейный Жировик",
+    "Светящийся Пузырь", "Трясинный Ползун", "Едкий Желатин", "Смоляной Бурляш",
+    "Мутный Комок", "Илистый Чавка", "Вздутый Пузырь", "Склизкий Живчик",
+    "Капельный Прыгун", "Мшистый Соплевик", "Кислый Студень", "Жёлтый Липун",
+    "Болотяник", "Слизкий Корень", "Гнилостный Бульк", "Торфяной Слизень",
+    "Едкий Желвак", "Янтарный Липун"
+]
+
+
+def start_slug_pack_battle(game, count: int = 6):
+    """Инициализация боя со скоплением слизней (1-6 шт)."""
+    count = max(1, min(count, 6))
+    chosen_names = random.sample(SLIME_NAMES_POOL, count) if len(SLIME_NAMES_POOL) >= count else SLIME_NAMES_POOL[:count]
+    slimes = []
+    for name in chosen_names:
+        hp = random.randint(15, 25)
+        slimes.append({
+            "name": name,
+            "hp": hp,
+            "max_hp": hp,
+            "alive": True,
+        })
+    game.slug_pack_battle = {
+        "slimes": slimes,
+        "round": 1,
+        "last_log": "Скопление слизней с шипением окружает тебя со всех сторон!",
+        "is_victory": False,
+        "is_defeat": False,
+        "cores_dropped": 0,
+        "loot_log": [],
+    }
+    game.active_story_callback = "l5_slug_battle"
+    return _render_slug_pack_battle(game)
+
+
+def _render_slug_pack_battle(game):
+    """Отрисовка экрана боя со скоплением слизней."""
+    b = getattr(game, "slug_pack_battle", None) or {}
+    slimes = b.get("slimes", [])
+    last_log = b.get("last_log", "Скопление слизней шипит и надвигается!")
+    max_player_hp = getattr(game, "max_hp", 100)
+    armor_def = getattr(game, "armor_defense", 0)
+    dodge_pct = int(getattr(game, "dodge_chance", 0) or 0)
+
+    icons = ["🟢" if s.get("alive", False) else "💀" for s in slimes]
+    status_bar = f"[ {' '.join(icons)} ]"
+
+    alive_slimes = [s for s in slimes if s.get("alive", False)]
+    if not alive_slimes or b.get("is_victory"):
+        cores = b.get("cores_dropped", 0)
+        loot_lines = "\n".join(b.get("loot_log", []))
+        text = (
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "⚔️ СКОПЛЕНИЕ СЛИЗНЕЙ\n"
+            f"{status_bar}\n\n"
+            "🏆 ВСЕ СЛИЗНИ ПОВЕРЖЕНЫ!\n\n"
+            f"Трофеи с боя:\n{loot_lines}\n"
+            f"Итого добыто: Янтарное ядро ×{cores}\n\n"
+            f"Твое здоровье: {game.hp}/{max_player_hp} HP\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕 Вернуться в яр", callback_data="l5_slug_battle_finish")]
+        ])
+        return text, kb
+
+    if game.hp <= 0 or b.get("is_defeat"):
+        game.hp = 0
+        game.active_story_callback = None
+        game.slug_pack_battle = None
+        text = get_death_text(game, "Слизни погребли тебя под тоннами едкой янтарной жижи.", "Яр слизней")
+        kb = get_death_kb()
+        return text, kb
+
+    slime_lines = []
+    for idx, s in enumerate(slimes, 1):
+        if s.get("alive"):
+            slime_lines.append(f"{idx}. {s['name']}: {s['hp']}/{s['max_hp']} HP")
+        else:
+            slime_lines.append(f"{idx}. {s['name']}: 0/{s['max_hp']} HP 💀")
+    slimes_text = "\n".join(slime_lines)
+
+    text = (
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "⚔️ СКОПЛЕНИЕ СЛИЗНЕЙ\n"
+        f"{status_bar}\n\n"
+        f"{slimes_text}\n\n"
+        f"Твое здоровье: {game.hp}/{max_player_hp} HP | Броня: {armor_def} DEF | Уворот: {dodge_pct}%\n\n"
+        f"Лог боя:\n{last_log}\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+
+    rows = [
+        [
+            InlineKeyboardButton(text="⚔️ Атаковать", callback_data="l5_slug_attack"),
+            InlineKeyboardButton(text="🛡️ Полный блок", callback_data="l5_slug_defend"),
+        ]
+    ]
+
+    pocket_item = getattr(game, "pants_pocket", None)
+    if game.equipment.get("pants") == "Кожаные поножи" and pocket_item:
+        rows.append([
+            InlineKeyboardButton(text=f"Принять {pocket_item}", callback_data="l5_slug_use_pocket")
+        ])
+
+    rows.append([
+        InlineKeyboardButton(text="🏃 Отступить", callback_data="l5_slug_flee")
+    ])
+
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def handle_location_5_slug_pit(data, game, uid):
+    """Обработать события на локации 'Яр Слизней' (канонический сюжет L5)."""
+    text = None
+    kb = None
+
+    # Вход на локацию
+    if data in ("slug_pit_start", "location_enter_5", "l5_1a"):
+        game.reset_nav()
+        game.current_location = "Яр Слизней"
+        unlocked = getattr(game, "unlocked_locations", []) or []
+        if "Яр Слизней" not in unlocked:
+            unlocked.append("Яр Слизней")
+            game.unlocked_locations = unlocked
+
+        # Если сюжетная ветка L5 уже полностью завершена — мирное пребывание
+        if game.is_story_flag_set("l5_completed"):
+            text = (
+                "Ты стоишь на краю Яра Слизней.\n\n"
+                "В глубине низины тихо пульсирует бирюзовый свет грибов. "
+                "Яр теперь спокоен: по стенам медленно стекает смола, "
+                "а земля свободна для сбора ресурсов и установки ловушек."
+            )
+            kb = get_main_kb(game)
+            return text, kb
+
+        # Если сюжет уже начат и сохранён шаг:
+        if getattr(game, "story_state", None) and str(game.story_state).startswith("l5_") and data != "l5_1a" and game.story_state != data:
+            return handle_location_5_slug_pit(game.story_state, game, uid)
+
+        # Окно 1.1: L5.1a — Спуск в туманный яр
+        game.story_state = "l5_1a"
+        text = (
+            "Ты замечаешь яр, только когда земля под ногами начинает проваливаться.\n\n"
+            "Сверху сквозь белесый туман открывается вид на крутой провал, где в воздухе плавно кружит зеленоватая взвесь. "
+            "Она пахнет сырой землёй, смолой и чем-то незнакомым, но живым.\n\n"
+            "Склон крутой, скользкий. Корни торчат из глины, словно скрюченные пальцы. "
+            "Будь на тебе тяжелый сланцевый панцирь — ты бы кубарем сорвался вниз. "
+            "Но мягкая кожаная броня сидит плотно, не сковывая движений, и ты аккуратно спускаешься боком, "
+            "цепляясь за выступы и стараясь не скользить."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👣 Спуститься ниже", callback_data="l5_1b")]
+        ])
+
+    # Окно 1.2: L5.1b — Сияние в низине, болотные ягоды и записка
+    elif data == "l5_1b":
+        game.story_state = "l5_1b"
+        text = (
+            "Внизу темнее, чем наверху. Но не совсем темно.\n\n"
+            "На стенах яра фосфоресцируют исполинские грибы со шляпками в две ладони, заливая глину бирюзовым светом. "
+            "Они старые, трухлявые и сочатся едкой горечью.\n\n"
+            "У самого подножия стены чернеет куст болотных ягод. Несколько перезревших ягод упали в мокрую глину: "
+            "к ним уже сползлись две крохотные слизи, жадно и с хлюпаньем высасывая приторный сладкий сок.\n\n"
+            "Вся земля под ногами липкая, каждый шаг тяжело чавкает.\n\n"
+            "В памяти всплывает строчка с найденного у ручья листа: «В низине после темноты виден огонь. Я туда не ходил». "
+            "Тот бедолага принял свечение яра за костёр."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🍄 Срезать гриб со стены", callback_data="l5_1c")],
+            [InlineKeyboardButton(text="👣 Спуститься на дно", callback_data="l5_2a")],
+            [InlineKeyboardButton(text="🔍 Осмотреть стены", callback_data="l5_1b_walls")]
+        ])
+
+    # Окно 1.3: L5.1c — Обманчивый исполин (Ожог и целебное исцеление)
+    elif data == "l5_1c":
+        game.story_state = "l5_1c"
+        text = (
+            "Ты протягиваешь руку к крупной бирюзовой шляпке на уровне плеча и пробуешь её поддеть.\n\n"
+            "Старая ткань гриба с шипением лопается под пальцами! Из разрыва брызжет едкая мутная сукровица, "
+            "мгновенно прожигая кожу руки жгучим холодом. Ты отдёргиваешь руку, шипя от боли.\n\n"
+            "Но отшатнувшись назад, ты задеваешь локтем выступ глины и сдираешь янтарную корочку со старого, неприметного ядра слизня.\n\n"
+            "Из трещины прямо на обожжённую кожу вытекает капля густой янтарной смолы. Боль моментально стихает! "
+            "Смола затягивает ожог тончайшей дышащей плёнкой, полностью заживляя рану прямо на глазах.\n\n"
+            "Это же природное лекарство! Если сварить такую смолу с ягодами и залить в прочный пузырёк, "
+            "получится мощнейшее целебное зелье."
+        )
+        buttons = []
+        if not game.is_story_flag_set("l5_mushroom_gathered"):
+            buttons.append([InlineKeyboardButton(text="🍄 Собрать молодой гриб", callback_data="l5_gather_mushroom")])
+        buttons.append([InlineKeyboardButton(text="👣 Спуститься на дно", callback_data="l5_2a")])
+        buttons.append([InlineKeyboardButton(text="🔍 Осмотреть стены", callback_data="l5_1b_walls")])
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    # Окно 2: L5.1a — Сбор молодого гриба и первого ядра
+    elif data == "l5_gather_mushroom":
+        game.story_state = "l5_gather_mushroom"
+        if not game.is_story_flag_set("l5_mushroom_gathered"):
+            game.inventory["Светящийся гриб"] = game.inventory.get("Светящийся гриб", 0) + 1
+            game.inventory["Янтарное ядро"] = game.inventory.get("Янтарное ядро", 0) + 1
+            game.adjust_narrative_karma("pragmatism", 2)
+            game.adjust_narrative_karma("observation", 1)
+            game.set_story_flag("l5_mushroom_gathered", True)
+
+        text = (
+            "Ты высматриваешь у каменного выступа аккуратную молодую шляпку, едва начавшую наливаться бирюзовым соком, "
+            "и осторожно срезаешь её в сумку.\n\n"
+            "Прямо под грибницей в глине обнаруживается целое, неповреждённое янтарное ядро размером с крупный орех.\n\n"
+            "Сквозь гладкую полупрозрачную оболочку видно, как внутри колышется густая золотистая смола. "
+            "Такие ядра внутри живых слизней очень нежные и легко лопаются от ударов, но в руках они на удивление удобны и не пачкаются. "
+            "Эта смола пригодится и для заправки фонаря, и для варки целебного янтарного зелья.\n\n"
+            "Получено: Светящийся гриб ×1.\n"
+            "Получено: Янтарное ядро ×1."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👣 Спуститься на дно", callback_data="l5_2a")],
+            [InlineKeyboardButton(text="🔍 Осмотреть стены", callback_data="l5_1b_walls")]
+        ])
+
+    # Окно 3: L5.1b — Осмотр стен: Следы когтей
+    elif data == "l5_1b_walls":
+        game.story_state = "l5_1b_walls"
+        game.set_story_flag("saw_wall_scratches", True)
+        if not game.is_story_flag_set("l5_walls_karma"):
+            game.adjust_narrative_karma("observation", 2)
+            game.set_story_flag("l5_walls_karma", True)
+
+        text = (
+            "Ты проводишь рукой по стене, осторожно обходя липкие потёки.\n\n"
+            "Под налётом обнажаются ровные слои глины и серого сланца. В одном месте слизь содрана, "
+            "и под ней видны глубокие свежие царапины.\n\n"
+            "Пять параллельных борозд.\n\n"
+            "Ты прикладываешь ладонь. Борозды слишком широкие для когтей лесного зверя и слишком ровные для скола камня. "
+            "Кто-то отчаянно цеплялся за скользкий уступ, пытаясь выбраться из низины наверх.\n\n"
+            "Слизь уже затягивает борозды. Скоро от них ничего не останется."
+        )
+        buttons = []
+        if not game.is_story_flag_set("l5_mushroom_gathered"):
+            buttons.append([InlineKeyboardButton(text="🍄 Собрать молодой гриб", callback_data="l5_gather_mushroom")])
+        buttons.append([InlineKeyboardButton(text="👣 Спуститься на дно", callback_data="l5_2a")])
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    # Окно 4.1: L5.2a — Дно яра (Сырая котловина)
+    elif data == "l5_2a":
+        game.story_state = "l5_2a"
+        text = (
+            "Дно яра — плоская сырая площадка размером с небольшую комнату.\n\n"
+            "Светящиеся грибы здесь не растут сплошной стеной: лишь редкие, одиночные шляпки пробиваются между пластами мокрого сланца, "
+            "мерцая холодным бирюзовым светом в густой темноте.\n\n"
+            "Все ручейки прозрачной слизи медленно и непрерывно стекаются к самому центру котловины, где земля кажется зыбкой и густой."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👣 Подойти к центру", callback_data="l5_2b_cocoon")]
+        ])
+
+    # Окно 4.2: L5.2b — Янтарный кокон с фонарём
+    elif data == "l5_2b_cocoon":
+        game.story_state = "l5_2b_cocoon"
+        text = (
+            "В центре низины лежит массивный кокон размером с походный тюк.\n\n"
+            "Он полупрозрачный, янтарного цвета, с густыми прожилками внутри. "
+            "Поверхность медленно вздымается и опадает — сжимается и разжимается, словно тяжёлое живое дыхание.\n\n"
+            "Внутри кокона что-то тускло поблёскивает. Металл.\n\n"
+            "Ты присматриваешься. Сквозь янтарную плёнку виден тёмный каркас, защитные дуги, гранёное стекло и изогнутая ручка. Фонарь!\n\n"
+            "Слизь на дне яра течёт со всех сторон и жадно впитывается в основание кокона. "
+            "Он растёт прямо на глазах. Ещё немного — и стекло затянет намертво."
+        )
+        buttons = [
+            [InlineKeyboardButton(text="⚡ Попытаться выдернуть фонарь", callback_data="l5_3_step")]
+        ]
+        if not game.is_story_flag_set("l5_slime_gathered"):
+            buttons.append([InlineKeyboardButton(text="🍯 Собрать сочившуюся слизь", callback_data="l5_gather_slime")])
+        buttons.append([InlineKeyboardButton(text="🚪 Не трогать и уйти", callback_data="l5_leave_early")])
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    # Окно 5: L5.2a — Сбор сочившейся янтарной слизи
+    elif data == "l5_gather_slime":
+        game.story_state = "l5_gather_slime"
+        if not game.is_story_flag_set("l5_slime_gathered"):
+            game.inventory["Янтарное ядро"] = game.inventory.get("Янтарное ядро", 0) + 2
+            game.adjust_narrative_karma("pragmatism", 1)
+            game.adjust_narrative_karma("observation", 1)
+            game.set_story_flag("l5_slime_gathered", True)
+
+        text = (
+            "Ты соскабливаешь со сланца несколько комков застывших выделений.\n\n"
+            "Это плотная смола, вытекшая из лопнувших янтарных ядер древних слизней. "
+            "Она тёплая, маслянистая, пахнет смолой и древесным соком. "
+            "В руках на воздухе масса быстро густеет, превращаясь в золотистую смолу.\n\n"
+            "Получено: Янтарное ядро ×2."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⚡ Попытаться выдернуть фонарь", callback_data="l5_3_step")],
+            [InlineKeyboardButton(text="🚪 Не трогать и уйти", callback_data="l5_leave_early")]
+        ])
+
+    # Окно 6: L5.2b — Не трогать и уйти (Ранний уход)
+    elif data == "l5_leave_early":
+        game.adjust_narrative_karma("intervention", -2)
+        game.adjust_narrative_karma("compassion", 1)
+        game.adjust_narrative_karma("pragmatism", 2)
+        game.adjust_narrative_karma("observation", 1)
+        game.set_story_flag("l5_completed", True)
+        if "l5_completed_day" not in game.story_flags:
+            game.story_flags["l5_completed_day"] = getattr(game, "day", 1)
+        game.set_story_flag("lantern_taken", False)
+        game.story_state = None
+
+        has_lantern = (
+            game.equipment.get("hand_left") == "Старый фонарь"
+            or game.inventory.get("Старый фонарь", 0) > 0
+        )
+        crafts_to_unlock = ["Пузырёк", "Янтарное зелье", "Приманка для слизней"]
+        if has_lantern:
+            crafts_to_unlock.append("Зарядить фонарь")
+        for r in crafts_to_unlock:
+            if hasattr(game, "unlock_craft"):
+                game.unlock_craft(r)
+            elif r not in getattr(game, "unlocked_crafts", []):
+                game.unlocked_crafts.append(r)
+
+        unlocked = getattr(game, "unlocked_locations", []) or []
+        if "Мохнатая пещера" not in unlocked and "Мохнатая Пещера" not in unlocked:
+            unlocked.append("Мохнатая пещера")
+            game.unlocked_locations = unlocked
+
+        text = (
+            "Ты смотришь на пульсирующий кокон, на ручейки слизи и холодные бирюзовые отсветы грибов. "
+            "Трогать это место больше не хочется.\n\n"
+            "Развернувшись, ты начинаешь подъём по уступам яра. Чавканье под ногами звучит гулко и тревожно.\n\n"
+            "Наверху ты с облегчением счищаешь липкий налёт с сапог и долго вытираешь ладони о жесткую траву. "
+            "Свечение внизу постепенно скрывается за кромкой обрыва."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕 Вернуться в лагерь", callback_data="back")]
+        ])
+
+    # Окно 7.1: L5.3_step — Пробуждение стены и гигантское ядро
+    elif data == "l5_3_step":
+        game.story_state = "l5_3_step"
+        text = (
+            "Ты делаешь осторожный шаг к кокону. Липкая жижа жадно чавкает под ногами, сапоги вязнут почти по щиколотку.\n\n"
+            "Ты уже протягиваешь руку, когда замечаешь движение у дальней стены.\n\n"
+            "Сначала кажется, что глиняный пласт оползает вниз. Но затем ты понимаешь: от стены медленно отслаивается колоссальная бесформенная масса размером со взрослого человека.\n\n"
+            "Полупрозрачное тело сползает на дно, излучая тусклое ядовито-зелёное свечение. "
+            "Но в самой глубине его брюха медленно разгорается и бьётся огромное тёмно-янтарное ядро величиной с мельничный жернов!"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🛑 Замереть на месте", callback_data="l5_3_approach")]
+        ])
+
+    # Окно 7.2: L5.3_approach — Приближение исполина
+    elif data == "l5_3_approach":
+        game.story_state = "l5_3_approach"
+        text = (
+            "Существо не спешит атаковать.\n\n"
+            "Оно медленно проплывает мимо тебя на расстоянии вытянутой руки. От студенистой туши веет волной тяжёлого тепла и удушливым сладковатым духом. "
+            "Сквозь зелёное желе колышется янтарное ядро, наполняя низину приглушённым золотым жаром.\n\n"
+            "Исполин наплывает на кокон, обволакивая его своей массой. Пульсация кокона и ядра сливаются в единый мощный ритм.\n\n"
+            "Ты застываешь на месте, не смея пошевелиться."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🤫 Затаить дыхание", callback_data="l5_3_slug")]
+        ])
+
+    # Окно 7.3: L5.3_slug — Реакция существа и выбор действия
+    elif data == "l5_3_slug":
+        game.story_state = "l5_3_slug"
+        game.set_story_flag("met_giant_slug", True)
+
+        has_pet = bool(game.equipment.get("pet"))
+        if has_pet:
+            pet_text = (
+                "Котёнок высовывает голову из-под твоей куртки, широко раскрывает глаза и издаёт странный, "
+                "вибрирующий утробный звук — не шипение и не мяуканье.\n\n"
+                "Зелёная туша вздрагивает, по студенистому телу пробегает рябь, а янтарное ядро на миг тускнеет. "
+                "Потеряв интерес к кокону, слизень неохотно отползает в сторону, разворачивается и начинает подниматься по стене, "
+                "оставляя широкий мокрый след."
+            )
+        else:
+            pet_text = (
+                "Ты задерживаешь дыхание до звона в ушах. Существо замирает, словно пробуя воздух на вкус. "
+                "Затем оно неспешно сползает с кокона и начинает взбираться вверх по глиняной стене яра, "
+                "унося тёплое сияние ядра во тьму."
+            )
+
+        text = (
+            f"{pet_text}\n\n"
+            "Тварь уползает вверх, но янтарная плёнка на коконе начинает стремительно схватываться коркой."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⚡ Быстро вырвать фонарь", callback_data="l5_3a_force")],
+            [InlineKeyboardButton(text="⏳ Подождать и вскрыть кокон", callback_data="l5_3b_wait")],
+            [InlineKeyboardButton(text="🚪 Оставить кокон и уйти", callback_data="l5_3c_leave")]
+        ])
+
+    # Окно 8: L5.3a — Силовой разрыв кокона (Ожог и фонарь)
+    elif data == "l5_3a_force":
+        game.story_state = "l5_3a_force"
+        game.hp = max(1, getattr(game, "hp", 100) - 5)
+        game.inventory["Старый фонарь"] = game.inventory.get("Старый фонарь", 0) + 1
+        game.lantern_durability = 20
+        game.adjust_narrative_karma("intervention", 4)
+        game.adjust_narrative_karma("compassion", -1)
+        game.adjust_narrative_karma("pragmatism", 3)
+        game.adjust_narrative_karma("observation", 1)
+        game.set_story_flag("lantern_taken", True)
+
+        text = (
+            "Ты бросаешься к кокону!\n\n"
+            "Янтарная оболочка на ощупь тёплая и упругая, как сырая кожа. Ты впиваешься в неё пальцами — слизь натягивается, но не рвётся.\n\n"
+            "Собрав силы, ты с размаху бьёшь локтем. Плёнка с влажным хрустом лопается!\n\n"
+            "Горячая жижа выплёскивается наружу, обжигая ладони немеющим жаром. "
+            "Смола из карманов сейчас не поможет — в спешке и суматохе некогда вскрывать ядра, ладони саднит, но ты терпишь боль. "
+            "Сжав зубы, ты выдёргиваешь металлический фонарь за цепочку.\n\n"
+            "Корпус вымазан в смоле, но стекло цело. Внутри сухо, резервуар полон чистого масла на 20 зажжений — если жечь бережно, "
+            "света хватит надолго.\n\n"
+            "Прижав добычу к груди, ты карабкаешься по скользкому склону прочь со дна.\n\n"
+            "Получен предмет: Старый фонарь [20/20].\n"
+            "Получен урон: −5 HP."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 Осмотреться на дне", callback_data="l5_4_amulet")],
+            [InlineKeyboardButton(text="🧗 Выбраться наверх", callback_data="l5_5_lantern")],
+        ])
+
+    # Окно 9.1: L5.3b_wait — Срезка крупного гриба у кокона
+    elif data == "l5_3b_wait":
+        game.story_state = "l5_3b_wait"
+        text = (
+            "Ты решаешь не рисковать руками и садишься на корточки, терпеливо выжидая, пока огромная тварь окончательно скроется за верхним краем яра.\n\n"
+            "Вспомнив, как слизь сторонится грибниц, ты осматриваешь основание кокона. "
+            "Прямо из глины под ним растёт крупный светящийся гриб размером с две твои ладони.\n\n"
+            "Ты аккуратно срезаешь массивную бирюзовую шляпку и подносишь её вплотную к натянутой янтарной плёнке.\n\n"
+            "Реакция идёт медленно, потому что гриб уже старый и растерял почти всю свою силу. "
+            "От холодного свечения по плёнке еле заметно бегут редкие пузыри, янтарный слой с трудом размягчается. Приходится ждать."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🍄 Поднести гриб к кокону", callback_data="l5_3b_extract")]
+        ])
+
+    # Окно 9.2: L5.3b_extract — Извлечение чистого фонаря
+    elif data == "l5_3b_extract":
+        game.story_state = "l5_3b_extract"
+        game.inventory["Старый фонарь"] = game.inventory.get("Старый фонарь", 0) + 1
+        game.lantern_durability = 20
+        game.adjust_narrative_karma("observation", 4)
+        game.adjust_narrative_karma("pragmatism", 1)
+        game.adjust_narrative_karma("intervention", 2)
+        game.adjust_narrative_karma("compassion", 1)
+        game.set_story_flag("lantern_taken", True)
+
+        text = (
+            "Терпение берёт своё. Под постоянным воздействием гриба янтарная оболочка истончается, натягиваясь до прозрачной плёнки, "
+            "пока тонкий слой тихо не щёлкает, расходясь в стороны.\n\n"
+            "Тёплая смолистая влага медленно стекает в глину, не обжигая кожу.\n\n"
+            "Ты осторожно вынимаешь фонарь. Он выходит из кокона чистым: металл лишь слегка потемнел, стекло абсолютно целое, "
+            "а внутри плещется масло. Его хватит на 20 исследований.\n\n"
+            "Ты убираешь находку в рюкзак.\n\n"
+            "Получен предмет: Старый фонарь [20/20]."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 Осмотреться", callback_data="l5_4_amulet")]
+        ])
+
+    # Окно 10: L5.3c_leave — Оставить кокон лесу
+    elif data == "l5_3c_leave":
+        game.story_state = "l5_3c_leave"
+        game.adjust_narrative_karma("compassion", 3)
+        game.adjust_narrative_karma("observation", 3)
+        game.adjust_narrative_karma("intervention", 1)
+        game.set_story_flag("lantern_taken", False)
+
+        text = (
+            "Ты опускаешь руки и делаешь шаг назад.\n\n"
+            "Гигантская тварь уже скрылась наверху, но ручейки слизи, стекающие по дну яра, уже жадно затягивают разрыв на коконе, "
+            "оставленный массивным телом слизня. Ты своими глазами видишь, как жижа мгновенно схватывается коркой.\n\n"
+            "Через день стекло фонаря окончательно покроется толстым янтарём. Через неделю железо растворится в янтарной толще. "
+            "Лес забирает своё обратно, и спорить с этим не стоит.\n\n"
+            "Развернувшись, ты начинаешь размеренный подъём по склону, оставляя светящуюся низину за спиной."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🧗 Подняться из яра", callback_data="l5_5_left")]
+        ])
+
+    # Окно 11: L5.4_amulet — Находка на дне: Костяной амулет охотника
+    elif data == "l5_4_amulet":
+        game.story_state = "l5_4_amulet"
+        game.inventory["Костяной амулет охотника"] = game.inventory.get("Костяной амулет охотника", 0) + 1
+        game.set_story_flag("found_hunter_amulet", True)
+        game.adjust_narrative_karma("observation", 3)
+        game.adjust_narrative_karma("pragmatism", 1)
+
+        text = (
+            "Перед тем как подняться, ты обходишь дно яра вдоль замшелой стены.\n\n"
+            "В липком осадке белеют старые кости крупного оленя. А рядом, наполовину влипшая в глину, "
+            "темнеет небольшая пластинка на истлевшем шнурке.\n\n"
+            "Ты подбираешь её и счищаешь налёт.\n\n"
+            "Это пластинка из полированной кости. На ней глубоко прорезан знакомый знак: три короткие насечки, "
+            "перечёркнутые одной длинной поперечной линией — в точности такой же, как на вековых деревьях просеки. "
+            "Один из охотников обронил его в спешке, спасаясь из этого яра.\n\n"
+            "Получен предмет: Костяной амулет охотника."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Далее ➔", callback_data="l5_5_lantern")]
+        ])
+
+    # Окно 12.1: L5.5_lantern — Финал с фонарём (Выход из яра)
+    elif data == "l5_5_lantern":
+        game.set_story_flag("l5_completed", True)
+        if "l5_completed_day" not in game.story_flags:
+            game.story_flags["l5_completed_day"] = getattr(game, "day", 1)
+        game.story_state = None
+        for r in ("Зарядить фонарь", "Пузырёк", "Янтарное зелье", "Приманка для слизней"):
+            if hasattr(game, "unlock_craft"):
+                game.unlock_craft(r)
+            elif r not in getattr(game, "unlocked_crafts", []):
+                game.unlocked_crafts.append(r)
+
+        unlocked = getattr(game, "unlocked_locations", []) or []
+        if "Мохнатая пещера" not in unlocked and "Мохнатая Пещера" not in unlocked:
+            unlocked.append("Мохнатая пещера")
+            game.unlocked_locations = unlocked
+
+        has_pet = bool(game.equipment.get("pet"))
+        pet_note = (
+            "\n\nКотёнок с любопытством тычется мокрым носом в прохладное стекло фонаря и забавно фыркает на своё отражение."
+            if has_pet else ""
+        )
+
+        text = (
+            "Ты выбираешься из яра наверх, жадно вдыхая свежий ночной воздух. На чистой траве оттираешь ладони от липкого налёта.\n\n"
+            "Достав фонарь, ты поднимаешь его перед собой к звёздам. Стекло поблёскивает, а внутри плещется янтарное масло.\n\n"
+            "В памяти невольно всплывает, как во второй день в лесу с хрустом сломался факел, когда ты отбивался от старого волка у пня. "
+            "С тех пор приходилось шарахаться от каждого шороха в темноте. Но теперь в твоих руках снова есть надёжный, защищённый свет."
+            f"{pet_note}"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕 Вернуться в лагерь", callback_data="back")]
+        ])
+
+    # Окно 12.2: L5.5_left — Финал без фонаря (Выход из яра)
+    elif data == "l5_5_left":
+        game.set_story_flag("l5_completed", True)
+        if "l5_completed_day" not in game.story_flags:
+            game.story_flags["l5_completed_day"] = getattr(game, "day", 1)
+        game.story_state = None
+        has_lantern = (
+            game.equipment.get("hand_left") == "Старый фонарь"
+            or game.inventory.get("Старый фонарь", 0) > 0
+        )
+        crafts_to_unlock = ["Пузырёк", "Янтарное зелье", "Приманка для слизней"]
+        if has_lantern:
+            crafts_to_unlock.append("Зарядить фонарь")
+        for r in crafts_to_unlock:
+            if hasattr(game, "unlock_craft"):
+                game.unlock_craft(r)
+            elif r not in getattr(game, "unlocked_crafts", []):
+                game.unlocked_crafts.append(r)
+
+        unlocked = getattr(game, "unlocked_locations", []) or []
+        if "Мохнатая пещера" not in unlocked and "Мохнатая Пещера" not in unlocked:
+            unlocked.append("Мохнатая пещера")
+            game.unlocked_locations = unlocked
+
+        text = (
+            "Ты выбираешься из яра и долго стоишь у кромки обрыва, глядя в глубину.\n\n"
+            "Там, на дне, ровно пульсирует холодное бирюзовое свечение — словно неторопливое дыхание неведомого спящего исполина. "
+            "Где-то в темноте растёт янтарный кокон, переваривая чужой металл.\n\n"
+            "В чаще снова темно. Но теперь ты знаешь: ночной лес не мёртв и не пуст. В нём кипит своя жизнь, переплавляющая старое в новое.\n\n"
+            "Поправив лямки рюкзака, ты шагаешь прочь по тропе."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕 Вернуться в лагерь", callback_data="back")]
+        ])
+
+    elif data == "l5_bait_menu":
+        from keyboards import get_l5_bait_menu_kb
+        text = (
+            "🍯 <b>ПРИМАНКА ДЛЯ СЛИЗНЕЙ</b>\n\n"
+            "Густой сладкий аромат давленых ягод растекается по всему яру. "
+            "Приманка активна весь текущий день.\n\n"
+            "• Слизни жадно сползаются со всех расщелин.\n"
+            "• При обычном исследовании яра шанс привлечь скопление слизней составляет 50%.\n"
+            "• За ночь слизни без остатка сожрут приманку.\n\n"
+            "Ты можешь устроить засаду прямо сейчас!"
+        )
+        kb = get_l5_bait_menu_kb()
+
+    elif data == "l5_slug_ambush":
+        return start_slug_pack_battle(game, count=6)
+
+    elif data == "l5_bait_remove":
+        game.slug_bait_active = False
+        game.inventory["Приманка для слизней"] = game.inventory.get("Приманка для слизней", 0) + 1
+        game.add_log("Вы осторожно сняли приманку для слизней и вернули её в инвентарь.")
+        text = game.get_ui()
+        kb = get_main_kb(game)
+
+    elif data == "l5_slug_battle":
+        return _render_slug_pack_battle(game)
+
+    elif data == "l5_slug_attack":
+        b = getattr(game, "slug_pack_battle", None) or {}
+        slimes = b.get("slimes", [])
+        target = next((s for s in slimes if s.get("alive")), None)
+        if not target:
+            b["is_victory"] = True
+            game.slug_pack_battle = b
+            return _render_slug_pack_battle(game)
+
+        weapon = game.equipment.get("hand_right")
+        if weapon in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
+            player_dmg = random.randint(19, 24)
+        elif weapon == "Окованный посох":
+            player_dmg = random.randint(8, 10)
+        elif weapon == "Крепкий посох":
+            player_dmg = random.randint(5, 7)
+        else:
+            player_dmg = random.randint(2, 4)
+
+        target["hp"] -= player_dmg
+        hero_log = f"⚔️ Ты бьёшь по [{target['name']}] на {player_dmg} урона!"
+        if target["hp"] <= 0:
+            target["hp"] = 0
+            target["alive"] = False
+            hero_log += f"\n💥 [{target['name']}] лопается с брызгами студня! (💀)"
+
+        alive_slimes = [s for s in slimes if s.get("alive")]
+        if not alive_slimes:
+            b["is_victory"] = True
+            if not game.is_story_flag_set("l5_slug_pack_defeated"):
+                game.kills_count = getattr(game, "kills_count", 0) + 1
+            game.set_story_flag("l5_slug_pack_defeated", True)
+            cores_found = 0
+            loot_log = []
+            for s in slimes:
+                if random.random() < 0.5:
+                    cores_found += 1
+                    loot_log.append(f"• {s['name']}: 🟠 Янтарное ядро извлечено целым!")
+                else:
+                    loot_log.append(f"• {s['name']}: ядро разбилось от ударов")
+            b["cores_dropped"] = cores_found
+            b["loot_log"] = loot_log
+            if cores_found > 0:
+                game.inventory["Янтарное ядро"] = game.inventory.get("Янтарное ядро", 0) + cores_found
+            b["last_log"] = hero_log
+            game.slug_pack_battle = b
+            return _render_slug_pack_battle(game)
+
+        dodge_chance = int(getattr(game, "dodge_chance", 0) or 0)
+        player_def = game.armor_defense
+        slime_logs = []
+        for s in alive_slimes:
+            roll = random.randint(1, 100)
+            if roll <= dodge_chance:
+                slime_logs.append(f"• {s['name']}: Промахнулся!")
+            else:
+                raw_dmg = random.randint(5, 15)
+                actual_dmg = max(1, raw_dmg - player_def)
+                game.hp = max(0, game.hp - actual_dmg)
+                slime_logs.append(f"• {s['name']}: Ударил на {actual_dmg} (атака {raw_dmg} − броня {player_def})")
+
+        b["round"] = b.get("round", 1) + 1
+        b["last_log"] = hero_log + "\n" + "\n".join(slime_logs)
+        if game.hp <= 0:
+            b["is_defeat"] = True
+        game.slug_pack_battle = b
+        return _render_slug_pack_battle(game)
+
+    elif data == "l5_slug_defend":
+        b = getattr(game, "slug_pack_battle", None) or {}
+        slimes = b.get("slimes", [])
+        alive_slimes = [s for s in slimes if s.get("alive")]
+        if not alive_slimes:
+            b["is_victory"] = True
+            if not game.is_story_flag_set("l5_slug_pack_defeated"):
+                game.kills_count = getattr(game, "kills_count", 0) + 1
+            game.set_story_flag("l5_slug_pack_defeated", True)
+            game.slug_pack_battle = b
+            return _render_slug_pack_battle(game)
+
+        slime_logs = []
+        block_dmg = len(alive_slimes)
+        for s in alive_slimes:
+            game.hp = max(0, game.hp - 1)
+            slime_logs.append(f"• {s['name']}: В блок — 1 урон.")
+
+        b["round"] = b.get("round", 1) + 1
+        b["last_log"] = (
+            f"🛡️ Ты ушёл в полный блок, закрываясь от брызг едкой слизи!\n"
+            + "\n".join(slime_logs)
+            + f"\nПолучено в блок: {block_dmg} урона."
+        )
+        if game.hp <= 0:
+            b["is_defeat"] = True
+        game.slug_pack_battle = b
+        return _render_slug_pack_battle(game)
+
+    elif data == "l5_slug_use_pocket":
+        b = getattr(game, "slug_pack_battle", None) or {}
+        pocket_item = getattr(game, "pants_pocket", None)
+        if not pocket_item:
+            return _render_slug_pack_battle(game)
+
+        from modules.items import ITEMS
+        if pocket_item == "Янтарное зелье":
+            heal_amount = min(game.max_hp - game.hp, 70)
+            game.hp += heal_amount
+            game.inventory["Пузырёк"] = game.inventory.get("Пузырёк", 0) + 1
+            action_log = f"🍹 Ты принимаешь Янтарное зелье! (+{heal_amount} HP). Пустой пузырёк убран в рюкзак."
+        else:
+            eff = ITEMS.get(pocket_item, {}).get("effects", {})
+            hp_gain = eff.get("hp", 20)
+            heal_amount = min(game.max_hp - game.hp, hp_gain)
+            game.hp += heal_amount
+            action_log = f"🍽️ Ты принимаешь {pocket_item} из футляра на поножах! (+{heal_amount} HP)."
+
+        game.pants_pocket = None
+
+        slimes = b.get("slimes", [])
+        alive_slimes = [s for s in slimes if s.get("alive")]
+        dodge_chance = int(getattr(game, "dodge_chance", 0) or 0)
+        player_def = game.armor_defense
+        slime_logs = []
+        for s in alive_slimes:
+            roll = random.randint(1, 100)
+            if roll <= dodge_chance:
+                slime_logs.append(f"• {s['name']}: Промахнулся!")
+            else:
+                raw_dmg = random.randint(5, 15)
+                actual_dmg = max(1, raw_dmg - player_def)
+                game.hp = max(0, game.hp - actual_dmg)
+                slime_logs.append(f"• {s['name']}: Ударил на {actual_dmg} (атака {raw_dmg} − броня {player_def})")
+
+        b["round"] = b.get("round", 1) + 1
+        b["last_log"] = action_log + "\n\n" + "\n".join(slime_logs)
+        if game.hp <= 0:
+            b["is_defeat"] = True
+        game.slug_pack_battle = b
+        return _render_slug_pack_battle(game)
+
+    elif data == "l5_slug_flee":
+        game.slug_pack_battle = None
+        game.active_story_callback = None
+        game.add_log("Ты разорвал дистанцию и вырвался из кольца слизней наверх.")
+        text = game.get_ui()
+        kb = get_main_kb(game)
+
+    elif data == "l5_slug_battle_finish":
+        game.slug_pack_battle = None
+        game.active_story_callback = None
+        game.add_log("Скопление слизней разбито. Трофеи собраны.")
+        text = game.get_ui()
+        kb = get_main_kb(game)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # ГЛАВА 2: ОХОТА НА ИСПОЛИНА И ТАЙНА ПРОМОИНЫ
+    # ──────────────────────────────────────────────────────────────────────────
+
+    # Экран 1: L5.2.1 — Стоянка на уступе (Размышления)
+    elif data == "l5_2_1":
+        game.story_state = "l5_2_1"
+        text = (
+            "Ты уже который день прочёсываешь сырой лабиринт яра, и этот сухой глиняный уступ у сланцевой плиты стал настоящим спасением. "
+            "Здесь нет белесого тумана, а на камне чернеет старая копоть костра — люди тут бывали, место надёжное.\n\n"
+            "Но расслабляться нельзя. Образ той громадины ростом с человека, уползшей от кокона в темноту, до сих пор стоит перед глазами. "
+            "Пока эта тварь бродит рядом, спокойного сна не будет. Сжав оружие, ты спускаешься вниз, чтобы отыскать её логово."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👣 Выйти на разведку", callback_data="l5_2_2")]
+        ])
+
+    # Экран 2: L5.2.2 — Следы на дне яра
+    elif data == "l5_2_2":
+        game.story_state = "l5_2_2"
+        text = (
+            "На дне оврага тянется широкая примятая полоса — слой слизи, какой оставляют за собой крупные слаймы, только эта раза в три шире обычного. "
+            "Тварь такого колоссального веса не может прыгать при обычном движении: она тяжело и непрерывно ползла вперёд, продавливая глину.\n\n"
+            "Рядом видны глубокие отпечатки копыт молодого оленя. Животное сильно хромало, волоча заднюю ногу со старым ржавым капканом. "
+            "Олень пытался спастись, но хищник неумолимо настигал его. След ведёт в тупиковую лощину."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🐾 Идти по следу", callback_data="l5_2_3")]
+        ])
+
+    # Экран 3: L5.2.3 — Вход в заводь
+    elif data == "l5_2_3":
+        game.story_state = "l5_2_3"
+        text = (
+            "Борозда огибает острый сланцевый гребень и уводит в глухую каменистую лощину. "
+            "Главное русло яра уходит дальше — туда, где шумит сток и чернеет зев глубокой промоины, но слизень свернул именно в тупик.\n\n"
+            "Из глубины лощины доносится глухой влажный шлепок и отчаянный, захлебнувшийся хрип зверя. Охота уже подошла к концу. "
+            "Стараясь не чавкать сапогами по ослизлым камням, ты осторожно подбираешься к выступу скалы."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🤫 Прокрасться в заводь", callback_data="l5_2_4")]
+        ])
+
+    # Экран 4: L5.2.4 — Заводь и финал охоты
+    elif data == "l5_2_4":
+        game.story_state = "l5_2_4"
+        text = (
+            "В центре каменистой заводи замер тёмно-зелёный Исполинский слайм размером с человека. Он не прозрачный, как мелкие сородичи, а мутный и тёмный.\n\n"
+            "Перед ним лежит обессилевший олень со старым капканом на ноге. Спасать зверя поздно. "
+            "Слайм тяжело колышется на месте, натягивая своё студенистое тело. "
+            "В глубине мутной массы едва различим силуэт ядра, от которого исходит слабое, еле заметное свечение."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👀 Следить за тварью", callback_data="l5_2_5")]
+        ])
+
+    # Экран 5: L5.2.5 — Уязвимость ядра
+    elif data == "l5_2_5":
+        game.story_state = "l5_2_5"
+        text = (
+            "Слайм сжимается, расплываясь по земле, словно пружина, и резко выбрасывает всю массу вперёд! Олень дёргается, и слайм со шлепком врезается прямо в скалу.\n\n"
+            "От удара желе растекается по камню плоской лепёшкой. На какую-то долю секунды светящееся ядро оказывается прямо у самой поверхности натянутой оболочки. "
+            "Но слайм тут же стягивается обратно в ком и вторым наплывом накрывает добычу целиком, скрывая её в толще своей студенистой туши."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💡 Оценить слабость", callback_data="l5_2_6")]
+        ])
+
+    # Экран 6: L5.2.6 — Тактическое решение
+    elif data == "l5_2_6":
+        game.story_state = "l5_2_6"
+        game.set_story_flag("l5_arena_unlocked", True)
+        text = (
+            "Всё встало на свои места. Судя по огромному объёму плотного желе, пробить эту массу до ядра обычными ударами не удастся — оружие просто увязнет. "
+            "Но если подловить момент, когда слайм распластается о стену, можно ударить прямо по обнажившемуся ядру. "
+            "Пропитанный соком гриба посох прожжёт желе и не даст ему восстановиться.\n\n"
+            "Сейчас тварь занята добычей и почти неподвижна. Самое время подготовиться к бою. Запомнив проход в лощину, ты отходишь на стоянку."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕️ Отступить в лагерь", callback_data="back")]
+        ])
+
+    # Экран 7: L5.arena_start — Вход на арену
+    elif data == "l5_arena_start":
+        game.story_state = "l5_arena_start"
+        text = (
+            "Ты стоишь на входе в каменистую заводь. Исполинский слайм всё так же лежит посреди площадки, тяжело и медленно переваривая добычу. "
+            "Он почти не двигается, лишь по мутной тёмно-зелёной поверхности изредка пробегает студенистая рябь.\n\n"
+            "Этим оцепенением нужно пользоваться прямо сейчас, пока он малоподвижен."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⚔️ Напасть на слайма", callback_data="l5_boss_fight")],
+            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="back")]
+        ])
+
+    # Запуск боя с Исполинским слаймом
+    elif data == "l5_boss_fight":
+        return start_battle(game, "giant_slime")
+
+    elif data.startswith("slime_battle_"):
+        return apply_action(data, game, "giant_slime")
+
+    elif data == "slime_battle_screen":
+        battle = getattr(game, "wolf_battle", None)
+        if battle and battle.get("wolf_hp", 0) > 0 and getattr(game, "hp", 100) > 0:
+            return get_battle_text(game, "giant_slime"), get_battle_kb(game, "giant_slime")
+        if game.is_story_flag_set("l5_boss_defeated") or not battle:
+            return handle_location_5_slug_pit("l5_2_7", game, uid)
+
+    # Экран побега из заводи Исполина
+    elif data == "l5_arena_escape":
+        game.story_state = "l5_arena_escape"
+        game.wolf_battle = None
+        game.ap = 0
+        text = (
+            "Лёгкие горят огнём от едких испарений, руки немеют, а сердце колотится где-то в горле. Сил больше нет.\n\n"
+            "Буквально на волоске от гибели, срывая дыхание и скользя по липкой глине, ты чудом выдираешь ноги из чавкающей жижи. "
+            "Двухметровая масса с глухим всплеском оседает позади, не в силах угнаться за тобой по сухим каменным валунам.\n\n"
+            "Ты вываливаешься из заводи совершенно без сил, едва держась на ногах. Сейчас главное — добраться до костра и хорошенько отдохнуть."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="back")]
+        ])
+
+    # Экран 8: L5.2.7 — Победа над Исполином
+    elif data == "l5_2_7":
+        game.story_state = "l5_2_7"
+        game.wolf_battle = None
+        game.set_story_flag("l5_boss_defeated", True)
+        game.set_story_flag("boss_giant_slime_defeated", True)
+        game.unlock_craft("Охотничье сланцевое копьё")
+        game.set_story_flag("l5_arena_unlocked", False)
+
+        # Ломается экипированное оружие (Посох)
+        weapon = game.equipment.get("hand_right")
+        if weapon in ("Крепкий посох", "Окованный посох"):
+            game.equipment["hand_right"] = None
+            if weapon in game.inventory:
+                game.inventory[weapon] = max(0, game.inventory[weapon] - 1)
+                if game.inventory[weapon] == 0:
+                    del game.inventory[weapon]
+            game.add_log(f"💥 {weapon} сломался от сокрушительного удара о твёрдое ядро!")
+        else:
+            for s in ("Окованный посох", "Крепкий посох"):
+                if game.inventory.get(s, 0) > 0:
+                    game.inventory[s] = max(0, game.inventory[s] - 1)
+                    if game.inventory[s] == 0:
+                        del game.inventory[s]
+                    game.add_log(f"💥 {s} сломался от сокрушительного удара о твёрдое ядро!")
+                    break
+
+        text = (
+            "Улучив момент, ты со всей силы вбиваешь посох прямо в обнажившееся ядро. Раздаётся влажный треск — ядро раскалывается, выплёскивая горячую мутную жижу!\n\n"
+            "Но в этот же миг древко в руках с сухим хрустом переламывается. Дерево впитало слишком много едкой слизи слаймов: оно растворялось изнутри и держалось на честном слове. "
+            "Удар о твёрдое ядро стал последним — чудо, что посох не рассыпался раньше.\n\n"
+            "Тёмно-зелёная масса опадает едкой пеной. Выронив обломок, ты тяжело опускаешься на колени."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👣 Выйти из заводи", callback_data="l5_2_8")]
+        ])
+
+    # Экран 9: L5.2.8 — Звуки из промоины
+    elif data == "l5_2_8":
+        game.story_state = "l5_2_8"
+        text = (
+            "Опираясь о мокрые камни, ты выходишь из лощины обратно в яр. Тело ломит от усталости, но тишину нарушает странный шум со стороны нижнего склона, куда стекает вся дождевая вода.\n\n"
+            "Оттуда, из темноты глубокого провала промоины, доносится глухой металлический лязг, треск ломающихся костей и тяжелое, низкое бульканье. "
+            "Этот звук не похож на обычных слизней. Любопытство перевешивает, и ты осторожно спускаешься к промоине."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👀 Заглянуть в промоину", callback_data="l5_2_9")]
+        ])
+
+    # Экран 10: L5.2.9 — Ловушка промоины и древний затор
+    elif data == "l5_2_9":
+        game.story_state = "l5_2_9"
+        text = (
+            "На дне промоины залёг Древний слайм невероятных размеров, намертво перекрыв вход в пещеру. Выбраться из этой низины он не способен: "
+            "стены здесь совершенно отвесные, а в мутной туше скопилось столько тяжёлого хлама — рогов, костей и ржавого железа, — "
+            "что подняться наверх ему не под силу. Он сам стал пленником стока.\n\n"
+            "Взгляд цепляется за скальный козырёк над входом в пещеру. Там глубоко выбит знакомый знак охотников: три насечки, перечёркнутые линией. "
+            "Проход дальше лежит именно через этот грот."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 Приглядеться к твари", callback_data="l5_2_10")]
+        ])
+
+    # Экран 11: L5.2.10 — Осознание преграды и отступление
+    elif data == "l5_2_10":
+        game.story_state = "l5_2_10"
+        game.set_story_flag("l5_ch2_completed", True)
+        game.set_story_flag("l5_ancient_unlocked", True)
+        text = (
+            "Как это чудовище здесь выживает и чем кормится в каменном мешке — остаётся загадкой.\n\n"
+            "Но ясно одно: сквозь спрессованный панцирь из мусора к его ядру невозможно добраться. "
+            "Чтобы понять его повадки и найти слабое место, необходимо будет каждый день приходить сюда и наблюдать за ним, выискивая хоть одну брешь для прохода к пещере.\n\n"
+            "Без оружия, с пустыми руками и ноющим от усталости телом, ты с трудом поднимаешься по осыпи, цепляясь за выступы камней, чтобы вернуться в лагерь."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="back")]
+        ])
+
+    # Окно наблюдения: Логово Древнего (подлокация в меню)
+    elif data == "l5_ancient_lair":
+        text = (
+            "Ты стоишь на краю глубокого разлома, глядя на дно промоины.\n\n"
+            "Внизу в мутной жиже тяжело ворочается исполинский Древний слайм, перемалывая в своей туше кости и ржавое железо. "
+            "Вход в пещеру под знаком охотников надёжно заблокирован.\n\n"
+            "Пока у тебя нет подходящего оружия и снаряжения (копья или крюка), спускаться в этот каменный мешок — верная смерть."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="back")]
+        ])
+
+    terminators = ("l5_leave_early", "l5_5_lantern", "l5_5_left", "back", "l5_slug_flee", "l5_slug_battle_finish", "l5_bait_remove", "l5_ancient_lair", "l5_arena_escape")
+    if kb == get_main_kb(game) or data in terminators or getattr(game, "hp", 100) <= 0:
+        game.active_story_callback = None
+    elif text is not None:
+        game.active_story_callback = data
+
+    return text, kb
