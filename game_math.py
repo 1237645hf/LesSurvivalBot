@@ -10,12 +10,16 @@ game_math.py — Унифицированная математика урона 
 import math
 
 
-def process_damage(game_state, raw_damage: int) -> tuple[int, str]:
+def process_damage(game_state, raw_damage: int = 0) -> tuple[int, str]:
     """Обработка урона персонажу (без пола 1 и без перенапряжения)."""
     hp = getattr(game_state, "hp", 100)
-    effective_damage = max(0, int(raw_damage))
+    try:
+        effective_damage = max(0, int(raw_damage or 0))
+    except (TypeError, ValueError):
+        effective_damage = 0
     new_hp = max(0, hp - effective_damage)
-    game_state.hp = new_hp
+    if game_state is not None:
+        game_state.hp = new_hp
 
     if new_hp <= 0:
         return 0, f"Ты получил {effective_damage} урона. Здоровье упало до 0."

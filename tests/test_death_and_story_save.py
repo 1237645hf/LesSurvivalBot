@@ -78,6 +78,13 @@ def test_process_damage_honest_death_and_no_overexertion():
     assert game.hunger == 80
     assert game.thirst == 90
 
+    # Проверка устойчивости к None и некорректным типам
+    game.hp = 50
+    hp_none, msg_none = process_damage(game, None)
+    assert hp_none == 50
+    assert game.hp == 50
+    assert "поглощён" in msg_none
+
 
 def test_resource_multipliers_and_ap_by_hp_remain():
     """Тест 5: Множители ресурсов и расчет AP от HP работают по канону."""
