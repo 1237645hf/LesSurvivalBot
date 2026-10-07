@@ -492,7 +492,7 @@ class GameState:
             if overflow_hp_damage > 0:
                 self.hp = max(0, old_hp - overflow_hp_damage)
 
-            self.add_log("🔥 Костёр с трудом разведён трением (−2 ⚡ AP, −7 сытости, −18 жажды).")
+            self.add_log(f"🔥 Костёр с трудом разведён трением ⚡−2,  🍖 −{hunger_cost}, 💧−{thirst_cost}")
 
         self.campfire_max_durability = 10
         self.campfire_durability = self.campfire_max_durability
