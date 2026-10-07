@@ -320,7 +320,7 @@ async def handle_waiting_for_fuel_count(
         game.add_log(f"🪵 Подкинуто: Палки ×{to_use}. Огонь: {game.campfire_durability}/{game.campfire_max_durability}.")
         action_header = f"🪵 Подкинуто: Ветка ×{to_use} (+{to_use} огня)"
 
-    from main import get_campfire_text
+    from modules.cooking import get_campfire_text
     result_text = get_campfire_text(game, action_header=action_header)
     kb = get_campfire_kb(game)
     msg_id = bot_ctx["last_active_msg_id"].get(uid)
@@ -450,7 +450,7 @@ async def handle_waiting_for_cook_count(
         game.story_state = None
         game.story_flags.pop("cook_recipe_id", None)
         game.nav_stack = ["main", "campfire"]
-        from main import get_campfire_text
+        from modules.cooking import get_campfire_text
         text_out = get_campfire_text(game)
         kb = get_campfire_kb(game)
         msg_id = bot_ctx["last_active_msg_id"].get(uid)
@@ -497,7 +497,7 @@ async def handle_waiting_for_cook_count(
     game.nav_stack = ["main", "campfire"]
     game.add_log(msg)
 
-    from main import get_campfire_text
+    from modules.cooking import get_campfire_text
     header = f"✅ {msg}"
     text_out = get_campfire_text(game, action_header=header)
     kb = get_campfire_kb(game)
