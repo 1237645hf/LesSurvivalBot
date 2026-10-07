@@ -650,47 +650,57 @@ async def cmd_start(message: Message, state: Optional[FSMContext] = None):
     chat_id = message.chat.id
     logging.info(f"[START] Получен /start от {uid}")
 
-    game = _ensure_game(uid)
-    # Если игрок находится внутри сюжета — блокируем команду, удаляем её и перевыводим сюжетное окно
-    if is_in_active_story(game):
-        await safe_delete_message(chat_id, message.message_id)
-        await restore_active_story_screen(chat_id, uid, game)
+    user_lock = get_user_lock(uid)
+    try:
+        await asyncio.wait_for(user_lock.acquire(), timeout=3.0)
+    except asyncio.TimeoutError:
+        logging.warning(f"Таймаут ожидания user_lock в cmd_start для {uid}")
         return
 
-    if state is None:
-        state = dp.fsm.get_context(bot=bot, chat_id=chat_id, user_id=uid)
+    try:
+        game = _ensure_game(uid)
+        # Если игрок находится внутри сюжета — блокируем команду, удаляем её и перевыводим сюжетное окно
+        if is_in_active_story(game):
+            await safe_delete_message(chat_id, message.message_id)
+            await restore_active_story_screen(chat_id, uid, game)
+            return
 
-    # Безопасная пакетная очистка реальных ID за один запрос delete_messages:
-    # 1. Сохранённые ранее сообщения из FSM-состояния (messages_to_delete)
-    # 2. Сообщение самой команды /start
-    # 3. Предыдущий активный экран игры (last_active_msg_id), если перезапуск
-    extra_ids = [message.message_id]
-    old_active_msg = last_active_msg_id.pop(uid, None)
-    if old_active_msg:
-        extra_ids.append(old_active_msg)
-    if game and getattr(game, "last_message_id", None) and game.last_message_id not in extra_ids:
-        extra_ids.append(game.last_message_id)
+        if state is None:
+            state = dp.fsm.get_context(bot=bot, chat_id=chat_id, user_id=uid)
 
-    protected_ids = []
-    if game and getattr(game, "header_message_id", None):
-        protected_ids.append(game.header_message_id)
+        # Безопасная пакетная очистка реальных ID за один запрос delete_messages:
+        # 1. Сохранённые ранее сообщения из FSM-состояния (messages_to_delete)
+        # 2. Сообщение самой команды /start
+        # 3. Предыдущий активный экран игры (last_active_msg_id), если перезапуск
+        extra_ids = [message.message_id]
+        old_active_msg = last_active_msg_id.pop(uid, None)
+        if old_active_msg:
+            extra_ids.append(old_active_msg)
+        if game and getattr(game, "last_message_id", None) and game.last_message_id not in extra_ids:
+            extra_ids.append(game.last_message_id)
 
-    await clear_tracked_messages(chat_id=chat_id, state=state, extra_ids=extra_ids, protected_ids=protected_ids)
+        protected_ids = []
+        if game and getattr(game, "header_message_id", None):
+            protected_ids.append(game.header_message_id)
 
-    loaded = load_game(uid)
-    if loaded and getattr(loaded, "is_name_set", False):
-        hero_name = loaded.character_name or "Выживший"
-        text = format_start_character_text(loaded)
-        kb = get_start_resume_kb(hero_name)
-    else:
-        text = GUIDE_TEXT
-        kb = get_start_new_game_kb()
+        await clear_tracked_messages(chat_id=chat_id, state=state, extra_ids=extra_ids, protected_ids=protected_ids)
 
-    # Нижняя Reply-клавиатура полностью отключена — сбрасываем кэш у клиента.
-    # Шапка "🌲 LesSurvivalBot" гарантированно отправляется/обновляется в update_or_send_message (защита от дублей)
-    if game and not getattr(game, "header_message_id", None) and loaded and getattr(loaded, "header_message_id", None):
-        game.header_message_id = loaded.header_message_id
-    await update_or_send_message(chat_id, uid, text, kb, current_msg_id=message.message_id)
+        loaded = load_game(uid)
+        if loaded and getattr(loaded, "is_name_set", False):
+            hero_name = loaded.character_name or "Выживший"
+            text = format_start_character_text(loaded)
+            kb = get_start_resume_kb(hero_name)
+        else:
+            text = GUIDE_TEXT
+            kb = get_start_new_game_kb()
+
+        # Нижняя Reply-клавиатура полностью отключена — сбрасываем кэш у клиента.
+        # Шапка "🌲 LesSurvivalBot" гарантированно отправляется/обновляется в update_or_send_message (защита от дублей)
+        if game and not getattr(game, "header_message_id", None) and loaded and getattr(loaded, "header_message_id", None):
+            game.header_message_id = loaded.header_message_id
+        await update_or_send_message(chat_id, uid, text, kb, current_msg_id=message.message_id)
+    finally:
+        user_lock.release()
 
 
 @dp.message(Command("main", "menu", "home"))
@@ -698,32 +708,37 @@ async def cmd_main(message: Message):
     uid = message.from_user.id
     chat_id = message.chat.id
     await safe_delete_message(chat_id, message.message_id)
-    game = _ensure_game(uid)
-    if not game:
-        await message.answer("Сначала /start")
+
+    user_lock = get_user_lock(uid)
+    try:
+        await asyncio.wait_for(user_lock.acquire(), timeout=3.0)
+    except asyncio.TimeoutError:
+        logging.warning(f"Таймаут ожидания user_lock в cmd_main для {uid}")
         return
-    if is_in_active_story(game):
-        await restore_active_story_screen(chat_id, uid, game)
-        return
-    if getattr(game, "hp", 100) <= 0:
-        game.hp = 0
-        game.active_story_callback = None
+
+    try:
+        game = _ensure_game(uid)
+        if not game:
+            await message.answer("Сначала /start")
+            return
+        if is_in_active_story(game):
+            await restore_active_story_screen(chat_id, uid, game)
+            return
+        if getattr(game, "hp", 100) <= 0:
+            game.hp = 0
+            game.active_story_callback = None
+            save_game(uid, game)
+            await update_or_send_message(chat_id, uid, get_death_text(game), get_death_kb())
+            return
+        prompt = check_character_name_required(game)
+        if prompt:
+            await update_or_send_message(chat_id, uid, prompt, None)
+            return
+        game.nav_stack = ["main"]
+        await update_or_send_message(chat_id, uid, game.get_ui(), get_main_kb(game))
         save_game(uid, game)
-        await update_or_send_message(chat_id, uid, get_death_text(game), get_death_kb())
-        return
-    if game.story_state == "WAITING_FOR_CHARACTER_NAME" or not getattr(game, "is_name_set", False):
-        prompt = (
-            "📛 Сначала введи имя своего персонажа:\n"
-            "• Только буквы, цифры, _\n"
-            "• Пробелы запрещены (используй _ вместо пробела)\n"
-            "• Эмодзи запрещены\n"
-            "• Макс. 20 символов"
-        )
-        await update_or_send_message(chat_id, uid, prompt, None)
-        return
-    game.nav_stack = ["main"]
-    await update_or_send_message(chat_id, uid, game.get_ui(), get_main_kb(game))
-    save_game(uid, game)
+    finally:
+        user_lock.release()
 
 
 
@@ -732,32 +747,37 @@ async def cmd_inventory(message: Message):
     uid = message.from_user.id
     chat_id = message.chat.id
     await safe_delete_message(chat_id, message.message_id)
-    game = _ensure_game(uid)
-    if not game:
-        await message.answer("Сначала /start")
+
+    user_lock = get_user_lock(uid)
+    try:
+        await asyncio.wait_for(user_lock.acquire(), timeout=3.0)
+    except asyncio.TimeoutError:
+        logging.warning(f"Таймаут ожидания user_lock в cmd_inventory для {uid}")
         return
-    if is_in_active_story(game):
-        await restore_active_story_screen(chat_id, uid, game)
-        return
-    if getattr(game, "hp", 100) <= 0:
-        game.hp = 0
-        game.active_story_callback = None
+
+    try:
+        game = _ensure_game(uid)
+        if not game:
+            await message.answer("Сначала /start")
+            return
+        if is_in_active_story(game):
+            await restore_active_story_screen(chat_id, uid, game)
+            return
+        if getattr(game, "hp", 100) <= 0:
+            game.hp = 0
+            game.active_story_callback = None
+            save_game(uid, game)
+            await update_or_send_message(chat_id, uid, get_death_text(game), get_death_kb())
+            return
+        prompt = check_character_name_required(game)
+        if prompt:
+            await update_or_send_message(chat_id, uid, prompt, None)
+            return
+        game.nav_stack = ["main", "inventory"]
+        await update_or_send_message(chat_id, uid, game.get_inventory_text(), inventory_inline_kb)
         save_game(uid, game)
-        await update_or_send_message(chat_id, uid, get_death_text(game), get_death_kb())
-        return
-    if game.story_state == "WAITING_FOR_CHARACTER_NAME" or not getattr(game, "is_name_set", False):
-        prompt = (
-            "📛 Сначала введи имя своего персонажа:\n"
-            "• Только буквы, цифры, _\n"
-            "• Пробелы запрещены (используй _ вместо пробела)\n"
-            "• Эмодзи запрещены\n"
-            "• Макс. 20 символов"
-        )
-        await update_or_send_message(chat_id, uid, prompt, None)
-        return
-    game.nav_stack = ["main", "inventory"]
-    await update_or_send_message(chat_id, uid, game.get_inventory_text(), inventory_inline_kb)
-    save_game(uid, game)
+    finally:
+        user_lock.release()
 
 
 
@@ -766,32 +786,37 @@ async def cmd_character(message: Message):
     uid = message.from_user.id
     chat_id = message.chat.id
     await safe_delete_message(chat_id, message.message_id)
-    game = _ensure_game(uid)
-    if not game:
-        await message.answer("Сначала /start")
+
+    user_lock = get_user_lock(uid)
+    try:
+        await asyncio.wait_for(user_lock.acquire(), timeout=3.0)
+    except asyncio.TimeoutError:
+        logging.warning(f"Таймаут ожидания user_lock в cmd_character для {uid}")
         return
-    if is_in_active_story(game):
-        await restore_active_story_screen(chat_id, uid, game)
-        return
-    if getattr(game, "hp", 100) <= 0:
-        game.hp = 0
-        game.active_story_callback = None
+
+    try:
+        game = _ensure_game(uid)
+        if not game:
+            await message.answer("Сначала /start")
+            return
+        if is_in_active_story(game):
+            await restore_active_story_screen(chat_id, uid, game)
+            return
+        if getattr(game, "hp", 100) <= 0:
+            game.hp = 0
+            game.active_story_callback = None
+            save_game(uid, game)
+            await update_or_send_message(chat_id, uid, get_death_text(game), get_death_kb())
+            return
+        prompt = check_character_name_required(game)
+        if prompt:
+            await update_or_send_message(chat_id, uid, prompt, None)
+            return
+        game.nav_stack = ["main", "inventory", "character"]
+        await update_or_send_message(chat_id, uid, game.get_character_text(), character_inline_kb)
         save_game(uid, game)
-        await update_or_send_message(chat_id, uid, get_death_text(game), get_death_kb())
-        return
-    if game.story_state == "WAITING_FOR_CHARACTER_NAME" or not getattr(game, "is_name_set", False):
-        prompt = (
-            "📛 Сначала введи имя своего персонажа:\n"
-            "• Только буквы, цифры, _\n"
-            "• Пробелы запрещены (используй _ вместо пробела)\n"
-            "• Эмодзи запрещены\n"
-            "• Макс. 20 символов"
-        )
-        await update_or_send_message(chat_id, uid, prompt, None)
-        return
-    game.nav_stack = ["main", "inventory", "character"]
-    await update_or_send_message(chat_id, uid, game.get_character_text(), character_inline_kb)
-    save_game(uid, game)
+    finally:
+        user_lock.release()
 
 
 @dp.message(Command("settings"))
@@ -799,33 +824,38 @@ async def cmd_settings(message: Message):
     uid = message.from_user.id
     chat_id = message.chat.id
     await safe_delete_message(chat_id, message.message_id)
-    game = _ensure_game(uid)
-    if not game:
-        await message.answer("Сначала /start")
-        return
-    if is_in_active_story(game):
-        await restore_active_story_screen(chat_id, uid, game)
-        return
-    if getattr(game, "hp", 100) <= 0:
-        game.hp = 0
-        game.active_story_callback = None
-        save_game(uid, game)
-        await update_or_send_message(chat_id, uid, get_death_text(game), get_death_kb())
-        return
-    if game.story_state == "WAITING_FOR_CHARACTER_NAME" or not getattr(game, "is_name_set", False):
-        prompt = (
-            "📛 Сначала введи имя своего персонажа:\n"
-            "• Только буквы, цифры, _\n"
-            "• Пробелы запрещены (используй _ вместо пробела)\n"
-            "• Эмодзи запрещены\n"
-            "• Макс. 20 символов"
-        )
-        await update_or_send_message(chat_id, uid, prompt, None)
-        return
-    game.push_screen("settings")
 
-    await update_or_send_message(chat_id, uid, get_settings_text(game), get_settings_kb(game))
-    save_game(uid, game)
+    user_lock = get_user_lock(uid)
+    try:
+        await asyncio.wait_for(user_lock.acquire(), timeout=3.0)
+    except asyncio.TimeoutError:
+        logging.warning(f"Таймаут ожидания user_lock в cmd_settings для {uid}")
+        return
+
+    try:
+        game = _ensure_game(uid)
+        if not game:
+            await message.answer("Сначала /start")
+            return
+        if is_in_active_story(game):
+            await restore_active_story_screen(chat_id, uid, game)
+            return
+        if getattr(game, "hp", 100) <= 0:
+            game.hp = 0
+            game.active_story_callback = None
+            save_game(uid, game)
+            await update_or_send_message(chat_id, uid, get_death_text(game), get_death_kb())
+            return
+        prompt = check_character_name_required(game)
+        if prompt:
+            await update_or_send_message(chat_id, uid, prompt, None)
+            return
+        game.push_screen("settings")
+
+        await update_or_send_message(chat_id, uid, get_settings_text(game), get_settings_kb(game))
+        save_game(uid, game)
+    finally:
+        user_lock.release()
 
 def handle_sleep_action(game: Any) -> tuple[str, Any]:
     """Обрабатывает сон персонажа, смену дня, проверки смерти и ловушек."""
@@ -1039,6 +1069,35 @@ async def process_text_message(message: Message):
     # не дожидаясь освобождения блокировки сессии.
     await safe_delete_message(chat_id, message.message_id)
 
+    raw_text = message.text.strip() if message.text else ""
+    text = raw_text[:80] if raw_text else ""
+    # Если пришло сообщение от старой кэшированной Reply-панели — принудительно удаляем её у клиента
+    # и перенаправляем в соответствующую команду ДО взятия user_lock (предотвращение deadlock)
+    old_reply_buttons = (
+        "🚀 Начать / Старт", "🏠 Главное меню / Перезапуск", "🏠 Главное меню",
+        "📊 Статус", "🏠 Главный экран", "🎒 Инвентарь", "👤 Персонаж", "⚙️ Настройки"
+    )
+    if text in old_reply_buttons:
+        try:
+            await message.answer("Нижняя панель отключена. Управление ведётся через кнопки сообщений.", reply_markup=ReplyKeyboardRemove())
+        except Exception:
+            pass
+        if text in ("🚀 Начать / Старт", "🏠 Главное меню / Перезапуск", "🏠 Главное меню"):
+            await cmd_start(message)
+            return
+        if text in ("📊 Статус", "🏠 Главный экран"):
+            await cmd_main(message)
+            return
+        if text in ("🎒 Инвентарь",):
+            await cmd_inventory(message)
+            return
+        if text in ("👤 Персонаж",):
+            await cmd_character(message)
+            return
+        if text in ("⚙️ Настройки",):
+            await cmd_settings(message)
+            return
+
     # Ожидание блокировки сессии с таймаутом 3.0 секунды (защита от зависаний и deadlock)
     user_lock = get_user_lock(uid)
     try:
@@ -1048,34 +1107,6 @@ async def process_text_message(message: Message):
         return
 
     try:
-        raw_text = message.text.strip() if message.text else ""
-        text = raw_text[:80] if raw_text else ""
-        # Если пришло сообщение от старой кэшированной Reply-панели — принудительно удаляем её у клиента
-        old_reply_buttons = (
-            "🚀 Начать / Старт", "🏠 Главное меню / Перезапуск", "🏠 Главное меню",
-            "📊 Статус", "🏠 Главный экран", "🎒 Инвентарь", "👤 Персонаж", "⚙️ Настройки"
-        )
-        if text in old_reply_buttons:
-            try:
-                await message.answer("Нижняя панель отключена. Управление ведётся через кнопки сообщений.", reply_markup=ReplyKeyboardRemove())
-            except Exception:
-                pass
-            if text in ("🚀 Начать / Старт", "🏠 Главное меню / Перезапуск", "🏠 Главное меню"):
-                await cmd_start(message)
-                return
-            if text in ("📊 Статус", "🏠 Главный экран"):
-                await cmd_main(message)
-                return
-            if text in ("🎒 Инвентарь",):
-                await cmd_inventory(message)
-                return
-            if text in ("👤 Персонаж",):
-                await cmd_character(message)
-                return
-            if text in ("⚙️ Настройки",):
-                await cmd_settings(message)
-                return
-
         game = _ensure_game(uid)
         if not game:
             return

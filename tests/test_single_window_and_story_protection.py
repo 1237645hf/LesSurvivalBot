@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from aiogram import types
@@ -147,3 +148,34 @@ async def test_callback_captures_active_message_id():
 
     assert main.last_active_msg_id.get(uid) == 77777
     assert getattr(game, "last_message_id", None) == 77777
+
+
+@pytest.mark.anyio
+async def test_cmd_acquires_user_lock_safely():
+    """Слэш-команды (/main, /inv, /start) синхронизируются через user_lock и не падают при таймауте."""
+    uid = 888333
+    chat_id = 888333
+
+    msg = MagicMock()
+    msg.from_user.id = uid
+    msg.chat.id = chat_id
+    msg.message_id = 1111
+
+    lock = main.get_user_lock(uid)
+    await lock.acquire()
+
+    async def fake_wait_for(coro, timeout):
+        coro.close()
+        raise asyncio.TimeoutError()
+
+    with patch("main.safe_delete_message", new_callable=AsyncMock), \
+         patch("asyncio.wait_for", side_effect=fake_wait_for):
+
+        # Вызов команды при занятом локе и таймауте корректно завершается без исключений
+        await main.cmd_main(msg)
+        await main.cmd_inventory(msg)
+        await main.cmd_character(msg)
+        await main.cmd_settings(msg)
+
+    lock.release()
+
