@@ -1034,12 +1034,20 @@ async def process_callback(callback: types.CallbackQuery):
 async def process_text_message(message: Message):
     uid = message.from_user.id
     chat_id = message.chat.id
-    user_lock = get_user_lock(uid)
-    await user_lock.acquire()
-    try:
-        # P8: Любой входящий текст от пользователя удаляется для сохранения чистоты чата (одно окно)
-        await safe_delete_message(chat_id, message.message_id)
 
+    # P8: Любой входящий текст от пользователя сразу удаляется для чистоты чата (одно окно),
+    # не дожидаясь освобождения блокировки сессии.
+    await safe_delete_message(chat_id, message.message_id)
+
+    # Ожидание блокировки сессии с таймаутом 3.0 секунды (защита от зависаний и deadlock)
+    user_lock = get_user_lock(uid)
+    try:
+        await asyncio.wait_for(user_lock.acquire(), timeout=3.0)
+    except asyncio.TimeoutError:
+        logging.warning(f"Таймаут ожидания user_lock в process_text_message для {uid}")
+        return
+
+    try:
         raw_text = message.text.strip() if message.text else ""
         text = raw_text[:80] if raw_text else ""
         # Если пришло сообщение от старой кэшированной Reply-панели — принудительно удаляем её у клиента

@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 from game_state import GameState
 from services.dialogs import handle_waiting_for_pet_name
 from modules.traps import process_trap_rollover, place_trap, roll_trap_roll
-from main import process_callback, games, last_request_time, get_user_lock
+from main import process_callback, process_text_message, games, last_request_time, get_user_lock
 
 
 @pytest.mark.anyio
@@ -166,3 +166,39 @@ async def test_race_condition_double_tap_prevention():
 
     # Должен сработать только ОДИН запрос: выпито ровно 1 раз, потрачено 1 порция воды
     assert game.inventory["Вода"] == 4
+
+
+@pytest.mark.anyio
+async def test_process_text_message_immediate_delete_and_timeout():
+    """Тест: входящий текст удаляется сразу до взятия лока, а при занятом локе срабатывает таймаут 3.0с."""
+    uid = 999333
+    chat_id = 999333
+
+    fake_msg = AsyncMock()
+    fake_msg.from_user.id = uid
+    fake_msg.chat.id = chat_id
+    fake_msg.message_id = 7777
+    fake_msg.text = "Тестовый текст"
+
+    lock = get_user_lock(uid)
+    await lock.acquire()  # Искусственно занимаем лок
+
+    deleted_msgs = []
+
+    async def fake_del(cid, mid):
+        deleted_msgs.append((cid, mid))
+
+    async def fake_wait_for(coro, timeout):
+        coro.close()
+        raise asyncio.TimeoutError()
+
+    with patch("main.safe_delete_message", side_effect=fake_del), \
+         patch("asyncio.wait_for", side_effect=fake_wait_for):
+
+        await process_text_message(fake_msg)
+
+        # Сообщение должно быть удалено СРАЗУ, даже если лок занят и случился таймаут
+        assert (chat_id, 7777) in deleted_msgs
+
+    lock.release()
+
