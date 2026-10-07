@@ -758,8 +758,9 @@ class GameState:
             }
         game = cls()
         # Умная миграция: подставить значения по умолчанию для старых полей
+        valid_keys = set(game.to_document().keys())
         for key, value in data.items():
-            if key in game.to_document():
+            if key in valid_keys:
                 setattr(game, key, value)
         # Синхронизировать schema_version
         game.schema_version = cls.schema_version
