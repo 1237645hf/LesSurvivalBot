@@ -82,9 +82,6 @@ class GameState:
             k=1,
         )[0]
     
-    # Ключевой предмет локации (что запускает сцену)
-    current_location_key: str = "Факел"
-    
     # Устаревшая карма (сохраняется для обратной совместимости сохранений)
     karma: Dict[str, int] = field(default_factory=dict)
 
@@ -149,7 +146,6 @@ class GameState:
     last_message_id: Optional[int] = None
     current_location_state: str = "forest_start"
     found_branch_once: bool = False
-    karma_goal: int = 100
     
     # Счётчик исследований с факелом (триггер для истории волка)
     torch_research_count: int = 0
@@ -683,7 +679,6 @@ class GameState:
             "compact_route": list(self.compact_route),
             "story_state": self.story_state,
             "current_location": self.current_location,
-            "current_location_key": self.current_location_key,
             "location_index": self.location_index,
             "day": self.day,
             "ap": self.ap,
@@ -701,7 +696,6 @@ class GameState:
             "current_location_state": getattr(self, "current_location_state", "forest_start"),
             "found_branch_once": getattr(self, "found_branch_once", False),
             "location": getattr(self, "location", self.current_location),
-            "karma_goal": getattr(self, "karma_goal", 100),
             "torch_research_count": getattr(self, "torch_research_count", 0),
             "campfire_active": bool(getattr(self, "campfire_active", False)),
             "campfire_durability": int(getattr(self, "campfire_durability", 0)),
