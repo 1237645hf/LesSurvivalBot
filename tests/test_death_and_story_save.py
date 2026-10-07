@@ -148,8 +148,7 @@ def test_death_text_and_kb_format():
     game.spared_souls = 2
     game.campfires_lit = 5
     game.food_cooked = 8
-    game.karma = {"good": 4, "bad": 1}
-    game.narrative_karma = {"compassion": 6, "pragmatism": 2}
+    game.narrative_karma = {"compassion": 6, "pragmatism": 2, "intervention": 3, "observation": 1}
     game.unlocked_locations = ["Волчье логово"]
 
     death_text = get_death_text(game, "🐺 Волк оказался быстрее.", "Волчье логово")
@@ -167,8 +166,8 @@ def test_death_text_and_kb_format():
     assert "• Разведено костров: 5" in death_text
     assert "• Приготовлено пищи: 8" in death_text
     assert "⚖️ *ЧЕРТЫ ДУШИ:*" in death_text
-    assert "• Добро: 4 | Зло: 1" in death_text
     assert "• Сострадание: 6 | Прагматизм: 2" in death_text
+    assert "• Вмешательство: 3 | Наблюдение: 1" in death_text
 
     kb = get_death_kb()
     assert kb.inline_keyboard[0][0].text == "🔄 Начать заново"

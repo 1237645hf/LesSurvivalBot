@@ -1334,24 +1334,15 @@ def get_death_text(
     cooked = int(getattr(game, "food_cooked", 0)) if game else 0
 
     # Черты души
-    good = 0
-    bad = 0
-    if game:
-        k = getattr(game, "karma", None)
-        if isinstance(k, dict):
-            good = int(k.get("good", 0))
-            bad = int(k.get("bad", 0))
-        elif isinstance(k, (int, float)):
-            if k > 0:
-                good = int(k)
-            elif k < 0:
-                bad = int(abs(k))
-
     compassion = 0
     pragmatism = 0
+    intervention = 0
+    observation = 0
     if game and isinstance(getattr(game, "narrative_karma", None), dict):
         compassion = int(game.narrative_karma.get("compassion", 0))
         pragmatism = int(game.narrative_karma.get("pragmatism", 0))
+        intervention = int(game.narrative_karma.get("intervention", 0))
+        observation = int(game.narrative_karma.get("observation", 0))
 
     card = (
         "💀 *ВЫ ПОГИБЛИ* 💀\n"
@@ -1372,8 +1363,8 @@ def get_death_text(
         f"• Разведено костров: {camps}\n"
         f"• Приготовлено пищи: {cooked}\n\n"
         "⚖️ *ЧЕРТЫ ДУШИ:*\n"
-        f"• Добро: {good} | Зло: {bad}\n"
         f"• Сострадание: {compassion} | Прагматизм: {pragmatism}\n"
+        f"• Вмешательство: {intervention} | Наблюдение: {observation}\n"
         "━━━━━━━━━━━━━━━━━━━━"
     )
     return card
