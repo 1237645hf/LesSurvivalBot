@@ -234,9 +234,6 @@ class GameState:
 
         # 2. Бонусы от экипировки (сумма всех предметов в слотах)
         equipment_bonus = 0
-        for item in getattr(self, "equipment", {}).values():
-            if isinstance(item, dict):
-                equipment_bonus += int(item.get("ap_bonus", item.get("ap_modifier", 0)))
         # Пока факел экипирован в руке — он даёт +1 AP
         if self.equipment.get("hand_left") == "Факел":
             equipment_bonus += 1
@@ -1134,12 +1131,6 @@ class GameState:
         if self.equipment.get("pants") in ("Кожаные поножи", "Сланцевые поножи"):
             bonus_ap += 1
         bonus_ap += int(getattr(self, "equipment_ap_bonus", 0) or 0)
-
-        for item_data in self.equipment.values():
-            if isinstance(item_data, dict):
-                bonus_hunger += int(item_data.get("hunger_bonus", 0))
-                bonus_thirst += int(item_data.get("thirst_bonus", 0))
-                bonus_ap += int(item_data.get("ap_bonus", item_data.get("ap_modifier", 0)))
 
         stat_parts = []
         if bonus_hp != 0:
