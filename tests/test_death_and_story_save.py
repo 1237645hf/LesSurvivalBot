@@ -438,31 +438,32 @@ def test_handle_session_callback_restart_and_confirm():
     """Тест 21: handle_session_callback корректно отрабатывает start_new_game_confirmed и restart_game без NameError/UnboundLocalError."""
     from services.dialogs import handle_session_callback
 
-    uid = 999123
+    uid1 = 999123
     existing_game = GameState()
     existing_game.character_name = "Следопыт"
     existing_game.is_name_set = True
     existing_game.header_message_id = 4242
-    games_dict = {uid: existing_game}
+    games_dict = {uid1: existing_game}
 
     # 1. start_new_game_confirmed (например, после подтверждения сброса или с экрана смерти)
-    text, kb = handle_session_callback("start_new_game_confirmed", existing_game, uid, games_dict)
+    text, kb = handle_session_callback("start_new_game_confirmed", existing_game, uid1, games_dict)
     assert text is not None and "Введи имя своего персонажа" in text
     assert kb is None
-    new_game = games_dict[uid]
+    new_game = games_dict[uid1]
     assert new_game.header_message_id == 4242
     assert new_game.story_state == "WAITING_FOR_CHARACTER_NAME"
 
     # 2. restart_game
+    uid2 = 999124
     existing_game2 = GameState()
     existing_game2.header_message_id = 5555
-    games_dict[uid] = existing_game2
-    text2, kb2 = handle_session_callback("restart_game", existing_game2, uid, games_dict)
+    games_dict[uid2] = existing_game2
+    text2, kb2 = handle_session_callback("restart_game", existing_game2, uid2, games_dict)
     assert text2 is not None and "Введи имя своего персонажа" in text2
-    assert games_dict[uid].header_message_id == 5555
+    assert games_dict[uid2].header_message_id == 5555
 
     # 3. confirm_new_game
-    text3, kb3 = handle_session_callback("confirm_new_game", existing_game, uid, games_dict)
+    text3, kb3 = handle_session_callback("confirm_new_game", existing_game, uid1, games_dict)
     assert "Внимание!" in text3
     assert kb3 is not None
 

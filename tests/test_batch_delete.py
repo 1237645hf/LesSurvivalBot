@@ -110,3 +110,80 @@ async def test_cmd_start_no_blind_deletion_loop():
         for call in mock_delete_single.call_args_list:
             if call[0] and len(call[0]) > 1:
                 assert call[0][1] not in [999 - i for i in range(1, 50)]
+
+
+@pytest.mark.anyio
+async def test_update_or_send_message_batch_delete_success():
+    """При need_recreate сначала отправляется один пакетный запрос delete_messages (до 100 ID), включающий гарантированные ID."""
+    uid = 777
+    chat_id = 123
+    game = MagicMock()
+    game.last_message_id = 500
+    game.header_message_id = 490
+    game.last_action_time = 0  # Принудительно time_expired -> need_recreate = True
+    main.games[uid] = game
+    main.last_active_msg_id[uid] = 505
+
+    sent_msg = MagicMock()
+    sent_msg.message_id = 600
+
+    try:
+        with patch.object(main.bot, "delete_messages", new_callable=AsyncMock) as mock_delete_batch, \
+             patch.object(main.bot, "delete_message", new_callable=AsyncMock) as mock_delete_single, \
+             patch.object(main.bot, "send_message", new_callable=AsyncMock, return_value=sent_msg), \
+             patch("main.save_game"):
+
+            await main.update_or_send_message(chat_id, uid, "Привет", current_msg_id=506)
+
+            # Пакетный запрос должен быть вызван ровно 1 раз
+            mock_delete_batch.assert_called_once()
+            batch_ids = mock_delete_batch.call_args[1]["message_ids"]
+            # Гарантированные ID должны присутствовать в пачке
+            assert 500 in batch_ids
+            assert 490 in batch_ids
+            assert 505 in batch_ids
+            assert 506 in batch_ids
+            assert len(batch_ids) <= 100
+            # Одиночные вызовы delete_message НЕ должны вызываться при успешном пакете
+            mock_delete_single.assert_not_called()
+    finally:
+        main.games.pop(uid, None)
+        main.last_active_msg_id.pop(uid, None)
+
+
+@pytest.mark.anyio
+async def test_update_or_send_message_batch_delete_fallback():
+    """Если пакетный запрос упал с ошибкой, fallback сначала точечно удаляет гарантированные ID."""
+    uid = 888
+    chat_id = 123
+    game = MagicMock()
+    game.last_message_id = 500
+    game.header_message_id = 490
+    game.last_action_time = 0
+    main.games[uid] = game
+    main.last_active_msg_id[uid] = 505
+
+    sent_msg = MagicMock()
+    sent_msg.message_id = 600
+
+    deleted_order = []
+
+    async def fake_delete_message(chat_id, message_id):
+        deleted_order.append(message_id)
+
+    try:
+        with patch.object(main.bot, "delete_messages", new_callable=AsyncMock, side_effect=TelegramBadRequest(method=MagicMock(), message="message to delete not found")), \
+             patch.object(main.bot, "delete_message", side_effect=fake_delete_message), \
+             patch.object(main.bot, "send_message", new_callable=AsyncMock, return_value=sent_msg), \
+             patch("main.save_game"):
+
+            await main.update_or_send_message(chat_id, uid, "Привет", current_msg_id=506)
+
+            # Гарантированные ID должны быть удалены первыми
+            guaranteed = {500, 490, 505, 506}
+            first_calls = set(deleted_order[:len(guaranteed)])
+            assert first_calls == guaranteed
+    finally:
+        main.games.pop(uid, None)
+        main.last_active_msg_id.pop(uid, None)
+

@@ -427,7 +427,7 @@ async def update_or_send_message(
     need_recreate = time_expired or no_active_binding
 
     if need_recreate:
-        # 1. Точечно удалить гарантированные ID
+        # 1. Собрать гарантированные ID
         guaranteed_ids = set()
         if game:
             if getattr(game, "last_message_id", None):
@@ -439,23 +439,56 @@ async def update_or_send_message(
         if current_msg_id:
             guaranteed_ids.add(current_msg_id)
 
-        for gid in guaranteed_ids:
-            try:
-                await bot.delete_message(chat_id=chat_id, message_id=gid)
-            except Exception:
-                pass
-
-        # 2. Определить опорный ID (curr_id) и пройтись циклом назад на 40 сообщений
+        # 2. Определить опорный ID (curr_id) и собрать список до 100 сообщений (известные ID + предыдущие)
         curr_id = (
             current_msg_id
             or active_msg_id
             or (getattr(game, "last_message_id", None) if game else None)
             or (max(guaranteed_ids) if guaranteed_ids else None)
         )
+
+        candidate_ids = list(guaranteed_ids)
         if curr_id:
-            for mid in range(curr_id, max(1, curr_id - 40), -1):
+            for mid in range(curr_id, max(1, curr_id - 100), -1):
+                if mid not in guaranteed_ids:
+                    candidate_ids.append(mid)
+                if len(candidate_ids) >= 100:
+                    break
+
+        # 3. Попытка удалить сразу пачкой до 100 сообщений за 1 сетевой запрос
+        batch_success = False
+        if candidate_ids:
+            try:
+                await bot.delete_messages(chat_id=chat_id, message_ids=candidate_ids)
+                batch_success = True
+            except TelegramRetryAfter as exc:
+                logging.warning(f"Flood control при delete_messages (100): ждём {exc.retry_after} сек")
+                try:
+                    await asyncio.sleep(exc.retry_after + 0.5)
+                    await bot.delete_messages(chat_id=chat_id, message_ids=candidate_ids)
+                    batch_success = True
+                except Exception:
+                    pass
+            except Exception as exc:
+                logging.debug(f"Пакетное удаление 100 сообщений не удалось ({exc}), переходим на fallback...")
+
+        # 4. Fallback: если пакетный запрос не удался — сначала удаляем известные ID, затем остальные
+        if not batch_success and candidate_ids:
+            # Сначала гарантированно удаляем известные сообщения бота
+            for gid in guaranteed_ids:
+                try:
+                    await bot.delete_message(chat_id=chat_id, message_id=gid)
+                except Exception:
+                    pass
+            # Затем перебором остальные сообщения с защитой от Flood Control
+            for mid in candidate_ids:
+                if mid in guaranteed_ids:
+                    continue
                 try:
                     await bot.delete_message(chat_id=chat_id, message_id=mid)
+                except TelegramRetryAfter as exc:
+                    logging.warning(f"Flood control при fallback удалении: останавливаем перебор (ждём {exc.retry_after} сек)")
+                    break
                 except Exception:
                     continue
 
