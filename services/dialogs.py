@@ -720,12 +720,15 @@ def handle_session_callback(
         get_start_resume_kb,
     )
 
+    existing = load_game(uid)
+    if existing is None and games_dict is not None:
+        existing = games_dict.get(uid)
+    if existing is None and game:
+        existing = game
+    if existing and game and getattr(game, "header_message_id", None):
+        existing.header_message_id = game.header_message_id
+
     if data in ("new_game", "start_new_game"):
-        existing = load_game(uid)
-        if existing is None and games_dict is not None:
-            existing = games_dict.get(uid)
-        elif existing is None and game:
-            existing = game
         if existing is not None and getattr(existing, "is_name_set", False):
             hero_name = existing.character_name or "Выживший"
             day = getattr(existing, "day", 1)
@@ -754,11 +757,6 @@ def handle_session_callback(
         return text, None
 
     elif data == "confirm_new_game":
-        existing = load_game(uid)
-        if existing is None and games_dict is not None:
-            existing = games_dict.get(uid)
-        elif existing is None and game:
-            existing = game
         hero_name = (existing.character_name if existing else None) or "Выживший"
         day = getattr(existing, "day", 1) if existing else 1
         text = (
@@ -787,11 +785,6 @@ def handle_session_callback(
         return text, None
 
     elif data == "cancel_new_game":
-        existing = load_game(uid)
-        if existing is None and games_dict is not None:
-            existing = games_dict.get(uid)
-        elif existing is None and game:
-            existing = game
         if existing and getattr(existing, "is_name_set", False):
             hero_name = existing.character_name or "Выживший"
             text = format_start_character_text(existing)
@@ -802,9 +795,7 @@ def handle_session_callback(
         return text, kb
 
     elif data == "load_game":
-        loaded = load_game(uid)
-        if loaded is None and games_dict is not None:
-            loaded = games_dict.get(uid)
+        loaded = existing
         if loaded is None:
             text = "Сохранение не найдено. Начните новую игру!"
             kb = get_start_new_game_kb()
