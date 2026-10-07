@@ -728,12 +728,9 @@ def test_10_1_save_game_protection_and_load_game():
     # Текст карточки существующего персонажа
     char_text = format_start_character_text(existing_game)
     assert "Ты медленно открываешь глаза среди вековых деревьев и холодного тумана" in char_text
-    assert "👤 Выживший: **Следопыт**" in char_text
-    assert "📅 День в лесу: **5**" in char_text
-    assert "❤️ Здоровье: **85/100**" in char_text
-    assert "🍖 Сытость: **70/100**" in char_text
-    assert "💧 Жажда: **60/100**" in char_text
-    assert "⚡ Энергия: **2 AP**" in char_text
+    assert "👤 Выживший: Следопыт" in char_text
+    assert "📅 День в лесу: 5" in char_text
+    assert "❤️ 85/100 | 🍖 70/100 | 💧 60/100 | ⚡ 2/5" in char_text
 
     # Клавиатура продолжения игры (Случай А)
     resume_kb = get_start_resume_kb("Следопыт")

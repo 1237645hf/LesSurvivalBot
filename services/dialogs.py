@@ -102,7 +102,7 @@ async def handle_waiting_for_character_name(
     game.character_name = name
     game.is_name_set = True
     game.story_state = None
-    game.add_log(f"Имя персонажа: {name}. Удачи в лесу!")
+    game.add_log(f"Имя принято: {name}! Удачи в лесу.")
 
     save_ok = True
     try:
@@ -114,16 +114,11 @@ async def handle_waiting_for_character_name(
         save_ok = False
         logging.error(f"Критическая ошибка сохранения персонажа {name} ({uid}): {exc}", exc_info=True)
 
-    from keyboards import get_main_kb
-    warning_suffix = ""
     if not save_ok:
-        warning_suffix = "\n\n⚠️ Внимание: не удалось сохранить персонажа в облачную базу данных! Прогресс может быть утерян при перезагрузке сервера."
+        game.add_log("⚠️ Не удалось сохранить персонажа в облачную БД!")
 
-    text_out = (
-        f"Имя принято: {name}!\n\n"
-        + game.get_ui()
-        + warning_suffix
-    )
+    from keyboards import get_main_kb
+    text_out = game.get_ui()
     msg_id = bot_ctx["last_active_msg_id"].get(uid)
     if msg_id:
         await bot_ctx["safe_edit_message"](chat_id, msg_id, text_out, get_main_kb(game))
@@ -626,21 +621,57 @@ GUIDE_TEXT = (
 
 
 def format_start_character_text(game: Any) -> str:
-    hero_name = getattr(game, "character_name", None) or "Выживший"
+    hero_name = getattr(game, "character_name", None) or getattr(game, "player_name", None) or "Выживший"
     day = getattr(game, "day", 1)
+    location = getattr(game, "current_location", "Стартовый лес")
+
     hp = getattr(game, "hp", 100)
+    max_hp = getattr(game, "max_hp", 100)
     hunger = getattr(game, "hunger", 100)
     thirst = getattr(game, "thirst", 100)
     ap = getattr(game, "ap", 0)
-    return (
+    max_ap = getattr(game, "max_ap", 5)
+    hotbar = f"❤️ {hp}/{max_hp} | 🍖 {hunger}/100 | 💧 {thirst}/100 | ⚡ {ap}/{max_ap}"
+
+    eq = getattr(game, "equipment", {}) or {}
+    right_hand = eq.get("hand_right")
+    left_hand = eq.get("hand_left")
+    hands_parts = []
+    if right_hand and right_hand not in ("Пусто", "None"):
+        hands_parts.append(right_hand)
+    if left_hand and left_hand not in ("Пусто", "None"):
+        hands_parts.append(left_hand)
+    hands_desc = ", ".join(hands_parts) if hands_parts else "Безоружен"
+
+    armor_def = getattr(game, "armor_defense", 0)
+    torso = eq.get("torso")
+    if torso and torso not in ("Потасканная куртка", "Потасканная майка", "Пусто", "None"):
+        armor_desc = f"{torso} (Защита: {armor_def})"
+    elif armor_def > 0:
+        armor_desc = f"Комплект одежды (Защита: {armor_def})"
+    else:
+        armor_desc = "Простая одежда (Защита: 0)"
+
+    pet_name = eq.get("pet") or getattr(game, "companion_name", None)
+    has_pet_flag = getattr(game, "is_story_flag_set", lambda f: False)("has_pet")
+    pet_line = ""
+    if pet_name and pet_name not in ("Пусто", "None", "Кот", "Котёнок") and has_pet_flag:
+        pet_line = f"🐾 Спутник: 🐱 {pet_name}\n"
+
+    intro = (
         "Ты медленно открываешь глаза среди вековых деревьев и холодного тумана. "
-        "В голове пустота, в памяти — лишь неясные обрывки прошлого... Но тело помнит тропы этого леса.\n\n"
-        f"👤 Выживший: **{hero_name}**\n"
-        f"📅 День в лесу: **{day}**\n"
-        f"❤️ Здоровье: **{hp}/100**\n"
-        f"🍖 Сытость: **{hunger}/100**\n"
-        f"💧 Жажда: **{thirst}/100**\n"
-        f"⚡ Энергия: **{ap} AP**"
+        "В голове пустота, в памяти — лишь неясные обрывки прошлого... Но тело помнит тропы этого леса."
+    )
+
+    return (
+        f"{intro}\n\n"
+        f"{hotbar}\n\n"
+        f"👤 Выживший: {hero_name}\n"
+        f"🗺️ Локация: {location}\n"
+        f"📅 День в лесу: {day}\n"
+        f"{pet_line}"
+        f"🗡️ В руках: {hands_desc}\n"
+        f"🛡️ Броня: {armor_desc}"
     )
 
 
