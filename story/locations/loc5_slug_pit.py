@@ -53,6 +53,248 @@ SLIME_NAMES_POOL = [
 ]
 
 
+RECON_LIMITS = [3, 2, 3, 2, 3]
+
+# Сохраняем словарь для совместимости
+SCOUT_DAY_LIMITS = {
+    1: 3,
+    2: 2,
+    3: 3,
+    4: 2,
+    5: 3,
+    6: 3,
+    7: 2,
+    8: 3,
+    9: 2,
+}
+
+HABITS_EVENTS = [
+    {
+        "title": 'Мутная толща',
+        "observation": 'Слайм лениво подминает под себя слой мокрой глины. Мутное серо-зелёное желе колышется, перекатывая внутри серые обломки. В глубине тускло мерцает тёмное уплотнение ядра, но подобраться к нему невозможно: сквозь толщу непрерывно плывут мелкие сколы костей, острые камни и обломанные ветки.',
+        "thought": 'Вслепую ядро не достать — жижа слишком мутная. Нужно ловить моменты, когда оно подходит ближе к краю.',
+        "bonus_note": None,
+    },
+    {
+        "title": 'Острый хлам',
+        "observation": 'Тварь разворачивается основанием на мокром сланце. В верхнем слое слизи на миг показываются обломки наконечников, острые кремневые сколы и куски зазубренных клинков. Они хаотично крутятся в общей каше, угрожая распороть любого, кто подойдёт вплотную.',
+        "thought": 'Лезть голыми руками или бить вслепую нельзя — скрытые лезвия и сколы мгновенно разорвут пальцы.',
+        "bonus_note": None,
+    },
+    {
+        "title": 'Оценка копья',
+        "observation": 'Желе растягивается между двумя сланцевыми валунами. В натянувшемся боку на долю секунды открывается узкий просвет между массивным суком и обломком кости. Дробящий посох здесь бы просто отскочил от камня, но тонкое клиновидное копьё способно протиснуться сквозь эту щель.',
+        "thought": 'Сланцевое копьё было отличной идеей: узкое остриё легко пройдёт сквозь щели между хламом прямо к ядру.',
+        "bonus_note": '+5% урона копьём по ядру',
+    },
+    {
+        "title": 'Ритм пульсации',
+        "observation": 'Слайм замирает посреди промоины. Внутри него начинается мерная, глухая пульсация: раз в несколько секунд желе судорожно сжимается, сгребая весь плавающий хлам к центру, а затем плавно оседает. В момент сжатия ядро со всех сторон блокируется плотной стеной мусора.',
+        "thought": 'У пульсации есть четкий ритм. На фазе сжатия бить бесполезно — весь мусор встаёт глухой стеной.',
+        "bonus_note": None,
+    },
+    {
+        "title": 'Общий водоворот',
+        "observation": 'Тварь начинает кружить по дну промоины. Внутренний мусор движется единой массой: обломки древков, осколки клинков, тяжелые рога и камни перекатываются в общем водовороте, не разделяясь на слои. Время от времени тяжёлые куски сталкиваются с глухим треском.',
+        "thought": 'Хлам крутится общей сплошной кашей. Нужно выслеживать момент сбоя в этом круговороте.',
+        "bonus_note": None,
+    },
+    {
+        "title": 'Уязвимый противоход',
+        "observation": 'Слайм резко меняет направление движения с часовой стрелки на противоположное. В момент разворота внутренняя каша на секунду замирает от встречного сопротивления, а ядро по инерции проскакивает вперёд, прижимаясь вплотную к наружной плёнке слизи.',
+        "thought": 'При резкой смене хода ядро выносит наружу по инерции. Это лучший момент для выпада!',
+        "bonus_note": '+10% к шансу крита',
+    },
+    {
+        "title": 'Стойкость коряг',
+        "observation": 'Ты вглядываешься в толстые обугленные коряги в толще твари. Несмотря на едкую кислоту, старое дерево растворяется крайне медленно. Оно сцепляется с ветвистыми рогами и обломками копий, создавая плотные блуждающие заторы прямо на пути к ядру.',
+        "thought": 'Крупные сучья и рога работают как щиты. Пока они прикрывают ядро, прямой укол наткнётся на преграду.',
+        "bonus_note": None,
+    },
+    {
+        "title": 'Застревание в глине',
+        "observation": 'Прижимаясь к крутому склону, слайм задевает пласт вязкой сырой глины. Скорость его движения резко падает, желе растягивается тонким слоем. Внутри отчетливо виден массивный олений рог, концы которого опасно натягивают оболочку студня.',
+        "thought": 'В вязкой глине тварь вязнет и теряет форму. Крупные кости начинают натягивать плёнку до предела.',
+        "bonus_note": None,
+    },
+    {
+        "title": 'Вырывание мусора (ИДЕЯ КРЮКА)',
+        "observation": 'Тварь протискивается между острыми сланцевыми зубцами. Торчащий ветвистый рог намертво клинит в расщелине скалы. Слайм рвётся вперёд — камень вырывает рог наружу, и следом на землю выплёскивается внушительный ком едкой жижи, зашипевшей на камнях.',
+        "thought": 'Мусор можно выдирать самому! Связав крепкий костяной крюк на кожаной верёвке, я смогу срывать с него хлам и слизь!',
+        "bonus_note": '💡 Открыт рецепт: Костяной крюк на кожаной верёвке',
+    },
+    {
+        "title": 'Потеря жижи',
+        "observation": 'Слайм огибает выступ, оставляя за собой широкий след вытекшей кислоты. Хоть тварь и колоссальна по размеру, потерянный пласт желе не восстановился мгновенно: внутреннее натяжение спало, а каша из веток и клинков закрутилась заметно медленнее.',
+        "thought": 'Вырывание крупных кусков лишает его массы и сбивает внутренний темп. Это ключ к победе.',
+        "bonus_note": None,
+    },
+    {
+        "title": 'Удар о твёрдое',
+        "observation": 'Внутри желе сталкиваются массивный булыжник и обломок кости. От резкого удара во все стороны брызжет кислота, а мелкий острый скол со свистом вылетает наружу и со стуком впивается в стену яра всего в полуметре от твоего укрытия.',
+        "thought": 'Нельзя колоть наобум: встречный удар копья о мусор выбьет осколки прямо мне в лицо.',
+        "bonus_note": None,
+    },
+    {
+        "title": 'Укол по касательной',
+        "observation": 'Ты подмечаешь поведение струй желе при обтекании камней. Если направлять остриё не строго перпендикулярно, а под лёгким углом вдоль течения жижи, сопротивление падает, и наконечник проходит сквозь слизь вдвое быстрее.',
+        "thought": 'Выпад под углом вдоль течения студня позволяет колющему наконечнику глубже пробивать массу.',
+        "bonus_note": '+10% урона копьём, суммарно +15%',
+    },
+    {
+        "title": 'Очищенное основание',
+        "observation": 'Тварь переползает через сланцевую ступень. Её нижняя часть, скользящая по глине, почти лишена мусора — тяжелые рога, палки и металл крутятся выше, оставляя придонный слой желе относительно прозрачным.',
+        "thought": 'У самого дна в слизи меньше всего хлама. Если сорвать крюком верхний щит, бить нужно снизу.',
+        "bonus_note": None,
+    },
+    {
+        "title": 'Чутьё на вибрацию',
+        "observation": 'Случайно осыпавшаяся мелкая крошка сланца падает на дно рядом со слаймом. Масса моментально собирается в плотный ком, разворачивая острые кости и сколы в сторону упавшего камня. Тварь замирает, сканируя окружение.',
+        "thought": 'Он отлично чует удары о породу. Во время бросков крюка нельзя шуметь и топтаться на месте.',
+        "bonus_note": None,
+    },
+    {
+        "title": 'Узлы сцепления',
+        "observation": 'Сквозь муть удаётся рассмотреть прочный затор: массивный рог намертво переплёлся с обугленным суком и обломком древкового наконечника. Эта связка удерживает на себе колоссальный массив жижи, создавая плотный комок.',
+        "thought": 'Это идеальная цель для крюка. Зацепив этот ком, я вырву огромный пласт массы зараз.',
+        "bonus_note": 'крюк срывает на 15% больше HP слайма',
+    },
+    {
+        "title": 'Лопающиеся пузыри',
+        "observation": 'Из глубины слайма поднимается крупный газовый пузырь и лопается с глухим шипением. На поверхности желе на пару секунд образуется рваная воронка пены, сквозь которую открывается чистый проход прямо к тёмному ядру.',
+        "thought": 'Когда лопаются пузыри, образуются открытые коридоры. Нужно бить прямо сквозь пену.',
+        "bonus_note": None,
+    },
+    {
+        "title": 'Инерционный занос',
+        "observation": 'Слайм делает тяжёлый бросок вперёд через глиняную промоину. Из-за огромного веса внутреннего хлама его заносит: передний край уже остановился, а масса внутри ещё секунду волочится по инерции, сильно натягивая край.',
+        "thought": 'После тяжёлого наката тварь замирает на секунду. В этот момент она полностью открыта для удара.',
+        "bonus_note": None,
+    },
+    {
+        "title": 'Трещины на ядре',
+        "observation": 'Ядро оказывается близко к свету. Это не цельный монолит: по его тусклой янтарной поверхности идут старые продольные трещины от прошлых ударов. В глубине этих сколов пульсирует тёмная жилка.',
+        "thought": 'Ядро уже надтреснуто. Точный укол остриём копья прямо в старую трещину нанесёт чудовищный урон.',
+        "bonus_note": '+15% к шансу крита, суммарно +25%',
+    },
+    {
+        "title": 'Натяжение плёнки',
+        "observation": 'Сползая с глиняного уступа, слайм сплющивается. Желе пружинит, и ты замечаешь: в местах, куда упираются концы костей и палок, наружная плёнка истончается почти до прозрачности мыльного пузыря.',
+        "thought": 'Натянутые зоны плёнки тоньше всего. Копьё войдёт туда почти без сопротивления.',
+        "bonus_note": None,
+    },
+    {
+        "title": 'Медленное стягивание',
+        "observation": 'Тварь цепляет острый срез плиты, срывая с бока порядочный кусок студня. Слайму требуется почти пять секунд неловкого колыхания, чтобы закрыть дыру и распределить оставшуюся жижу.',
+        "thought": 'Он медленно затягивает раны. После удачного срыва массы крюком есть запас времени для колющего выпада.',
+        "bonus_note": None,
+    },
+    {
+        "title": 'Разлёт осколков',
+        "observation": 'Внутри слайма под давлением с резким щелчком ломается крупная кость. Острые обломки выбивает наружу строго в стороны под углом, а воздух прямо над серединой твари остаётся абсолютно чистым.',
+        "thought": 'Осколки шрапнели разлетаются веером по бокам. Прикрывшись щитом или отскочив назад, урон можно свести на нет.',
+        "bonus_note": '-30% урона от случайных осколков',
+    },
+    {
+        "title": 'Единая картина',
+        "observation": 'Ты сопоставляешь всё увиденное: траекторию водоворота, расположение узлов сцепления мусора и ритм выноса ядра по инерции. Хаотичное колыхание желе превращается в чёткий, понятный механизм.',
+        "thought": 'Картина сложилась: цепляем узлы мусора крюком, ждём заноса на противоходе и бьём копьём в трещину ядра.',
+        "bonus_note": None,
+    },
+    {
+        "title": 'Полное видение цели',
+        "observation": 'Слайм замирает на открытой площадке котловины. В косых лучах ты видишь его нутро как на ладони: пульс ядра, положение застрявших наконечников и малейшие зазоры между костями и корягами.',
+        "thought": 'Секретов больше нет. Каждое движение прочитано наперёд. Ядро будет пробито сквозь любую защиту.',
+        "bonus_note": 'Кап ветки — урон копьём +35%, критический удар по открытому ядру гарантирован',
+    },
+]
+
+SURROUNDINGS_EVENTS = [
+    {
+        "observation": f"Ты осторожно осматриваешь крутые стены промоины и сланцевые карнизы (осмотр {i + 1}). Влажная глина сочится едкой водой, обнажая слои камня.",
+        "thought": f"Ты оцениваешь рельеф: вон тот сланцевый выступ может выдержать вес и стать надёжной точкой опоры (вывод {i + 1}).",
+    }
+    for i in range(23)
+]
+
+
+def get_recon_day(game) -> int:
+    """Получить номер текущего дня локального цикла разведки (1, 2, ...)."""
+    return int(getattr(game, "recon_day", getattr(game, "current_day", 1)) or 1)
+
+
+def get_daily_scout_limit(game) -> int:
+    """Максимум исследований на текущий визит с учетом 5-дневного шаблона и капа в 23."""
+    recon_day = get_recon_day(game)
+    base_limit = RECON_LIMITS[(recon_day - 1) % len(RECON_LIMITS)]
+    total_done = getattr(game, "habits_count", 0) + getattr(game, "surroundings_count", 0)
+    remaining_to_cap = max(0, 23 - total_done)
+    return min(base_limit, remaining_to_cap)
+
+
+def get_scout_day_limit(day: int) -> int:
+    """Лимит исследований для дня (совместимость)."""
+    if day in SCOUT_DAY_LIMITS:
+        return SCOUT_DAY_LIMITS[day]
+    return RECON_LIMITS[(day - 1) % len(RECON_LIMITS)]
+
+
+def is_scout_day_exhausted(game) -> bool:
+    """Проверить, исчерпан ли лимит на текущий визит или достигнут общий кап 23."""
+    total_done = getattr(game, "habits_count", 0) + getattr(game, "surroundings_count", 0)
+    if total_done >= 23:
+        return True
+    limit = get_daily_scout_limit(game)
+    done = getattr(game, "day_researches_done", 0)
+    return done >= limit
+
+
+def _render_scout_final_screen(game):
+    """Экран завершения подготовки (Окно Финала) после всех 23 исследований."""
+    habits = getattr(game, "habits_count", 0)
+    surroundings = getattr(game, "surroundings_count", 0)
+
+    # ВЕКТОР 1: Повадки (habits_count >= 16)
+    if habits >= 16:
+        game.story_state = "l5_scout_final_habits"
+        text = (
+            "Ты досконально изучил каждую судорогу желе и круговорот мусора. "
+            "Ядро твари больше не тайна, а все уязвимые зоны как на ладони."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⚔️ Напасть на уязвимые зоны", callback_data="l5_scout_final_attack_habits")],
+            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="l5_scout_leave_to_camp")],
+        ])
+
+    # ВЕКТОР 2: Окрестности (surroundings_count >= 16)
+    elif surroundings >= 16:
+        game.story_state = "l5_scout_final_surroundings"
+        text = (
+            "Ты изучил каждый выступ яра, шаткие сланцевые пласты и колонии грибов. "
+            "Ловушка просчитана до секунды, махать копьём вслепую не придётся."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⚙️ Активировать ловушку окружения", callback_data="l5_scout_final_trap_surroundings")],
+            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="l5_scout_leave_to_camp")],
+        ])
+
+    # ВЕКТОР 3: Средний / Сбалансированный путь (минимум по 9 в каждой шкале)
+    else:
+        game.story_state = "l5_scout_final_balanced"
+        text = (
+            "Ты собрал по крупицам и повадки чудовища, и особенности котловины яра. "
+            "Идеальной ловушки нет, как и абсолютной бреши в ядре, но комбинация манёвра и окружения даёт рабочий план."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⚔️ Атаковать с опорой на местность", callback_data="l5_scout_final_attack_balanced")],
+            [InlineKeyboardButton(text="🪨 Заманить в каменный карман", callback_data="l5_scout_final_trap_pocket")],
+            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="l5_scout_leave_to_camp")],
+        ])
+
+    game.active_story_callback = "l5_ancient_lair"
+    return text, kb
+
+
 def start_slug_pack_battle(game, count: int = 6):
     """Инициализация боя со скоплением слизней (1-6 шт)."""
     count = max(1, min(count, 6))
@@ -1003,19 +1245,321 @@ def handle_location_5_slug_pit(data, game, uid):
             [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="back")]
         ])
 
-    # Окно наблюдения: Логово Древнего (подлокация в меню)
-    elif data == "l5_ancient_lair":
+    # ──────────────────────────────────────────────────────────────────────────
+    # РАЗВЕДКА ЛОГОВА ДРЕВНЕГО / МУСОРНОГО СЛАЙМА (L5)
+    # ──────────────────────────────────────────────────────────────────────────
+
+    elif data in ("l5_ancient_lair", "l5_scout_main"):
+        # Окно 0: Первое прибытие (только один раз в самый первый визит, если not intro_seen)
+        if not getattr(game, "intro_seen", False):
+            game.story_state = "l5_scout_intro"
+            text = (
+                "Ты замираешь на сланцевом карнизе над тупиковой промоиной. Внизу мерно колышется огромная масса, полная костей, рогов и наконечников. "
+                "В голове быстро складывается расчёт: бесконечно высиживать на уступе нельзя — тварь рано или поздно выберется наружу. "
+                "Распылять внимание на всё подряд бессмысленно: пытаясь уследить и за круговоротом мусора в теле, и за обрывами яра, "
+                "ты упустишь решающие детали и останешься без плана. Чтобы подготовить верную стратегию, придётся твёрдо выбрать одну цель и методично копать под неё."
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="👁️ Начать наблюдения", callback_data="l5_scout_start")],
+                [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="l5_scout_leave_to_camp")],
+            ])
+            game.active_story_callback = "l5_ancient_lair"
+            return text, kb
+
+        habits = getattr(game, "habits_count", 0)
+        surroundings = getattr(game, "surroundings_count", 0)
+        total_done = habits + surroundings
+
+        # Проверка завершения всех 23 исследований -> Окно Финала
+        if total_done >= 23:
+            return _render_scout_final_screen(game)
+
+        # Проверка лимита на текущий визит
+        if is_scout_day_exhausted(game):
+            # Окно 1-Б: Главный экран логова (если дневной лимит ИСЧЕРПАН)
+            # (Динамический блок со счётчиками здесь НЕ отображается. Кнопки «Напасть» здесь НЕТ).
+            game.story_state = "l5_scout_exhausted"
+            text = (
+                "Тварь застыла на дне, а провал заволокло густой сырой мглой. "
+                "На сегодня наблюдения окончены: до рассвета ничего нового не произойдёт."
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="l5_scout_leave_to_camp")]
+            ])
+            game.active_story_callback = "l5_ancient_lair"
+            return text, kb
+
+        # Окно 1: Главный экран логова (если дневной лимит НЕ исчерпан)
+        game.story_state = "l5_scout_hub"
         text = (
-            "Ты стоишь на краю глубокого разлома, глядя на дно промоины.\n\n"
-            "Внизу в мутной жиже тяжело ворочается исполинский Древний слайм, перемалывая в своей туше кости и ржавое железо. "
-            "Вход в пещеру под знаком охотников надёжно заблокирован.\n\n"
-            "Пока у тебя нет подходящего оружия и снаряжения (копья или крюка), спускаться в этот каменный мешок — верная смерть."
+            "Ты осторожно наблюдаешь за дном яра из-за сланцевых выступов. "
+            "Громада неспешно переваливается по сырой глине, перекатывая в мутной толще выбеленные кости и металл. "
+            "Ядро надёжно укрыто за этим слоем. Время работает против тебя — нужно сосредоточиться на чём-то одном."
+        )
+
+        # Динамический блок счётчиков под текстом
+        if habits > 0 and surroundings == 0:
+            text += f"\n\n📊 Повадки твари: {habits}/23"
+        elif surroundings > 0 and habits == 0:
+            text += f"\n\n📊 Окрестности: {surroundings}/23"
+        elif habits > 0 and surroundings > 0:
+            text += (
+                f"\n\n📊 Повадки твари: {habits}\n"
+                f"📊 Окрестности: {surroundings}\n"
+                f"Всего изучено: {total_done}/23"
+            )
+
+        rows = []
+        if total_done < 23:
+            if habits < 23:
+                rows.append([InlineKeyboardButton(text="👁️ Изучать повадки слайма", callback_data="l5_scout_habits_observe")])
+            if surroundings < 23:
+                rows.append([InlineKeyboardButton(text="🌿 Осмотреть окрестности", callback_data="l5_scout_surroundings_observe")])
+        rows.append([InlineKeyboardButton(text="⚔️ Напасть сейчас", callback_data="l5_scout_attack")])
+        rows.append([InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="l5_scout_leave_to_camp")])
+
+        kb = InlineKeyboardMarkup(inline_keyboard=rows)
+        game.active_story_callback = "l5_ancient_lair"
+        return text, kb
+
+    # Кнопка [👁️ Начать наблюдения] -> переводит intro_seen = True и открывает Окно 1
+    elif data == "l5_scout_start":
+        game.intro_seen = True
+        return handle_location_5_slug_pit("l5_ancient_lair", game, uid)
+
+    # Окно 2: Наблюдение (Повадки)
+    elif data == "l5_scout_habits_observe":
+        game.story_state = "l5_scout_habits_observe"
+        idx = getattr(game, "habits_count", 0)
+        idx_clamped = min(idx, len(HABITS_EVENTS) - 1)
+        event_entry = HABITS_EVENTS[idx_clamped]
+        if isinstance(event_entry, dict):
+            text = event_entry.get("observation") or event_entry.get("event", "")
+        else:
+            text = event_entry[0]
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📝 Обдумать увиденное", callback_data="l5_scout_habits_think")]
+        ])
+        game.active_story_callback = "l5_scout_habits_observe"
+        return text, kb
+
+    # Окно 3: Мысли охотника (Повадки)
+    elif data == "l5_scout_habits_think":
+        game.story_state = "l5_scout_habits_think"
+        idx = getattr(game, "habits_count", 0)
+        idx_clamped = min(idx, len(HABITS_EVENTS) - 1)
+        event_entry = HABITS_EVENTS[idx_clamped]
+        if isinstance(event_entry, dict):
+            thought_text = event_entry.get("thought", "")
+        else:
+            thought_text = event_entry[1]
+
+        # Увеличение счётчиков
+        game.habits_count = idx + 1
+        game.day_researches_done = getattr(game, "day_researches_done", 0) + 1
+
+        # Специальный триггер на 9-м шаге (индекс 8, habits_count == 9)
+        if game.habits_count == 9:
+            game.craft_bone_hook_unlocked = True
+            if hasattr(game, "unlocked_recipes"):
+                game.unlocked_recipes.add("bone_hook_rope")
+            game.unlock_craft("Костяной крюк на кожаной верёвке")
+            game.set_story_flag("craft_bone_hook_unlocked", True)
+
+        bonus_note = event_entry.get("bonus_note") if isinstance(event_entry, dict) else None
+        parts = [thought_text]
+        if bonus_note:
+            parts.append(bonus_note)
+
+        progress_text = f"📊 Понимание повадок: {game.habits_count}/23"
+        if getattr(game, "surroundings_count", 0) > 0:
+            progress_text += f"\nВсего изучено: {game.habits_count + game.surroundings_count}/23"
+        parts.append(progress_text)
+
+        text = "\n\n".join(parts)
+
+        if is_scout_day_exhausted(game):
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="l5_scout_leave_to_camp")]
+            ])
+            game.active_story_callback = "l5_scout_habits_think"
+        else:
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔍 Продолжить наблюдать", callback_data="l5_ancient_lair")]
+            ])
+            game.active_story_callback = "l5_scout_habits_think"
+        return text, kb
+
+    # Окно 4: Наблюдение (Окрестности)
+    elif data == "l5_scout_surroundings_observe":
+        game.story_state = "l5_scout_surroundings_observe"
+        idx = getattr(game, "surroundings_count", 0)
+        idx_clamped = min(idx, len(SURROUNDINGS_EVENTS) - 1)
+        event_entry = SURROUNDINGS_EVENTS[idx_clamped]
+        if isinstance(event_entry, dict):
+            text = event_entry.get("observation") or event_entry.get("event", "")
+        else:
+            text = event_entry[0]
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📝 Обдумать увиденное", callback_data="l5_scout_surroundings_think")]
+        ])
+        game.active_story_callback = "l5_scout_surroundings_observe"
+        return text, kb
+
+    # Окно 5: Мысли охотника (Окрестности)
+    elif data == "l5_scout_surroundings_think":
+        game.story_state = "l5_scout_surroundings_think"
+        idx = getattr(game, "surroundings_count", 0)
+        idx_clamped = min(idx, len(SURROUNDINGS_EVENTS) - 1)
+        event_entry = SURROUNDINGS_EVENTS[idx_clamped]
+        if isinstance(event_entry, dict):
+            thought_text = event_entry.get("thought", "")
+        else:
+            thought_text = event_entry[1]
+
+        # Увеличение счётчиков
+        game.surroundings_count = idx + 1
+        game.day_researches_done = getattr(game, "day_researches_done", 0) + 1
+
+        bonus_note = event_entry.get("bonus_note") if isinstance(event_entry, dict) else None
+        parts = [thought_text]
+        if bonus_note:
+            parts.append(bonus_note)
+
+        progress_text = f"📊 Знание местности: {game.surroundings_count}/23"
+        if getattr(game, "habits_count", 0) > 0:
+            progress_text += f"\nВсего изучено: {game.habits_count + game.surroundings_count}/23"
+        parts.append(progress_text)
+
+        text = "\n\n".join(parts)
+
+        if is_scout_day_exhausted(game):
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="l5_scout_leave_to_camp")]
+            ])
+            game.active_story_callback = "l5_scout_surroundings_think"
+        else:
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔍 Продолжить наблюдать", callback_data="l5_ancient_lair")]
+            ])
+            game.active_story_callback = "l5_scout_surroundings_think"
+        return text, kb
+
+    # Выход в лагерь
+    elif data == "l5_scout_leave_to_camp":
+        total_done = getattr(game, "habits_count", 0) + getattr(game, "surroundings_count", 0)
+        if total_done < 23:
+            limit = get_daily_scout_limit(game)
+            done = getattr(game, "day_researches_done", 0)
+            if done >= limit and limit > 0:
+                cur_recon = get_recon_day(game)
+                new_recon = cur_recon + 1
+                game.recon_day = new_recon
+                game.current_day = new_recon
+                game.day_researches_done = 0
+
+        game.active_story_callback = None
+        game.story_state = None
+        game.reset_nav()
+        return game.get_ui(), get_main_kb(game)
+
+    # ── Финальные действия после 23 исследований (тестовые коллбэки) ──
+    elif data == "l5_scout_final_attack_habits":
+        game.story_state = "l5_scout_final_attack_habits"
+        text = (
+            "Ты выбираешь момент и атакуешь строго уязвимые зоны Мусорного слайма!\n\n"
+            "Зная каждую судорогу студенистой туши, ты метишь прямо в обнажающиеся сочленения ядра."
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="back")]
+            [InlineKeyboardButton(text="⚔️ Начать бой", callback_data="l5_scout_attack")],
+            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="l5_scout_leave_to_camp")],
         ])
+        game.active_story_callback = "l5_scout_final_attack_habits"
+        return text, kb
 
-    terminators = ("l5_leave_early", "l5_5_lantern", "l5_5_left", "back", "l5_slug_flee", "l5_slug_battle_finish", "l5_bait_remove", "l5_ancient_lair", "l5_arena_escape")
+    elif data == "l5_scout_final_trap_surroundings":
+        game.story_state = "l5_scout_final_trap_surroundings"
+        text = (
+            "Ты активируешь ловушку окружения!\n\n"
+            "Сланцевые карнизы подламываются под расшатанными клиньями, и каменная осыпь вместе с едкой пылью обрушивается на тварь."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="l5_scout_leave_to_camp")],
+        ])
+        game.active_story_callback = "l5_scout_final_trap_surroundings"
+        return text, kb
+
+    elif data == "l5_scout_final_attack_balanced":
+        game.story_state = "l5_scout_final_attack_balanced"
+        text = (
+            "Ты атакуешь тварь с опорой на изученный рельеф местности!\n\n"
+            "Быстро перемещаясь по устойчивым выступам, ты держишь дистанцию и наносишь расчётливые удары."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⚔️ Начать бой", callback_data="l5_scout_attack")],
+            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="l5_scout_leave_to_camp")],
+        ])
+        game.active_story_callback = "l5_scout_final_attack_balanced"
+        return text, kb
+
+    elif data == "l5_scout_final_trap_pocket":
+        game.story_state = "l5_scout_final_trap_pocket"
+        text = (
+            "Ты заманиваешь Мусорного слайма в узкий каменный карман!\n\n"
+            "Исполин вязнет между отвесными монолитными плитами яра, скованный собственным весом."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="l5_scout_leave_to_camp")],
+        ])
+        game.active_story_callback = "l5_scout_final_trap_pocket"
+        return text, kb
+
+    # Атака на босса (энкаунтер Мусорного слайма)
+    elif data == "l5_scout_attack":
+        return start_battle(game, "trash_slime")
+
+    elif data.startswith("trash_battle_") or data.startswith("trash_slime_battle_"):
+        return apply_action(data, game, "trash_slime")
+
+    elif data in ("trash_slime_battle_screen", "l5_trash_slime_screen"):
+        battle = getattr(game, "wolf_battle", None)
+        if battle and battle.get("wolf_hp", 0) > 0 and getattr(game, "hp", 100) > 0:
+            return get_battle_text(game, "trash_slime"), get_battle_kb(game, "trash_slime")
+        if game.is_story_flag_set("l5_ancient_defeated") or not battle:
+            return handle_location_5_slug_pit("l5_ancient_win", game, uid)
+
+    elif data == "l5_ancient_win":
+        game.story_state = "l5_ancient_win"
+        game.wolf_battle = None
+        game.set_story_flag("l5_ancient_defeated", True)
+        game.set_story_flag("boss_trash_slime_defeated", True)
+        game.kills_count = getattr(game, "kills_count", 0) + 1
+        text = (
+            "Древний мусорный слайм с глухим хлюпом опадает на дно промоины. "
+            "Ядро разбито, а вход в пещеру под знаком охотников наконец свободен!"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="l5_scout_leave_to_camp")]
+        ])
+        return text, kb
+
+    elif data == "l5_ancient_escape":
+        game.story_state = "l5_ancient_escape"
+        game.wolf_battle = None
+        game.ap = 0
+        text = (
+            "Задыхаясь от едких испарений, ты чудом выбираешься из промоины по скользким сланцевым карнизам. "
+            "Тварь недовольно клокочет внизу, но не может дотянуться до уступа."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="l5_scout_leave_to_camp")]
+        ])
+        return text, kb
+
+    terminators = (
+        "l5_leave_early", "l5_5_lantern", "l5_5_left", "back", "l5_slug_flee",
+        "l5_slug_battle_finish", "l5_bait_remove", "l5_arena_escape", "l5_scout_leave_to_camp",
+    )
     if kb == get_main_kb(game) or data in terminators or getattr(game, "hp", 100) <= 0:
         game.active_story_callback = None
     elif text is not None:

@@ -40,7 +40,7 @@ def get_battle_kb(game, enemy_id: str = "old_wolf") -> InlineKeyboardMarkup:
             is_stunned=battle.get("is_stunned", False),
             is_charging=battle.get("is_charging", False),
         )
-    if enemy_id == "giant_slime":
+    if enemy_id in ("giant_slime", "trash_slime"):
         phase = battle.get("phase", "1")
         core_side = battle.get("core_side", "right")
         pocket_item = None
@@ -99,7 +99,7 @@ def get_battle_text(game, enemy_id: str = "old_wolf") -> str:
             status_text = f"📍 Фаза: {phase_name}"
         status_line = f"{status_text}\n"
 
-    enemy_icon = "🐗" if enemy_id == "ancient_boar" else ("☣️" if enemy_id == "giant_slime" else "🐺")
+    enemy_icon = "🐗" if enemy_id == "ancient_boar" else ("🕳️" if enemy_id == "trash_slime" else ("☣️" if enemy_id == "giant_slime" else "🐺"))
     return (
         f"{title}{phase_str}\n"
         "━━━━━━━━━━━━━━━━━━━\n"
@@ -199,7 +199,7 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
 
     # Нормализуем имя действия
     clean_action = action
-    for prefix in ("wolf_battle_", "boar_battle_", "slime_battle_"):
+    for prefix in ("wolf_battle_", "boar_battle_", "slime_battle_", "trash_battle_"):
         if clean_action.startswith(prefix):
             clean_action = clean_action.removeprefix(prefix)
             break
@@ -435,16 +435,17 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
     # БОЙ С ИСПОЛИНСКИМ СЛАЙМОМ (Локация 5: Заводь Исполина)
     # =========================================================================
     # =========================================================================
-    # БОЙ С ИСПОЛИНСКИМ СЛАЙМОМ (Локация 5: Заводь Исполина)
+    # БОЙ СО СЛАЙМАМИ (Локация 5: Исполинский слайм и Мусорный слайм)
     # =========================================================================
-    if enemy_id == "giant_slime":
+    if enemy_id in ("giant_slime", "trash_slime"):
         if clean_action == "flee":
             game.ap = 0
             game.wolf_battle = None
-            game.story_state = "l5_arena_escape"
+            flee_state = "l5_ancient_escape" if enemy_id == "trash_slime" else "l5_arena_escape"
+            game.story_state = flee_state
             game.active_story_callback = None
             from story.location_stories import handle_location_5_slug_pit
-            return handle_location_5_slug_pit("l5_arena_escape", game, getattr(game, "user_id", None))
+            return handle_location_5_slug_pit(flee_state, game, getattr(game, "user_id", None))
 
         cur_phase = str(battle.get("phase", "1"))
         core_side = battle.get("core_side", "right")
@@ -457,8 +458,9 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
                 vic_cb = enemy.get("victory_callback", "l5_2_7")
                 game.active_story_callback = vic_cb
                 game.story_state = vic_cb
+                boss_label = "МУСОРНЫМ СЛАЙМОМ" if enemy_id == "trash_slime" else "ИСПОЛИНОМ"
                 text = (
-                    "⚔️ ПОБЕДА НАД ИСПОЛИНОМ!\n"
+                    f"⚔️ ПОБЕДА НАД {boss_label}!\n"
                     "━━━━━━━━━━━━━━━━━━━\n"
                     f"• Нанесено тобой: {battle['player_dmg_dealt']} ед.\n"
                     f"• Нанёс слайм: {battle['wolf_dmg_dealt']} ед.\n"

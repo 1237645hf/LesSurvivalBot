@@ -6,7 +6,7 @@ game_state.py — Центральное хранилище состояния �
 import random
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Set
 from datetime import datetime
 
 from game_math import (
@@ -174,6 +174,15 @@ class GameState:
     campfires_lit: int = 0
     food_cooked: int = 0
 
+    # Разведка перед боем с боссом (Мусорный слайм / Древний слайм, L5)
+    intro_seen: bool = False
+    habits_count: int = 0
+    surroundings_count: int = 0
+    current_day: int = 1
+    day_researches_done: int = 0
+    craft_bone_hook_unlocked: bool = False
+    unlocked_recipes: Set[str] = field(default_factory=set)
+
     # Флаг инициализации
     is_initialized: bool = False
 
@@ -205,6 +214,15 @@ class GameState:
     @energy.setter
     def energy(self, value):
         self.ap = value
+
+    @property
+    def recon_day(self) -> int:
+        """Текущий день локального цикла разведки (1..)."""
+        return int(getattr(self, "current_day", 1) or 1)
+
+    @recon_day.setter
+    def recon_day(self, value: int):
+        self.current_day = int(value or 1)
 
     @property
     def log(self):
@@ -730,6 +748,13 @@ class GameState:
             "spared_souls": int(getattr(self, "spared_souls", 0)),
             "campfires_lit": int(getattr(self, "campfires_lit", 0)),
             "food_cooked": int(getattr(self, "food_cooked", 0)),
+            "intro_seen": bool(getattr(self, "intro_seen", False)),
+            "habits_count": int(getattr(self, "habits_count", 0)),
+            "surroundings_count": int(getattr(self, "surroundings_count", 0)),
+            "current_day": int(getattr(self, "current_day", 1)),
+            "day_researches_done": int(getattr(self, "day_researches_done", 0)),
+            "craft_bone_hook_unlocked": bool(getattr(self, "craft_bone_hook_unlocked", False)),
+            "unlocked_recipes": list(getattr(self, "unlocked_recipes", set())),
         }
 
 
@@ -829,6 +854,13 @@ class GameState:
         game.spared_souls = int(data.get("spared_souls", getattr(game, "spared_souls", 0)) or 0)
         game.campfires_lit = int(data.get("campfires_lit", getattr(game, "campfires_lit", 0)) or 0)
         game.food_cooked = int(data.get("food_cooked", getattr(game, "food_cooked", 0)) or 0)
+        game.intro_seen = bool(data.get("intro_seen", getattr(game, "intro_seen", False)))
+        game.habits_count = int(data.get("habits_count", getattr(game, "habits_count", 0)) or 0)
+        game.surroundings_count = int(data.get("surroundings_count", getattr(game, "surroundings_count", 0)) or 0)
+        game.current_day = int(data.get("current_day", getattr(game, "current_day", 1)) or 1)
+        game.day_researches_done = int(data.get("day_researches_done", getattr(game, "day_researches_done", 0)) or 0)
+        game.craft_bone_hook_unlocked = bool(data.get("craft_bone_hook_unlocked", getattr(game, "craft_bone_hook_unlocked", False)))
+        game.unlocked_recipes = set(data.get("unlocked_recipes", getattr(game, "unlocked_recipes", set())) or [])
 
         # Авто-исцеление (auto-heal) старых повреждённых сейвов:
         if isinstance(game.story_flags, dict):

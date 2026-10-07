@@ -334,10 +334,13 @@ def test_l5_ch2_aftermath_and_ancient_lair_unlock():
     buttons = [btn.text for row in locs_kb.inline_keyboard for btn in row]
     assert "• 🕳️ Логово Древнего" in buttons
 
-    # Проверка окна осмотра Логова Древнего
+    # Проверка окна осмотра Логова Древнего (Окно 0: Первое прибытие)
     text_lair, kb_lair = handle_location_5_slug_pit("l5_ancient_lair", game, uid)
-    assert "Ты стоишь на краю глубокого разлома, глядя на дно промоины" in text_lair
-    assert len(text_lair) <= 500
+    assert "Ты замираешь на сланцевом карнизе над тупиковой промоиной" in text_lair
+    assert len(text_lair) <= 550
+    buttons_lair = [btn.text for row in kb_lair.inline_keyboard for btn in row]
+    assert "👁️ Начать наблюдения" in buttons_lair
+    assert "🏕️ Вернуться в лагерь" in buttons_lair
 
     # Проверка: после победы над Древним подлокация тоже исчезает из меню
     game.set_story_flag("l5_ancient_defeated", True)

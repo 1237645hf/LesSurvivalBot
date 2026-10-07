@@ -60,6 +60,24 @@ ENEMIES: Dict[str, Dict[str, Any]] = {
         ),
         "screen_callback": "slime_battle_screen",
     },
+    "trash_slime": {
+        "id": "trash_slime",
+        "name": "Мусорный слайм",
+        "title": "🕳️ ЛОГОВО МУСОРНОГО СЛАЙМА",
+        "max_hp": 800,
+        "attack_min": 14,
+        "attack_max": 22,
+        "defended_min": 6,
+        "defended_max": 10,
+        "charge_damage": 35,
+        "start_log": "Мусорный слайм вздымается со дна промоины, ощетинившись обломками костей и ржавой сталью!",
+        "victory_callback": "l5_ancient_win",
+        "flee_callback": "l5_ancient_escape",
+        "flee_text": (
+            "Ты отступаешь по сланцевым уступам вверх из промоины, спасаясь от едкой массы."
+        ),
+        "screen_callback": "trash_slime_battle_screen",
+    },
 }
 
 
