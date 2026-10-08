@@ -113,7 +113,7 @@ def test_thorn_damage_calculation_and_death_prevention():
 
     # При HP=100 и уроне 101 (0 защиты) кнопка Проломиться недоступна
     game.hp = 100
-    text, kb = handle_location_2_ruchey("location_enter_2", game, 101)
+    text, kb = handle_location_2_ruchey("l2_thorns_approach", game, 101)
     btn_texts = [b.text for row in kb.inline_keyboard for b in row]
     assert "🪨 Проломиться" not in btn_texts
     assert "⛔ Попытка проломиться сейчас будет смертельной!" in text

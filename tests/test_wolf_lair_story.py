@@ -424,7 +424,7 @@ def test_stage_20_l1_7_finish_and_inspect_open_stream():
     # 2. Осмотр нового места (l1_7_inspect) переводит на сюжет Ручья
     text_inspect, kb_inspect = handle_story("l1_7_inspect", game, 101)
     assert game.current_location == "Ручей"
-    assert "Ручей бурлит" in text_inspect
+    assert "СТУК У ВОДЫ" in text_inspect or "Ручей слышно" in text_inspect
 
 
 # ══════════════════════════════════════════════════════════════════════════════

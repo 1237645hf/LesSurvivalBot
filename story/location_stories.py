@@ -154,6 +154,27 @@ def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool)
     Возвращает:
         (callback_name, log_message) или (None, None).
     """
+    if loc_id == 2:
+        # Триггер Локации 2 (Стена терновника и путь к плотине):
+        # 1. Пролог (рюкзак) завершён (l2_prologue_completed).
+        # 2. Терновник ещё не обнаружен и не пройден.
+        # 3. Прошло 5 дней со дня завершения пролога (day >= l2_prologue_completed_day + 5).
+        # 4. На 3-е исследование ручья запускается Стена терновника.
+        if (
+            game.is_story_flag_set("l2_prologue_completed")
+            and not game.is_story_flag_set("l2_thorns_discovered")
+            and not game.is_story_flag_set("l2_thorns_cleared")
+        ):
+            base_day = game.story_flags.get("l2_prologue_completed_day", 1)
+            cur_day = getattr(game, "day", 1)
+            if cur_day >= base_day + 5:
+                count = game.story_flags.get("l2_research_count", 0) + 1
+                game.story_flags["l2_research_count"] = count
+                if count >= 3:
+                    game.set_story_flag("l2_thorns_discovered", True)
+                    return "l2_thorns_approach", "🌿 Заросли у ручья сгущаются — впереди встаёт стена непроходимого терновника..."
+            return None, None
+
     if loc_id == 3:
         # Триггер Локации 3 (Скромная Лощина: обнаружение печи и убежища)
         # Условие: не сразу в первый день, а после сна на локации (день > дня входа или общий день >= 5)
