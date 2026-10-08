@@ -138,6 +138,8 @@ def test_thorns_gate_blocks_deadly_entry():
     assert dmg == 26
     assert game.hp <= dmg
 
+    game.set_story_flag("l2_prologue_completed", True)
+    game.set_story_flag("l2_thorns_discovered", True)
     text, kb = handle_location_2_ruchey("location_enter_2", game, 101)
     btn_cbs = [b.callback_data for row in kb.inline_keyboard for b in row]
     assert "l2_thorns_break" not in btn_cbs
