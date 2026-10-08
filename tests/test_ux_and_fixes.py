@@ -4,6 +4,12 @@ from unittest.mock import AsyncMock, patch
 from game_state import GameState
 from services.dialogs import handle_waiting_for_pet_name
 from modules.traps import process_trap_rollover, place_trap, roll_trap_roll
+from modules.items import (
+    get_drop_menu_items,
+    get_inspect_menu_items,
+    handle_inventory_callback,
+)
+from keyboards import get_drop_item_kb, get_inspect_menu_kb
 from main import process_callback, process_text_message, games, last_request_time, get_user_lock
 
 
@@ -202,3 +208,57 @@ async def test_process_text_message_immediate_delete_and_timeout():
 
     lock.release()
 
+
+def test_inventory_inspect_and_drop_use_short_callbacks_and_return_screens():
+    """Длинные имена предметов не ломают callback; осмотр и сброс возвращают экраны."""
+    item_name = "Редкий предмет " + "из длинного названия " * 5
+    game = GameState()
+    game.inventory[item_name] = 2
+
+    inspect_kb = get_inspect_menu_kb(game)
+    inspect_callbacks = [
+        button.callback_data
+        for row in inspect_kb.inline_keyboard
+        for button in row
+    ]
+    assert all(len(callback.encode("utf-8")) <= 64 for callback in inspect_callbacks)
+    inspect_index = get_inspect_menu_items(game).index(item_name)
+    inspect_callback = f"inspect_item_{inspect_index}"
+    assert inspect_callback in inspect_callbacks
+
+    inspect_text, inspect_result_kb = asyncio.run(
+        handle_inventory_callback(inspect_callback, game, 101)
+    )
+    assert item_name in inspect_text
+    assert inspect_result_kb is not None
+
+    drop_game = GameState()
+    drop_game.inventory[item_name] = 2
+    drop_kb = get_drop_item_kb(drop_game)
+    drop_callbacks = [
+        button.callback_data
+        for row in drop_kb.inline_keyboard
+        for button in row
+    ]
+    assert all(len(callback.encode("utf-8")) <= 64 for callback in drop_callbacks)
+    drop_index = get_drop_menu_items(drop_game).index(item_name)
+    drop_callback = f"drop_item_{drop_index}"
+    assert drop_callback in drop_callbacks
+
+    confirm_text, confirm_kb = asyncio.run(
+        handle_inventory_callback(drop_callback, drop_game, 101)
+    )
+    assert item_name in confirm_text
+    confirm_callbacks = [
+        button.callback_data
+        for row in confirm_kb.inline_keyboard
+        for button in row
+    ]
+    assert "drop_qty:1" in confirm_callbacks
+    assert "drop_qty:all" in confirm_callbacks
+
+    result_text, _ = asyncio.run(
+        handle_inventory_callback("drop_qty:1", drop_game, 101)
+    )
+    assert drop_game.inventory[item_name] == 1
+    assert f"Удалено: {item_name} ×1." in result_text

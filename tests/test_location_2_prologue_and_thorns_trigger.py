@@ -12,6 +12,7 @@ from game_state import GameState
 from story.location_stories import (
     handle_location_2_ruchey,
     check_forest_research_story_trigger,
+    handle_story,
 )
 
 
@@ -26,6 +27,33 @@ def test_l2_prologue_starts_on_first_entrance():
     assert "l2_1a" in cb_datas
     assert "l2_2" in cb_datas
     assert "l2_1b" in cb_datas
+
+
+def test_l2_entry_preserves_location_and_first_story_across_save_load():
+    """Первый экран L2 не перепрыгивает к стене; состояние и сюжет сохраняются в документе."""
+    game = GameState()
+    game.day = 5
+    game.story_flags["l2_thorns_discovered"] = True
+    game.story_flags["l2_research_count"] = 3
+
+    text, _ = handle_story("location_enter_2", game, 101)
+    assert "🌊 СТУК У ВОДЫ" in text
+    assert game.current_location == "Ручей со змеями"
+    assert game.location == "Ручей со змеями"
+    assert game.active_story_callback == "l2_1"
+
+    restored = GameState.from_document(game.to_document())
+    assert restored.current_location == "Ручей со змеями"
+    assert restored.location == "Ручей со змеями"
+    assert restored.active_story_callback == "l2_1"
+
+    # Даже если старый сейв содержит устаревший счётчик и флаг открытия стены,
+    # первое завершение пролога сбрасывает их до начала нового триггера.
+    handle_location_2_ruchey("l2_1b", restored, 101)
+    assert restored.is_story_flag_set("l2_prologue_completed")
+    assert restored.story_flags["l2_research_count"] == 0
+    assert not restored.is_story_flag_set("l2_thorns_discovered")
+    assert not restored.is_story_flag_set("l2_thorns_seen")
 
 
 def test_l2_prologue_path_to_backpack_and_items():

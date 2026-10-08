@@ -14,6 +14,25 @@
 # =============================================================================
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+
+def _complete_l2_prologue(game):
+    if not game.is_story_flag_set("l2_prologue_completed"):
+        game.story_flags["l2_research_count"] = 0
+        game.story_flags.pop("l2_thorns_discovered", None)
+        game.story_flags.pop("l2_thorns_seen", None)
+    game.set_story_flag("l2_prologue_completed", True)
+    game.story_flags["l2_prologue_completed_day"] = getattr(game, "day", 1)
+
+
+def _l2_thorns_trigger_is_ready(game):
+    completed_day = int(game.story_flags.get("l2_prologue_completed_day", 1) or 1)
+    research_count = int(game.story_flags.get("l2_research_count", 0) or 0)
+    return (
+        game.is_story_flag_set("l2_prologue_completed")
+        and int(getattr(game, "day", 1) or 1) >= completed_day + 5
+        and research_count >= 3
+    )
 from keyboards import get_main_kb, get_death_kb
 from game_state import get_death_text
 
@@ -367,6 +386,7 @@ def handle_location_2_ruchey(data: str, game, uid: int):
 
         # Если пролог берега ещё не завершён — запускаем сцену L2.1
         if not game.is_story_flag_set("l2_prologue_completed"):
+            game.active_story_callback = "l2_1"
             return handle_location_2_ruchey("l2_1", game, uid)
 
         # Если терновник уже проломан — игрок сразу у плотины
@@ -380,7 +400,11 @@ def handle_location_2_ruchey(data: str, game, uid: int):
 
         # Если стена терновника уже открыта по триггеру (5 дней, 3 поиска) — показываем стену терновника
         if game.is_story_flag_set("l2_thorns_discovered") or game.is_story_flag_set("l2_thorns_seen"):
-            return handle_location_2_ruchey("l2_thorns_approach", game, uid)
+            if _l2_thorns_trigger_is_ready(game):
+                game.active_story_callback = "l2_thorns_approach"
+                return handle_location_2_ruchey("l2_thorns_approach", game, uid)
+            game.story_flags.pop("l2_thorns_discovered", None)
+            game.story_flags.pop("l2_thorns_seen", None)
 
         # Иначе — берег ручья (мирное нахождение на локации до срабатывания триггера терновника)
         text = (
@@ -444,8 +468,7 @@ def handle_location_2_ruchey(data: str, game, uid: int):
     elif data == "l2_1b":
         # Уйти выше по течению (ранний финал)
         game.thirst = 100
-        game.set_story_flag("l2_prologue_completed", True)
-        game.story_flags["l2_prologue_completed_day"] = getattr(game, "day", 1)
+        _complete_l2_prologue(game)
         game.adjust_narrative_karma("pragmatism", 2)
         text = (
             "💧 УЙТИ ВЫШЕ ПО ТЕЧЕНИЮ\n\n"
@@ -476,8 +499,7 @@ def handle_location_2_ruchey(data: str, game, uid: int):
         ])
 
     elif data == "l2_2a":
-        game.set_story_flag("l2_prologue_completed", True)
-        game.story_flags["l2_prologue_completed_day"] = getattr(game, "day", 1)
+        _complete_l2_prologue(game)
         text = (
             "🚶‍♂️ ОСТАВИТЬ НАХОДКУ\n\n"
             "Ты отпускаешь ветки.\n"
@@ -703,8 +725,7 @@ def handle_location_2_ruchey(data: str, game, uid: int):
         ])
 
     elif data == "l2_7a":
-        game.set_story_flag("l2_prologue_completed", True)
-        game.story_flags["l2_prologue_completed_day"] = getattr(game, "day", 1)
+        _complete_l2_prologue(game)
         text = (
             "📜 СХЕМА И ТАИНСТВЕННЫЙ ОГОНЬ\n\n"
             "На листе грубо нарисованы ручей, поваленная берёза и несколько коротких линий, похожих на тропы.\n"
@@ -722,8 +743,7 @@ def handle_location_2_ruchey(data: str, game, uid: int):
         ])
 
     elif data == "l2_8":
-        game.set_story_flag("l2_prologue_completed", True)
-        game.story_flags["l2_prologue_completed_day"] = getattr(game, "day", 1)
+        _complete_l2_prologue(game)
         text = (
             "🚶‍♂️ ПУТЬ БЕЗ НАХОДКИ\n\n"
             "Ты поднимаешься по склону, пока шум воды не становится тише. Здесь сухо. В траве стрекочет какое-то насекомое. Лес выглядит так, будто ничего не произошло.\n\n"
@@ -1058,4 +1078,3 @@ def handle_location_2_ruchey(data: str, game, uid: int):
         game.active_story_callback = data
 
     return text, kb
-

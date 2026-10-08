@@ -5,7 +5,7 @@
 
 import pytest
 from game_state import GameState
-from crafts import do_craft, CRAFT_RECIPES, handle_craft
+from crafts import can_craft, do_craft, CRAFT_RECIPES, handle_craft, get_craft_menu_kb
 from keyboards import get_main_kb, get_locations_kb, get_wolf_battle_kb
 from story.location_stories import (
     handle_story,
@@ -162,6 +162,14 @@ def test_stage_07_staff_craft_and_dual_wield_torch():
     assert success is True
     assert game.inventory.get("Ветка", 0) == 0
     assert game.inventory.get("Крепкий посох") == 1
+    assert not can_craft(game, "Крепкий посох")
+    assert not do_craft(game, "Крепкий посох")[0]
+    craft_callbacks = [
+        button.callback_data
+        for row in get_craft_menu_kb(game).inline_keyboard
+        for button in row
+    ]
+    assert "craft_Крепкий посох" not in craft_callbacks
 
     # Надеваем факел в левую руку
     game.equipment["hand_left"] = "Факел"
@@ -170,6 +178,7 @@ def test_stage_07_staff_craft_and_dual_wield_torch():
     handle_craft("use_item_Крепкий посох", game, 101)
     assert game.equipment.get("hand_right") == "Крепкий посох"
     assert game.equipment.get("hand_left") == "Факел"  # Оба предмета надеты!
+    assert "Урон оружия: 5–7" in game.get_character_text()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -231,14 +240,14 @@ def test_stage_09_wolf_battle_initialization():
 # ══════════════════════════════════════════════════════════════════════════════
 
 def test_stage_10_wolf_battle_attack_round():
-    """Этап 10: Атака посохом наносит 4–6 урона (+1 от факела), волк получает урон."""
+    """Этап 10: Атака посохом наносит 5–7 урона, волк получает урон."""
     game = GameState()
     game.equipment["hand_right"] = "Крепкий посох"
     game.equipment["hand_left"] = "Факел"
     handle_story("wolf_battle_start", game, 101)
 
     text, kb = handle_story("wolf_battle_attack", game, 101)
-    # Игрок нанёс 4-6 базовых + 1 от факела = 5-7 урона
+    # Боевая формула использует тот же диапазон урона, что показан в характеристиках.
     assert game.wolf_battle["player_dmg_dealt"] in (5, 6, 7)
     assert game.wolf_battle["wolf_hp"] < 50
 
@@ -589,5 +598,3 @@ def test_restored_l1_kitten_full_chain():
     assert kb3 is None
     assert game.story_state == "WAITING_FOR_PET_NAME"
     assert game.active_story_callback == "waiting_pet_name"
-
-

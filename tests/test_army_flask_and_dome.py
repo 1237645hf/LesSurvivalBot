@@ -10,10 +10,12 @@ tests/test_army_flask_and_dome.py — Комплексные тесты ново
    сбивание камнями (штраф AP и жажды), помощь кота, расчистка завала и исчезновение локации после взятия фляги.
 """
 
+import asyncio
 import pytest
 from game_state import GameState
 from keyboards import get_locations_kb, get_main_kb, get_campfire_kb, get_item_card_actions_kb
-from modules.items import ITEMS, ITEM_EMOJIS, get_item_negative_effects
+from modules.items import ITEMS, ITEM_EMOJIS, get_item_negative_effects, handle_inventory_callback
+from modules.cooking import handle_campfire_callback
 from story.location_stories import check_forest_research_story_trigger, handle_story
 
 
@@ -121,6 +123,85 @@ def test_boiling_rainwater_logic():
     assert game2.rain_bottles[0] == 6
     assert game2.inventory.get("Пустая бутылка", 0) == 0
     assert game2.inventory["Бутылка дождевой воды"] == 1
+
+
+def test_clean_bottle_water_transfers_to_army_flask():
+    """Чистая вода из обычной бутылки переливается во флягу без кипячения."""
+    game = GameState()
+    game.inventory["Армейская фляга"] = 1
+    game.inventory["Бутылка воды"] = 1
+    game.army_flask_water = 16
+
+    text, _ = asyncio.run(
+        handle_inventory_callback("flask_transfer_clean_water", game, 101)
+    )
+
+    assert game.army_flask_water == 20
+    assert game.inventory.get("Бутылка воды", 0) == 0
+    assert game.clean_bottles_charges == [16]
+    assert game.inventory.get("Пустая бутылка", 0) == 0
+    assert "Перелито 4 глотков" in text
+
+
+def test_boiling_rainwater_callback_checks_fire_and_water():
+    """Реальный callback кипятит дождевую воду во фляге и не меняет состояние без костра."""
+    game = GameState()
+    game.equipment["flask"] = "Армейская фляга"
+    game.flask_water = 0
+    game.army_flask_water = 0
+    game.campfire_active = True
+    game.campfire_durability = 5
+    game.rain_bottles = [4]
+    game.inventory["Бутылка дождевой воды"] = 1
+
+    text, _ = asyncio.run(handle_campfire_callback("campfire_boil_water", game, 101))
+
+    assert game.flask_water == game.army_flask_water == 4
+    assert game.rain_bottles == []
+    assert game.inventory["Пустая бутылка"] == 1
+    assert game.campfire_durability == 4
+    assert "4/20 чистой воды" in text
+
+    game.campfire_active = False
+    game.campfire_durability = 0
+    game.rain_bottles = [3]
+    previous_water = game.flask_water
+    result = asyncio.run(handle_campfire_callback("campfire_boil_water", game, 101))
+    assert result == (None, None)
+    assert game.flask_water == previous_water
+    assert game.rain_bottles == [3]
+
+
+def test_campfire_boiling_button_uses_army_flask_water_when_unequipped():
+    """Кнопка кипячения смотрит запас армейской фляги, а не обычной надетой бутылки."""
+    game = GameState()
+    game.equipment["flask"] = "Бутылка воды"
+    game.flask_water = 20
+    game.inventory["Армейская фляга"] = 1
+    game.army_flask_water = 0
+    game.campfire_active = True
+    game.campfire_durability = 5
+    game.rain_bottles = [4]
+
+    button_callbacks = [
+        button.callback_data
+        for row in get_campfire_kb(game).inline_keyboard
+        for button in row
+    ]
+    assert "campfire_boil_water" in button_callbacks
+
+
+def test_zero_flask_water_survives_document_round_trip():
+    """Загрузка сейва не подставляет 10 глотков вместо сохранённого нуля."""
+    game = GameState()
+    game.equipment["flask"] = "Армейская фляга"
+    game.flask_water = 0
+    game.army_flask_water = 0
+
+    restored = GameState.from_document(game.to_document())
+
+    assert restored.flask_water == 0
+    assert restored.army_flask_water == 0
 
 
 def test_dome_discovery_trigger():
@@ -290,7 +371,15 @@ def test_dome_staff_progression_and_loot():
     assert game.army_flask_water == 0
     assert game.equipment.get("flask") is None
     assert game.is_story_flag_set("l1_dome_completed") is True
+    assert game.narrative_karma["pragmatism"] == 3
     assert "Вернуться в лагерь" in kb_loot.inline_keyboard[0][0].text
+
+    ap_after_first_reward = game.ap
+    duplicate_text, _ = handle_story("l1_dome_loot", game, 123)
+    assert "Армейская фляга" in duplicate_text
+    assert game.inventory.get("Армейская фляга") == 1
+    assert game.narrative_karma["pragmatism"] == 3
+    assert game.ap == ap_after_first_reward
 
 
 def test_dome_cat_solve():
@@ -302,11 +391,11 @@ def test_dome_cat_solve():
     game.set_story_flag("l1_dome_discovered", True)
     game.story_flags["l1_dome_visited_once"] = True
 
-    # Меню выбора в ясный день содержит кнопку котёнка
+    # Сюжет о котёнке сохранён, но кнопка взаимодействия убрана из меню купола.
     t_menu, kb_menu = handle_story("l1_dome_enter", game, 123)
-    assert any("котёнка" in btn.text for row in kb_menu.inline_keyboard for btn in row)
+    assert not any("котёнка" in btn.text for row in kb_menu.inline_keyboard for btn in row)
 
-    # Котёнок перегрызает ремешок
+    # Существующий сюжетный callback и его текст оставлены в коде для будущего.
     t_cat, kb_cat = handle_story("l1_dome_cat_solve", game, 123)
     assert "Котёнок с интересом смотрит" in t_cat
     assert "стропа лопается" in t_cat

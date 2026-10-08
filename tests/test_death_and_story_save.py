@@ -140,6 +140,8 @@ def test_thorns_gate_blocks_deadly_entry():
 
     game.set_story_flag("l2_prologue_completed", True)
     game.set_story_flag("l2_thorns_discovered", True)
+    game.story_flags["l2_prologue_completed_day"] = game.day - 5
+    game.story_flags["l2_research_count"] = 3
     text, kb = handle_location_2_ruchey("location_enter_2", game, 101)
     btn_cbs = [b.callback_data for row in kb.inline_keyboard for b in row]
     assert "l2_thorns_break" not in btn_cbs
@@ -474,7 +476,6 @@ def test_handle_session_callback_restart_and_confirm():
     text3, kb3 = handle_session_callback("confirm_new_game", existing_game, uid1, games_dict)
     assert "Внимание!" in text3
     assert kb3 is not None
-
 
 
 

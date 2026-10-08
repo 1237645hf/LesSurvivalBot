@@ -176,6 +176,27 @@ def test_2_3_campfire_morning_cold_penalty_when_extinguished():
     assert game.ap == 4
 
 
+def test_cold_debuff_keeps_ap_limit_after_save_load_until_warm_night():
+    """Холод сохраняет сниженный AP-лимит после загрузки и снимается ночёвкой у костра."""
+    game = GameState()
+    game.hp = 100
+    game.sleep_and_turn_day()
+
+    assert game.cold_debuff_active is True
+    assert game.ap == 4
+    assert game.calculate_daily_ap() == 4
+
+    restored = GameState.from_document(game.to_document())
+    assert restored.cold_debuff_active is True
+    assert restored.calculate_daily_ap() == 4
+
+    restored.campfire_active = True
+    restored.campfire_durability = 10
+    restored.sleep_and_turn_day()
+    assert restored.cold_debuff_active is False
+    assert restored.ap == 5
+
+
 def test_2_4_campfire_main_keyboard_button():
     """Тест 2.4: Отображение кнопки костра на главном экране только пока он горит."""
     game = GameState()
@@ -1075,7 +1096,6 @@ def test_narrative_karma_and_endings():
     game.set_story_flag("deer_freed", True)
     game.set_story_flag("left_warning", True)
     assert resolve_ending(game) == "guardian"
-
 
 
 

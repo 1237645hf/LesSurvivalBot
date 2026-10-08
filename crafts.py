@@ -44,6 +44,13 @@ CRAFT_YIELDS = {
     "Янтарное зелье": 3,
 }
 
+SLATE_ARMOR_RECIPES = {
+    "Сланцевая маска",
+    "Сланцевый панцирь",
+    "Сланцевые поножи",
+    "Сланцевые ботинки",
+}
+
 
 def get_available_tinder(game) -> Optional[str]:
     """Возвращает первый доступный предмет сушняка/растопки из инвентаря."""
@@ -107,9 +114,21 @@ def has_campfire(game) -> bool:
     )
 
 
+def has_sturdy_staff(game) -> bool:
+    """Проверить наличие Крепкого посоха в инвентаре или любом слоте."""
+    return (
+        game.inventory.get("Крепкий посох", 0) > 0
+        or "Крепкий посох" in (getattr(game, "equipment", {}) or {}).values()
+    )
+
+
 def can_craft(game, recipe_name: str) -> bool:
     ingredients = CRAFT_RECIPES.get(recipe_name, [])
     if not ingredients:
+        return False
+    if recipe_name == "Крепкий посох" and has_sturdy_staff(game):
+        return False
+    if recipe_name in SLATE_ARMOR_RECIPES and not game.is_story_flag_set("l2_thorns_seen"):
         return False
     if recipe_name == "Факел" and has_torch(game):
         return False
@@ -140,6 +159,10 @@ def can_craft(game, recipe_name: str) -> bool:
 
 
 def craft_mark(game, recipe_name: str) -> str:
+    if recipe_name == "Крепкий посох" and has_sturdy_staff(game):
+        return "❌ (уже есть)"
+    if recipe_name in SLATE_ARMOR_RECIPES and not game.is_story_flag_set("l2_thorns_seen"):
+        return "❌ (сначала стена терновника)"
     if recipe_name == "Факел" and has_torch(game):
         return "❌ (уже есть)"
     if recipe_name == "Костёр" and has_campfire(game):
@@ -179,6 +202,10 @@ def do_craft(game, recipe_name: str):
     ingredients = CRAFT_RECIPES.get(recipe_name)
     if not ingredients:
         return False, "Неизвестный рецепт."
+    if recipe_name == "Крепкий посох" and has_sturdy_staff(game):
+        return False, "У вас уже есть крепкий посох — второй изготовить нельзя."
+    if recipe_name in SLATE_ARMOR_RECIPES and not game.is_story_flag_set("l2_thorns_seen"):
+        return False, "Рецепт сланцевой брони откроется после встречи со стеной терновника."
     if recipe_name == "Факел" and has_torch(game):
         return False, "У вас уже есть факел! Нельзя иметь больше одного факела одновременно."
     if recipe_name == "Костёр" and has_campfire(game):
@@ -369,6 +396,10 @@ def get_craft_menu_text(game) -> str:
     for name in unlocked:
         if name not in CRAFT_RECIPES:
             continue
+        if name == "Крепкий посох" and has_sturdy_staff(game):
+            continue
+        if name in SLATE_ARMOR_RECIPES and not game.is_story_flag_set("l2_thorns_seen"):
+            continue
         if name == "Факел" and has_torch(game):
             continue
         if name == "Костёр" and has_campfire(game):
@@ -422,6 +453,10 @@ def get_craft_menu_kb(game):
     for name in unlocked:
         if name not in CRAFT_RECIPES:
             continue
+        if name == "Крепкий посох" and has_sturdy_staff(game):
+            continue
+        if name in SLATE_ARMOR_RECIPES and not game.is_story_flag_set("l2_thorns_seen"):
+            continue
         if name == "Факел" and has_torch(game):
             continue
         if name == "Костёр" and has_campfire(game):
@@ -471,11 +506,16 @@ def handle_craft(data, game, uid):
             "🦯 Крепкий посох\n\n"
             "Обтёсанная тяжёлая ветвь — надёжное оружие против лесных хищников.\n\n"
             f"📦 Требования: {req_icon} Ветка ({branches}/8)\n"
-            "⚔️ Свойства: Урон в бою: 4–6 ед. (Правая рука)\n"
+            "⚔️ Свойства: Урон в бою: 5–7 ед. (Правая рука)\n"
             "━━━━━━━━━━━━━━━━━━━"
         )
         buttons = []
-        if branches >= 8:
+        if has_sturdy_staff(game):
+            text = text.replace(
+                "📦 Требования:",
+                "✅ Крепкий посох уже есть.\n\n📦 Требования:",
+            )
+        elif branches >= 8:
             buttons.append([InlineKeyboardButton(text="🔨 Скрафтить", callback_data="confirm_craft_Крепкий посох")])
         buttons.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
         return text, InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -558,7 +598,7 @@ def handle_craft(data, game, uid):
             if game.inventory["Крепкий посох"] <= 0:
                 del game.inventory["Крепкий посох"]
             game.equipment["hand_right"] = "Крепкий посох"
-            game.add_log("Вы взяли крепкий посох в правую руку (⚔️ Урон 4–6).")
+            game.add_log("Вы взяли крепкий посох в правую руку (⚔️ Урон 5–7).")
             text = game.get_ui()
             kb = get_main_kb(game)
         else:

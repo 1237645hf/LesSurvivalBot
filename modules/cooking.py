@@ -1030,20 +1030,11 @@ async def handle_campfire_callback(
                 await callback.answer("⚠️ Нужна металлическая 🟨 Армейская фляга!", show_alert=True)
             return None, None
 
-        if game.equipment.get("flask") != "Армейская фляга":
-            if hasattr(game, "unequip_flask_to_inventory"):
-                game.unequip_flask_to_inventory()
-            else:
-                old_flask = game.equipment.get("flask")
-                if old_flask:
-                    game.inventory[old_flask] = game.inventory.get(old_flask, 0) + 1
-            game.inventory["Армейская фляга"] -= 1
-            if game.inventory["Армейская фляга"] <= 0:
-                del game.inventory["Армейская фляга"]
-            game.equipment["flask"] = "Армейская фляга"
-            game.flask_water = int(getattr(game, "army_flask_water", 0) or 0)
-
-        cur_w = int(getattr(game, "flask_water", 0) or 0)
+        cur_w = (
+            int(getattr(game, "flask_water", 0) or 0)
+            if game.equipment.get("flask") == "Армейская фляга"
+            else int(getattr(game, "army_flask_water", 0) or 0)
+        )
         if cur_w >= 20:
             if callback:
                 await callback.answer("⚠️ Фляга уже полна (20/20)!", show_alert=True)
@@ -1058,6 +1049,19 @@ async def handle_campfire_callback(
             if callback:
                 await callback.answer("⚠️ Нет дождевой воды для кипячения!", show_alert=True)
             return None, None
+
+        if game.equipment.get("flask") != "Армейская фляга":
+            if hasattr(game, "unequip_flask_to_inventory"):
+                game.unequip_flask_to_inventory()
+            else:
+                old_flask = game.equipment.get("flask")
+                if old_flask:
+                    game.inventory[old_flask] = game.inventory.get(old_flask, 0) + 1
+            game.inventory["Армейская фляга"] -= 1
+            if game.inventory["Армейская фляга"] <= 0:
+                del game.inventory["Армейская фляга"]
+            game.equipment["flask"] = "Армейская фляга"
+            game.flask_water = cur_w
 
         space = 20 - cur_w
         available = bottles[0]
@@ -1093,4 +1097,3 @@ async def handle_campfire_callback(
         return text, kb
 
     return None, None
-

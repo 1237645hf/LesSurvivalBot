@@ -80,6 +80,7 @@ def handle_story(data: str, game, uid: int):
     elif data.startswith("l2_") or data.startswith("ruchey_") or data.startswith("river_") or data.startswith("snake_") or data.startswith("story_") or data == "location_enter_2":
         if data == "location_enter_2":
             game.current_location = "Ручей со змеями"
+            game.location = game.current_location
         res = handle_location_2_ruchey(data, game, uid)
     elif (
         data.startswith("l3_")
@@ -364,4 +365,3 @@ def is_story_callback(data: str) -> bool:
             "sanctuary_",
         ))
     )
-

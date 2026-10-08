@@ -107,7 +107,7 @@ ITEMS: Dict[str, Dict[str, Any]] = {
         "description": "Ты долго бродил по чаще, пока не нашёл самую толстую и прямую ветвь. Обтесав сучья сколом камня, ты понимаешь: это то самое оружие, которому готов доверить собственную жизнь.",
         "type": "tool",
         "rank": 2,
-        "effects": {"damage": 5},
+        "effects": {"damage_min": 5, "damage_max": 7},
         "can_use": True,
         "stackable": False,
     },
@@ -1052,7 +1052,7 @@ def format_item_card(item_name: str, game: Optional[Any] = None) -> str:
     if item_clean == "Факел":
         lines.append("✨ Свойства: +1 ⚡ AP в руке, сгорает за ночь")
     elif item_clean == "Крепкий посох":
-        lines.append("✨ Свойства: ⚔️ Урон в ближнем бою: 4–6 ед.")
+        lines.append("✨ Свойства: ⚔️ Урон в ближнем бою: 5–7 ед.")
     elif item_clean in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
         lines.append("✨ Свойства: ⚔️ Урон в бою: 19–24 ед.")
     elif item_clean == "Армейская фляга":
@@ -1109,6 +1109,78 @@ def get_inspectable_items(game):
         item for item, count in game.inventory.items()
         if count > 0 and item in ITEM_DESCRIPTIONS
     ]
+
+
+def get_inspect_menu_items(game):
+    items = [(item, count) for item, count in game.inventory.items() if count > 0]
+    items.sort(key=lambda entry: (0 if is_item_consumable(entry[0]) else 1, -get_item_rank(entry[0]), entry[0]))
+    names = [item for item, _ in items]
+    names.extend(["Бутылка воды"] * len(getattr(game, "clean_bottles_charges", [])))
+    return names
+
+
+def get_drop_menu_items(game):
+    return [item for item, count in game.inventory.items() if count > 0]
+
+
+def has_transferable_clean_water(game):
+    has_army_flask = (
+        game.equipment.get("flask") == "Армейская фляга"
+        or game.inventory.get("Армейская фляга", 0) > 0
+    )
+    flask_water = (
+        getattr(game, "flask_water", 0)
+        if game.equipment.get("flask") == "Армейская фляга"
+        else getattr(game, "army_flask_water", 0)
+    )
+    has_clean_water = (
+        any(int(charges) > 0 for charges in getattr(game, "clean_bottles_charges", []))
+        or game.inventory.get("Бутылка воды", 0) > 0
+        or (
+            game.equipment.get("flask") == "Бутылка воды"
+            and int(getattr(game, "flask_water", 0) or 0) > 0
+        )
+    )
+    return has_army_flask and has_clean_water and int(flask_water or 0) < 20
+
+
+def transfer_clean_water_to_army_flask(game):
+    if not has_transferable_clean_water(game):
+        return False, "Нужна свободная Армейская фляга и чистая вода в обычной бутылке."
+
+    if game.equipment.get("flask") == "Бутылка воды":
+        game.unequip_flask_to_inventory()
+
+    army_water = (
+        int(getattr(game, "flask_water", 0) or 0)
+        if game.equipment.get("flask") == "Армейская фляга"
+        else int(getattr(game, "army_flask_water", 0) or 0)
+    )
+    transferred = 0
+    while army_water < 20:
+        if getattr(game, "clean_bottles_charges", []):
+            charges = int(game.clean_bottles_charges.pop(0))
+        elif game.inventory.get("Бутылка воды", 0) > 0:
+            game.inventory["Бутылка воды"] -= 1
+            if game.inventory["Бутылка воды"] <= 0:
+                del game.inventory["Бутылка воды"]
+            charges = 20
+        else:
+            break
+
+        amount = min(20 - army_water, charges)
+        army_water += amount
+        transferred += amount
+        remaining = charges - amount
+        if remaining > 0:
+            game.clean_bottles_charges.insert(0, remaining)
+        else:
+            game.inventory["Пустая бутылка"] = game.inventory.get("Пустая бутылка", 0) + 1
+
+    game.army_flask_water = army_water
+    if game.equipment.get("flask") == "Армейская фляга":
+        game.flask_water = army_water
+    return True, f"💧 Перелито {transferred} глотков чистой воды. Во фляге {army_water}/20."
 
 
 def get_usable_items(game):
@@ -1237,6 +1309,7 @@ def is_inventory_callback(data: str) -> bool:
             "pocket_remove",
             "equip_bottle_flask",
             "equip_army_flask",
+            "flask_transfer_clean_water",
             "drink_bottle_single",
             "drink_rain_bottle",
             "drop_qty_cancel",
@@ -1284,16 +1357,29 @@ async def handle_inventory_callback(
 
     elif data == "inv_inspect":
         items_in_inv = [item for item, c in game.inventory.items() if c > 0]
-        if not items_in_inv:
+        if not items_in_inv and not getattr(game, "clean_bottles_charges", []):
             if callback:
                 await callback.answer("Инвентарь пуст!", show_alert=True)
-            return None, None
+            return game.get_inventory_text(), inventory_inline_kb
         game.push_screen("inspect")
         text = "🔍 Подробный осмотр предметов\n\nВыберите предмет из инвентаря, чтобы изучить его описание, эффекты и свойства:"
         kb = get_inspect_menu_kb(game)
 
     elif data.startswith("inspect_item_"):
-        item = data.removeprefix("inspect_item_")
+        item_id = data.removeprefix("inspect_item_")
+        if item_id.isdecimal():
+            items = get_inspect_menu_items(game)
+            index = int(item_id)
+            if index >= len(items):
+                if callback:
+                    await callback.answer("Этот предмет больше не находится в инвентаре.", show_alert=True)
+                game.nav_stack = list(INVENTORY_CANONICAL_STACKS["inspect"])
+                text = "🔍 Подробный осмотр предметов\n\nВыберите предмет из инвентаря:"
+                kb = get_inspect_menu_kb(game)
+                return text, kb
+            item = items[index]
+        else:
+            item = item_id
         game.push_screen("item_card")
         text = format_item_card(item, game)
         kb = get_item_card_actions_kb(item, game)
@@ -1339,8 +1425,10 @@ async def handle_inventory_callback(
         kb = get_inspect_menu_kb(game)
 
     elif data == "inv_drop":
-        if not any(count > 0 for count in game.inventory.values()):
-            return None, None
+        if not get_drop_menu_items(game):
+            if callback:
+                await callback.answer("Нечего выкидывать.", show_alert=True)
+            return game.get_inventory_text(), inventory_inline_kb
         game.push_screen("drop")
         text = "Выберите предмет для удаления:"
         kb = get_drop_item_kb(game)
@@ -1452,6 +1540,21 @@ async def handle_inventory_callback(
             game.add_log("В инвентаре нет армейской фляги.")
         text = game.get_ui()
         kb = get_main_kb(game)
+
+    elif data == "flask_transfer_clean_water":
+        ok, message = transfer_clean_water_to_army_flask(game)
+        if not ok and callback:
+            await callback.answer(message, show_alert=True)
+        else:
+            game.add_log(message)
+        if game.nav_stack and game.nav_stack[-1] == "campfire":
+            from modules.cooking import get_campfire_text
+            from keyboards import get_campfire_kb
+            text = get_campfire_text(game, action_header=message)
+            kb = get_campfire_kb(game)
+        else:
+            text = game.get_ui()
+            kb = get_main_kb(game)
 
     elif data == "drink_rain_bottle":
         bottles = getattr(game, "rain_bottles", [])
@@ -1581,7 +1684,13 @@ async def handle_inventory_callback(
         kb = get_main_kb(game)
 
     elif data.startswith("drop_item_"):
-        item = data.removeprefix("drop_item_")
+        item_id = data.removeprefix("drop_item_")
+        if item_id.isdecimal():
+            items = get_drop_menu_items(game)
+            index = int(item_id)
+            item = items[index] if index < len(items) else None
+        else:
+            item = item_id
         if game.inventory.get(item, 0) > 0:
             game.push_screen("drop_qty")
             current_count = game.inventory[item]
@@ -1594,13 +1703,30 @@ async def handle_inventory_callback(
                 f"Введите свое число в чат чтобы выбросить или выберите вариант:"
             )
             kb = get_drop_quantity_kb(item)
+        else:
+            if callback:
+                await callback.answer("Этот предмет больше не находится в инвентаре.", show_alert=True)
+            game.story_state = None
+            game.story_flags.pop("drop_item_name", None)
+            game.nav_stack = list(INVENTORY_CANONICAL_STACKS["drop"])
+            text = "Выберите предмет для удаления:"
+            kb = get_drop_item_kb(game)
 
     elif data.startswith("drop_qty:"):
         parts = data.split(":", 2)
-        if len(parts) < 3:
-            return None, None
         qty_type = parts[1]
-        item = parts[2]
+        item = game.story_flags.get("drop_item_name")
+        if len(parts) == 3 and not item:
+            item = parts[2]
+        if not item or qty_type not in ("1", "all"):
+            if callback:
+                await callback.answer("Не удалось определить предмет для сброса.", show_alert=True)
+            game.story_state = None
+            game.story_flags.pop("drop_item_name", None)
+            game.nav_stack = list(INVENTORY_CANONICAL_STACKS["drop"])
+            text = "Выберите предмет для удаления:"
+            kb = get_drop_item_kb(game)
+            return text, kb
         game.story_state = None
         game.story_flags.pop("drop_item_name", None)
         current_count = game.inventory.get(item, 0)

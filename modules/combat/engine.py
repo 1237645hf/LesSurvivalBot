@@ -6,6 +6,7 @@ from typing import Tuple
 import random
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from modules.combat.enemies import get_enemy
+from modules.items import ITEMS
 from keyboards import get_wolf_battle_kb, get_boar_battle_kb, get_slime_battle_kb
 
 
@@ -20,7 +21,8 @@ def _calc_player_damage(game) -> int:
     elif weapon == "Окованный посох":
         base_dmg = random.randint(9, 11)
     elif weapon == "Крепкий посох":
-        base_dmg = random.randint(5, 7)
+        effects = ITEMS[weapon]["effects"]
+        base_dmg = random.randint(effects["damage_min"], effects["damage_max"])
     else:
         base_dmg = random.randint(4, 6)
 

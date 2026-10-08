@@ -315,7 +315,6 @@ def handle_l1_dome(data: str, game, uid: int):
                 return text, kb
 
             # Г. Ясная солнечная погода (clear): выбор вариантов
-            has_pet = game.is_story_flag_set("saved_kitten") or bool(game.equipment.get("pet"))
             has_staff = (
                 game.equipment.get("hand_right") in ("Крепкий посох", "Палка")
                 or game.equipment.get("hand_left") in ("Крепкий посох", "Палка")
@@ -330,8 +329,6 @@ def handle_l1_dome(data: str, game, uid: int):
             buttons = []
             if has_staff:
                 buttons.append([InlineKeyboardButton(text="🥢 Сбить посохом (1 ⚡)", callback_data="l1_dome_staff_solve")])
-            if has_pet:
-                buttons.append([InlineKeyboardButton(text="🐱 Отпустить котёнка погулять", callback_data="l1_dome_cat_solve")])
             buttons.append([InlineKeyboardButton(text="🪨 Бросать камни (1 ⚡)", callback_data="l1_dome_stone_throw")])
             buttons.append([InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")])
             kb = InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -460,7 +457,8 @@ def handle_l1_dome(data: str, game, uid: int):
             ])
 
     elif data == "l1_dome_loot":
-        if game.ap < 1:
+        already_completed = game.is_story_flag_set("l1_dome_completed")
+        if not already_completed and game.ap < 1:
             text = (
                 "Ранец лежит прямо среди густого валежника, колючего терновника и вывороченных корней дуба.\n\n"
                 "У тебя нет сил расчистить завал! Нужно отдохнуть и набраться сил."
@@ -470,13 +468,13 @@ def handle_l1_dome(data: str, game, uid: int):
             ])
             return text, kb
 
-        game.consume_action(1)
-        # Армейская фляга падает в инвентарь сухой: 0/20, без автоэкипировки
-        game.inventory["Армейская фляга"] = game.inventory.get("Армейская фляга", 0) + 1
-        game.army_flask_water = 0
-
-        game.adjust_narrative_karma("pragmatism", 3)
-        game.set_story_flag("l1_dome_completed", True)
+        if not already_completed:
+            game.consume_action(1)
+            # Армейская фляга падает в инвентарь сухой: 0/20, без автоэкипировки
+            game.inventory["Армейская фляга"] = game.inventory.get("Армейская фляга", 0) + 1
+            game.army_flask_water = 0
+            game.adjust_narrative_karma("pragmatism", 3)
+            game.set_story_flag("l1_dome_completed", True)
         game.story_state = None
         game.active_story_callback = None
         game.reset_nav()
@@ -738,9 +736,12 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
     elif data == "l1_7_inspect":
         game.reset_nav()
         game.current_location = "Ручей"
+        game.location = game.current_location
         game.story_state = None
         from story.location_stories import handle_location_2_ruchey
         text, kb = handle_location_2_ruchey("location_enter_2", game, uid)
+        if not game.is_story_flag_set("l2_prologue_completed"):
+            game.active_story_callback = "l2_1"
 
     elif data == "location_enter_1":
         game.reset_nav()
@@ -752,8 +753,11 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
     elif data == "location_enter_2":
         game.reset_nav()
         game.current_location = "Ручей"
+        game.location = game.current_location
         from story.location_stories import handle_location_2_ruchey
         text, kb = handle_location_2_ruchey("location_enter_2", game, uid)
+        if not game.is_story_flag_set("l2_prologue_completed"):
+            game.active_story_callback = "l2_1"
 
     if kb == get_main_kb(game) or data in ("l1_5_leave", "l1_7_finish", "location_enter_1", "back") or getattr(game, "hp", 100) <= 0:
         game.active_story_callback = None
@@ -762,6 +766,8 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
         if battle and getattr(game, "hp", 100) > 0 and battle.get("wolf_hp", 0) > 0:
             cur_enemy = battle.get("enemy_id", "old_wolf")
             game.active_story_callback = "boar_battle_screen" if cur_enemy == "ancient_boar" else "wolf_battle_screen"
+        elif data in ("l1_7_inspect", "location_enter_2") and not game.is_story_flag_set("l2_prologue_completed"):
+            game.active_story_callback = "l2_1"
         else:
             game.active_story_callback = data
 

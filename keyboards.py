@@ -4,7 +4,12 @@ from aiogram.types import (
     InlineKeyboardButton,
 )
 
-from modules.items import is_item_consumable
+from modules.items import (
+    get_drop_menu_items,
+    get_inspect_menu_items,
+    has_transferable_clean_water,
+    is_item_consumable,
+)
 
 
 def get_settings_kb(game=None):
@@ -68,11 +73,10 @@ def get_use_item_kb(game):
 
 def get_inspect_menu_kb(game):
     """Клавиатура подробного осмотра любого предмета в инвентаре (без 🔍 на каждой кнопке)."""
-    items_list = [(item, count) for item, count in game.inventory.items() if count > 0]
-    items_list.sort(key=lambda entry: (0 if is_item_consumable(entry[0]) else 1, -get_item_rank(entry[0]), entry[0]))
-
     keyboard = []
-    for item, count in items_list:
+    inventory_item_count = sum(1 for count in game.inventory.values() if count > 0)
+    for index, item in enumerate(get_inspect_menu_items(game)):
+        count = game.inventory.get(item, 0)
         item_clean = item.replace(" 🔥", "").replace("🔥", "").strip()
         if is_item_consumable(item_clean):
             marker = get_item_rank_marker(item_clean)
@@ -84,14 +88,14 @@ def get_inspect_menu_kb(game):
             qty_str = f" (20/20) ×{count}" if count > 1 else " (20/20)"
         else:
             qty_str = f" ×{count}" if count > 1 else ""
-        keyboard.append([
-            InlineKeyboardButton(text=f"{marker} {item}{qty_str}", callback_data=f"inspect_item_{item}")
-        ])
-    for charge in getattr(game, "clean_bottles_charges", []):
-        marker = get_item_emoji("Бутылка воды")
-        keyboard.append([
-            InlineKeyboardButton(text=f"{marker} Бутылка воды ({charge}/20)", callback_data="inspect_item_Бутылка воды")
-        ])
+        if item == "Бутылка воды" and index >= inventory_item_count:
+            charge_index = index - inventory_item_count
+            charge = game.clean_bottles_charges[charge_index]
+            qty_str = f" ({charge}/20)"
+        keyboard.append([InlineKeyboardButton(
+            text=f"{marker} {item}{qty_str}",
+            callback_data=f"inspect_item_{index}",
+        )])
     keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -106,6 +110,11 @@ def get_item_card_actions_kb(item_name: str, game=None):
         keyboard.append([InlineKeyboardButton(text="💧 Сделать глоток (+15 жажды)", callback_data="drink_bottle_single")])
     elif item_name == "Армейская фляга":
         keyboard.append([InlineKeyboardButton(text="🧴 Надеть на пояс (в слот фляги)", callback_data="equip_army_flask")])
+        if game and has_transferable_clean_water(game):
+            keyboard.append([InlineKeyboardButton(
+                text="💧 Перелить чистую воду",
+                callback_data="flask_transfer_clean_water",
+            )])
     elif item_name == "Бутылка дождевой воды":
         keyboard.append([InlineKeyboardButton(text="💧 Сделать глоток (риск)", callback_data="drink_rain_bottle")])
     elif item_name == "Факел":
@@ -172,18 +181,18 @@ def get_campfire_recipe_view_kb(recipe_id: str, max_count: int = 1):
 
 
 def get_drop_item_kb(game):
-    items = [(item, count) for item, count in game.inventory.items() if count > 0]
+    items = [(item, game.inventory[item]) for item in get_drop_menu_items(game)]
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"{item} ×{count}", callback_data=f"drop_item_{item}")]
-        for item, count in items
+        [InlineKeyboardButton(text=f"{item} ×{count}", callback_data=f"drop_item_{index}")]
+        for index, (item, count) in enumerate(items)
     ] + [[InlineKeyboardButton(text="↩️ Назад", callback_data="back")]])
 
 
 def get_drop_quantity_kb(item_name: str):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🗑 Выбросить 1", callback_data=f"drop_qty:1:{item_name}"),
-         InlineKeyboardButton(text="📦 Выбросить всё", callback_data=f"drop_qty:all:{item_name}")],
-        [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
+        [InlineKeyboardButton(text="🗑 Выбросить 1", callback_data="drop_qty:1"),
+         InlineKeyboardButton(text="📦 Выбросить всё", callback_data="drop_qty:all")],
+        [InlineKeyboardButton(text="↩️ Назад", callback_data="drop_qty_cancel")],
     ])
 
 def get_bottle_actions_kb():
@@ -225,6 +234,13 @@ def get_main_kb(game):
     row2.append(InlineKeyboardButton(text="😴 Спать", callback_data="action_4"))
 
     kb_rows = [row1, row2]
+    if has_transferable_clean_water(game):
+        kb_rows.append([
+            InlineKeyboardButton(
+                text="💧 Перелить чистую воду",
+                callback_data="flask_transfer_clean_water",
+            )
+        ])
     if is_stove or "Лощина" in str(getattr(game, "current_location", "")):
         kb_rows.append([
             InlineKeyboardButton(text="📜 Каменная плита", callback_data="tablet_notes_view")
@@ -291,7 +307,17 @@ def get_campfire_kb(game=None):
             or any(w > 0 for w in getattr(game, "rain_bottles", []))
         )
     )
-    flask_w = int(getattr(game, "flask_water", 0) or 0) if game else 0
+    if game and game.equipment.get("flask") == "Армейская фляга":
+        flask_w = int(getattr(game, "flask_water", 0) or 0)
+    else:
+        flask_w = int(getattr(game, "army_flask_water", 0) or 0) if game else 0
+    if game and has_transferable_clean_water(game):
+        kb_rows.append([
+            InlineKeyboardButton(
+                text="💧 Перелить чистую воду",
+                callback_data="flask_transfer_clean_water",
+            )
+        ])
     if has_flask and has_rain_water and flask_w < 20:
         kb_rows.append([
             InlineKeyboardButton(text=f"🔥 Вскипятить воду ({flask_w}/20)", callback_data="campfire_boil_water")
@@ -684,4 +710,3 @@ def get_tablet_edit_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="↩️ Отмена", callback_data="tablet_notes_view")],
     ])
-

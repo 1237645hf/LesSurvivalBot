@@ -76,7 +76,6 @@ from modules.items import (
     get_item_rank_marker,
     get_item_display_name,
     ITEM_DESCRIPTIONS,
-    get_inspectable_items,
     get_usable_items,
     use_consumable,
     is_inventory_callback,
@@ -257,8 +256,14 @@ from services.database import (
 def get_callback_answer(callback):
     data = callback.data or ""
     game = games.get(callback.from_user.id)
-    if data == "inv_inspect" and (not game or not get_inspectable_items(game)):
-        return "У вас нет ключевых предметов для подробного осмотра", True
+    if data == "inv_inspect" and (
+        not game
+        or (
+            not any(count > 0 for count in game.inventory.values())
+            and not getattr(game, "clean_bottles_charges", [])
+        )
+    ):
+        return "Инвентарь пуст", True
     if data in ("inv_use", "inv_drop") and (
         not game or not any(count > 0 for count in game.inventory.values())
     ):
@@ -1187,4 +1192,3 @@ async def run_bot():
 
 if __name__ == "__main__":
     asyncio.run(run_bot())
-

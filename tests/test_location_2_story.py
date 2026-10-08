@@ -20,7 +20,7 @@ from story.location_stories import (
     get_l2_thorn_damage,
     L2_PUZZLE_BANK,
 )
-from crafts import can_craft, do_craft, handle_craft
+from crafts import can_craft, do_craft, get_craft_menu_kb, handle_craft
 from keyboards import get_item_card_actions_kb, get_locations_kb
 
 
@@ -34,6 +34,7 @@ def test_slate_craft_recipes_and_flexible_ingredients():
         "Ветка": 10,
     }
     game.unlocked_crafts = ["Сланцевая маска", "Сланцевый панцирь", "Сланцевые поножи", "Сланцевые ботинки"]
+    game.set_story_flag("l2_thorns_seen")
 
     # Крафт маски: 2 пластины, 2 коры, 2 мха
     ok_mask, _ = do_craft(game, "Сланцевая маска")
@@ -60,6 +61,34 @@ def test_slate_craft_recipes_and_flexible_ingredients():
     assert ok_body is True
     assert game.inventory.get("Сланцевый панцирь") == 1
     assert game.inventory["Сланцевая пластина"] == 2
+
+
+def test_slate_armor_recipes_unlock_only_after_thorns_encounter():
+    """Сланцевая броня закрыта до встречи с терновником и открывается на её экране."""
+    game = GameState()
+    game.inventory = {"Сланцевая пластина": 20, "Кусок коры": 20, "Мох": 20, "Ветка": 20}
+    recipes = ("Сланцевая маска", "Сланцевый панцирь", "Сланцевые поножи", "Сланцевые ботинки")
+    game.unlocked_crafts.extend(recipes)
+
+    assert all(not can_craft(game, recipe) for recipe in recipes)
+    assert all(not do_craft(game, recipe)[0] for recipe in recipes)
+    locked_callbacks = [
+        button.callback_data
+        for row in get_craft_menu_kb(game).inline_keyboard
+        for button in row
+    ]
+    assert all(f"craft_{recipe}" not in locked_callbacks for recipe in recipes)
+
+    text, _ = handle_location_2_ruchey("l2_thorns_approach", game, 101)
+    assert "терновника" in text.lower()
+    assert game.is_story_flag_set("l2_thorns_seen")
+    assert all(can_craft(game, recipe) for recipe in recipes)
+    unlocked_callbacks = [
+        button.callback_data
+        for row in get_craft_menu_kb(game).inline_keyboard
+        for button in row
+    ]
+    assert all(f"craft_{recipe}" in unlocked_callbacks for recipe in recipes)
 
 
 def test_slate_armor_equipping_and_character_card():
@@ -333,4 +362,3 @@ def test_thorns_break_idempotent_on_resume():
     assert game.equipment.get("boots") == "Отремонтированные ботинки"
     assert "тропинка через колючки свободна" in text2.lower()
     assert kb2.inline_keyboard[0][0].callback_data == "l2_dam_entrance"
-

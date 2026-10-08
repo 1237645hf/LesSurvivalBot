@@ -101,6 +101,7 @@ class GameState:
     campfire_durability: int = 0
     campfire_max_durability: int = 10
     campfires: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    cold_debuff_active: bool = False
 
     # Состояние Фонаря
     lantern_durability: int = 20
@@ -259,7 +260,10 @@ class GameState:
         # Добавляем отдельный бонус от поля equipment_ap_bonus (если есть)
         equipment_bonus += int(getattr(self, "equipment_ap_bonus", 0))
 
-        return base_ap + equipment_bonus
+        total_ap = base_ap + equipment_bonus
+        if getattr(self, "cold_debuff_active", False):
+            total_ap = max(1, total_ap - 1)
+        return total_ap
 
     def consume_action(self, action_type: str = "default", base_hunger: int = 2, base_thirst: int = 1, ap_cost: int = 1):
         """Списание AP и ресурсов с возвратом ФАКТИЧЕСКИХ дельт.
@@ -559,8 +563,8 @@ class GameState:
         1. Тратим остаток AP/ресурсов за ночь.
         2. Костёр −3 прочности (возможно тухнет).
         3. Факел в руке сгорает → исчезает из руки и инвентаря.
-        4. reset_daily_ap() (факел уже сгорел → бонуса нет).
-        5. Если костёр НЕ горит утром → −1 AP (ровно один раз).
+        4. Если костёр НЕ горит утром, сохраняем дебафф холода.
+        5. reset_daily_ap() (факел уже сгорел → бонуса нет; холод ограничивает AP).
         6. day += 1 — день наступил.
         """
         # 1. Ночные расходы ресурсов
@@ -592,20 +596,20 @@ class GameState:
                 del self.inventory["Факел"]
             self.add_log("💨 Твой факел догорел и угас за ночь.", "sleep")
 
-        # 4. AP на новый день (факел уже сгорел — бонуса +1 AP нет)
+        # 4. Холод остаётся активным, пока ночь не прошла у огня.
+        self.cold_debuff_active = not self.campfire_active
+
+        # 5. AP на новый день (факел уже сгорел — бонуса +1 AP нет)
         self.reset_daily_ap()
 
-        # 5. Без костра утром — штраф −1 AP ровно один раз (не ниже 1)
-        cold_penalty_applied = False
-        if not self.campfire_active:
-            self.ap = max(1, int(self.ap) - 1)
-            cold_penalty_applied = True
+        # 6. Без костра утром сохраняется штраф холода к дневному лимиту.
+        if self.cold_debuff_active:
             self.add_log("🥶 За ночь ты промёрз, и поэтому меньше сил ⚡️−1", "sleep")
 
-        # 6. Новый день — счётчик растёт
+        # 7. Новый день — счётчик растёт
         self.day += 1
 
-        # 7. Смена погоды (ясно/пасмурно/дождь/гроза)
+        # 8. Смена погоды (ясно/пасмурно/дождь/гроза)
         old_weather = self.weather
         self.weather = self.roll_weather_for_new_day()
         weather_icons = {"clear": "☀️", "cloudy": "☁️", "rain": "🌧️", "storm": "⛈️"}
@@ -614,7 +618,7 @@ class GameState:
         w_name = weather_names.get(self.weather, self.weather)
         self.add_log(f"{w_icon} Утро дня {self.day}. Погода: {w_name}.", "sleep")
 
-        # 8. Уничтожение приманки для слизней за ночь
+        # 9. Уничтожение приманки для слизней за ночь
         if getattr(self, "slug_bait_active", False):
             self.slug_bait_active = False
             self.add_log("За ночь лесные слизни без остатка сожрали приманку в Яру Слизней.", "sleep")
@@ -718,6 +722,7 @@ class GameState:
             "campfire_active": bool(getattr(self, "campfire_active", False)),
             "campfire_durability": int(getattr(self, "campfire_durability", 0)),
             "campfire_max_durability": int(getattr(self, "campfire_max_durability", 10)),
+            "cold_debuff_active": bool(getattr(self, "cold_debuff_active", False)),
             "campfires": dict(getattr(self, "campfires", {})),
             "lantern_durability": int(getattr(self, "lantern_durability", 20)),
             "lantern_max_durability": int(getattr(self, "lantern_max_durability", 20)),
@@ -835,8 +840,12 @@ class GameState:
         game.lantern_max_durability = int(data.get("lantern_max_durability", getattr(game, "lantern_max_durability", 20)) or 20)
         game.pants_pocket = data.get("pants_pocket", getattr(game, "pants_pocket", None))
         game.slug_bait_active = bool(data.get("slug_bait_active", getattr(game, "slug_bait_active", False)))
-        game.flask_water = int(getattr(game, "flask_water", 10) or 10)
+        game.flask_water = max(
+            0,
+            min(20, int(data.get("flask_water", getattr(game, "flask_water", 10)) or 0)),
+        )
         game.army_flask_water = int(data.get("army_flask_water", getattr(game, "army_flask_water", 0)) or 0)
+        game.cold_debuff_active = bool(data.get("cold_debuff_active", False))
         game.clean_bottles_charges = [int(x) for x in data.get("clean_bottles_charges", getattr(game, "clean_bottles_charges", []))]
         game.rain_bottles = [int(x) for x in data.get("rain_bottles", [])]
         game.campfires = dict(data.get("campfires", getattr(game, "campfires", {})))
@@ -1564,7 +1573,6 @@ def handle_back_navigation(game: Any, uid: int) -> Tuple[Optional[str], Optional
 
 # Алиас для альтернативного именования
 resolve_back_screen = handle_back_navigation
-
 
 
 
