@@ -426,7 +426,7 @@ def test_stage_20_l1_7_finish_and_inspect_open_stream():
     # Меню локаций теперь содержит только Стартовый лес и Ручей (логова нет)
     loc_kb = get_locations_kb(game)
     cb_datas = [btn.callback_data for row in loc_kb.inline_keyboard for btn in row]
-    assert "location_enter_1" in cb_datas
+    assert ("location_enter_1" in cb_datas or "already_here" in cb_datas)
     assert "location_enter_2" in cb_datas
     assert "wolf_lair_enter" not in cb_datas
 

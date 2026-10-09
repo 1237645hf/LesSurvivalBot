@@ -422,9 +422,25 @@ def get_locations_kb(game):
                 return True
         return False
 
+    is_l5_defeated = bool(
+        hasattr(game, "is_story_flag_set") and (
+            game.is_story_flag_set("boss_trash_slime_defeated")
+            or game.is_story_flag_set("trash_slime_defeated")
+            or game.is_story_flag_set("l5_ancient_defeated")
+        )
+    )
+
+    cur_loc = (str(getattr(game, "current_location", "") or "") or str(getattr(game, "location", "") or "")).lower()
+
+    loc_idx = 1
+
     # 1. Стартовый лес
     if is_loc_unlocked("лес", "старт") or not unlocked:
-        keyboard.append([InlineKeyboardButton(text="1. 🌲 Стартовый лес", callback_data="location_enter_1")])
+        is_cur = any(kw in cur_loc for kw in ("лес", "старт")) or not cur_loc
+        pin = " 📍" if is_cur else ""
+        cb = "already_here" if is_cur else "location_enter_1"
+        keyboard.append([InlineKeyboardButton(text=f"{loc_idx}. 🌲 Стартовый лес{pin}", callback_data=cb)])
+        loc_idx += 1
         # • Забытый купол (пока активен лут)
         if game.is_story_flag_set("l1_dome_discovered") and not game.is_story_flag_set("l1_dome_completed"):
             keyboard.append([InlineKeyboardButton(text="• 🪂 Забытый купол", callback_data="l1_dome_enter")])
@@ -438,22 +454,38 @@ def get_locations_kb(game):
 
     # 2. Ручей со змеями
     if is_loc_unlocked("ручей"):
-        keyboard.append([InlineKeyboardButton(text="2. 🏞️ Ручей со змеями", callback_data="location_enter_2")])
+        is_cur = "ручей" in cur_loc
+        pin = " 📍" if is_cur else ""
+        cb = "already_here" if is_cur else "location_enter_2"
+        keyboard.append([InlineKeyboardButton(text=f"{loc_idx}. 🏞️ Ручей со змеями{pin}", callback_data=cb)])
+        loc_idx += 1
 
     # 3. Скромная лощина
     if is_loc_unlocked("лощин"):
-        keyboard.append([InlineKeyboardButton(text="3. ⛰️ Скромная лощина", callback_data="location_enter_3")])
+        is_cur = "лощин" in cur_loc
+        pin = " 📍" if is_cur else ""
+        cb = "already_here" if is_cur else "location_enter_3"
+        keyboard.append([InlineKeyboardButton(text=f"{loc_idx}. ⛰️ Скромная лощина{pin}", callback_data=cb)])
+        loc_idx += 1
         # • Босс: Солонец (Секач)
         if is_loc_unlocked("секач", "солонец") and not game.is_story_flag_set("l3_ridge_completed"):
             keyboard.append([InlineKeyboardButton(text="• 🐗 Солонец (Секач)", callback_data="location_enter_boar")])
 
     # 4. Просека охотников
     if is_loc_unlocked("просек", "охотник"):
-        keyboard.append([InlineKeyboardButton(text="4. 🏹 Просека охотников", callback_data="location_enter_4")])
+        is_cur = any(kw in cur_loc for kw in ("просек", "охотник"))
+        pin = " 📍" if is_cur else ""
+        cb = "already_here" if is_cur else "location_enter_4"
+        keyboard.append([InlineKeyboardButton(text=f"{loc_idx}. 🏹 Просека охотников{pin}", callback_data=cb)])
+        loc_idx += 1
 
-    # 5. Яр слизней
-    if is_loc_unlocked("яр", "слизн"):
-        keyboard.append([InlineKeyboardButton(text="5. 🐌 Яр слизней", callback_data="location_enter_5")])
+    # 5. Яр слизней (полностью скрывается после победы над Мусорным слаймом)
+    if not is_l5_defeated and is_loc_unlocked("яр", "слизн"):
+        is_cur = any(kw in cur_loc for kw in ("яр", "слизн"))
+        pin = " 📍" if is_cur else ""
+        cb = "already_here" if is_cur else "location_enter_5"
+        keyboard.append([InlineKeyboardButton(text=f"{loc_idx}. 🐌 Яр слизней{pin}", callback_data=cb)])
+        loc_idx += 1
         # • Подлокации Яра Слизней
         if game.is_story_flag_set("l5_arena_unlocked") and not game.is_story_flag_set("l5_boss_defeated"):
             keyboard.append([InlineKeyboardButton(text="• ☣️ Заводь Исполина", callback_data="l5_arena_start")])
@@ -462,11 +494,19 @@ def get_locations_kb(game):
 
     # 6. Мохнатая пещера
     if is_loc_unlocked("пещер", "мохнат"):
-        keyboard.append([InlineKeyboardButton(text="6. 🦇 Мохнатая пещера", callback_data="location_enter_6")])
+        is_cur = any(kw in cur_loc for kw in ("пещер", "мохнат"))
+        pin = " 📍" if is_cur else ""
+        cb = "already_here" if is_cur else "location_enter_6"
+        keyboard.append([InlineKeyboardButton(text=f"{loc_idx}. 🦇 Мохнатая пещера{pin}", callback_data=cb)])
+        loc_idx += 1
 
     # 7. Святилище
     if is_loc_unlocked("святилищ"):
-        keyboard.append([InlineKeyboardButton(text="7. 🏛️ Святилище", callback_data="location_enter_7")])
+        is_cur = "святилищ" in cur_loc
+        pin = " 📍" if is_cur else ""
+        cb = "already_here" if is_cur else "location_enter_7"
+        keyboard.append([InlineKeyboardButton(text=f"{loc_idx}. 🏛️ Святилище{pin}", callback_data=cb)])
+        loc_idx += 1
 
     keyboard.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)

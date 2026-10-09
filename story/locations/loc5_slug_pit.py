@@ -654,6 +654,1066 @@ def _render_slug_pack_battle(game):
     return text, InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+# =============================================================================
+# ГИБРИДНЫЙ БОЙ: Мусорный слайм (2000 HP, Вектор 3)
+# =============================================================================
+
+LARGE_TRASH_POOL = ["олений рог", "ствол бревна", "обломок балки", "ржавый капкан"]
+SMALL_TRASH_POOL = ["мелкая кость", "щепка", "сучок", "ржавая петля"]
+
+
+def _hybrid_heal_player(game) -> str:
+    """Безопасное лечение во время фаз оглушения/шока."""
+    pocket_item = getattr(game, "pants_pocket", None)
+    if pocket_item:
+        from modules.items import ITEMS
+        if pocket_item == "Янтарное зелье":
+            heal_amt = min(game.max_hp - game.hp, 70)
+            game.hp += heal_amt
+            game.inventory["Пузырёк"] = game.inventory.get("Пузырёк", 0) + 1
+            msg = f"🧪 Ты выпиваешь Янтарное зелье из кармана! (+{heal_amt} HP). Пустой пузырёк убран в рюкзак."
+        else:
+            eff = ITEMS.get(pocket_item, {}).get("effects", {})
+            hp_gain = eff.get("hp", 20)
+            heal_amt = min(game.max_hp - game.hp, hp_gain)
+            game.hp += heal_amt
+            msg = f"🍽️ Ты съедаешь {pocket_item} из кармана! (+{heal_amt} HP)."
+        game.pants_pocket = None
+        return msg
+
+    if game.inventory.get("Янтарное зелье", 0) > 0:
+        heal_amt = min(game.max_hp - game.hp, 70)
+        game.hp += heal_amt
+        game.inventory["Янтарное зелье"] -= 1
+        if game.inventory["Янтарное зелье"] <= 0:
+            del game.inventory["Янтарное зелье"]
+        game.inventory["Пузырёк"] = game.inventory.get("Пузырёк", 0) + 1
+        return f"🧪 Ты достаёшь и выпиваешь Янтарное зелье! (+{heal_amt} HP). Пустой пузырёк убран в рюкзак."
+
+    for berry in BERRY_NAMES:
+        if game.inventory.get(berry, 0) > 0:
+            game.inventory[berry] -= 1
+            if game.inventory[berry] <= 0:
+                del game.inventory[berry]
+            heal_amt = min(game.max_hp - game.hp, 15)
+            game.hp += heal_amt
+            return f"🫐 Ты наскоро жуёшь {berry}! (+{heal_amt} HP)."
+
+    heal_amt = min(game.max_hp - game.hp, 25)
+    game.hp += heal_amt
+    return f"🩹 Ты перевязываешь кровоточащие ссадины и переводишь дыхание! (+{heal_amt} HP)."
+
+
+def _hybrid_player_death(game):
+    """Штатный обработчик гибели персонажа на L5 со сбросом боевой сессии слайма."""
+    game.hp = 0
+    game.wolf_battle = None
+    game.story_state = None
+    game.active_story_callback = None
+    return get_death_text(game, "Тварь погребла тебя под тоннами едкой жижи и костяного мусора.", "Яр Слизней"), get_death_kb()
+
+
+def _render_hybrid_win(game):
+    """Фаза 8: Финал и победа над Мусорным слаймом."""
+    # Удалить сланцевое копьё строго из hand_right (hand_left ни при каких условиях не трогать)
+    if game.equipment.get("hand_right") in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
+        game.equipment["hand_right"] = None
+    if game.equipment.get("weapon") in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
+        game.equipment["weapon"] = None
+
+    for s_name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
+        game.inventory.pop(s_name, None)
+
+    # Экипировать в активный слот оружия правой руки: Крепкий посох
+    game.equipment["hand_right"] = "Крепкий посох"
+
+    # В инвентаре не дублируем: если посоха ещё нет в инвентаре, фиксируем ровно 1 шт.
+    if game.inventory.get("Крепкий посох", 0) < 1:
+        game.inventory["Крепкий посох"] = 1
+
+    # Выставить флаги победы
+    game.set_story_flag("trash_slime_defeated", True)
+    game.set_story_flag("boss_trash_slime_defeated", True)
+    game.set_story_flag("l5_ancient_defeated", True)
+    game.set_story_flag("l6_unlocked", True)
+    game.kills_count = getattr(game, "kills_count", 0) + 1
+
+    unlocked = getattr(game, "unlocked_locations", None)
+    if unlocked is not None:
+        game.unlocked_locations = [
+            loc for loc in unlocked
+            if not any(kw in str(loc).lower() for kw in ("яр", "слизн", "заводь", "логово древнего"))
+        ]
+        if "Мохнатая пещера" not in game.unlocked_locations and "Мохнатая Пещера" not in game.unlocked_locations:
+            game.unlocked_locations.append("Мохнатая пещера")
+
+    game.wolf_battle = None
+    game.story_state = "l5_hybrid_win"
+
+    text = (
+        "Решающий удар раскалывает янтарное ядро пополам!\n\n"
+        "С каждым ударом сланцевый наконечник крошился всё сильнее, и удивительно, как он вообще дожил до конца схватки. "
+        "От разрушительной силы кислоты повреждённый наконечник окончательно отпадает от древка.\n"
+        "В руках остаётся лишь гладкий Крепкий посох.\n\n"
+        "Слайм теряет форму и опадает на дно котловины огромной светящейся лужей кислотной жижи, "
+        "подсвечиваемой изнутри осколками разбитого ядра.\n\n"
+        "Открыта новая локация: Мохнатая пещера."
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="l5_scout_leave_to_camp")]
+    ])
+    game.active_story_callback = "l5_hybrid_win"
+    return text, kb
+
+
+def _transition_to_phase_5(game):
+    """Фаза 5: Поломка крюка при HP <= 400 перед броском."""
+    battle = game.wolf_battle
+    battle["phase"] = "5"
+    battle["last_log"] = ""
+
+    # Удалить костяной крюк из инвентаря и слотов экипировки
+    game.inventory.pop("Костяной крюк на кожаной верёвке", None)
+    for slot, item in list(game.equipment.items()):
+        if item == "Костяной крюк на кожаной верёвке":
+            game.equipment[slot] = None
+
+    return _render_hybrid_trash_battle(game)
+
+
+def _render_hybrid_trap_intro(game):
+    """Вводный тактический экран дебюта ловушки перед стартом Фазы 1."""
+    game.story_state = "l5_hybrid_intro_trap"
+    text = (
+        "Ты спускаешься в чашу яра, прижимаясь к знакомым расщелинам. "
+        "Тварь медленно ворочается на дне, ещё не чуя опасности. "
+        "Всё готово: ты подводишь её точно под заранее подтесанный сланцевый уступ, где вбиты распорные клинья. "
+        "Пора пустить в ход знание местности!"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💥 Обрушить подготовленный уступ", callback_data="l5_hybrid_trigger_trap")],
+        [InlineKeyboardButton(text="🏃 Отступить в лагерь", callback_data="l5_scout_leave_to_camp")],
+    ])
+    game.active_story_callback = "l5_scout_final_attack_balanced"
+    return text, kb
+
+
+def start_hybrid_trash_battle(game):
+    """Инициализация гибридного боя с Мусорным слаймом (2000 HP) после обвала уступа."""
+    start_damage = random.randint(350, 400)
+    current_hp = 2000 - start_damage
+
+    first_log = (
+        f"Грохот лавины! Подрубленный сланцевый уступ срывается вниз и впечатывает верхний край туши в глину! "
+        f"[Слайм теряет {start_damage} HP!] "
+        f"Удар сорвал внешний панцирь — из разорванной жижи обнажились узлы мусора для зацепа!"
+    )
+
+    game.wolf_battle = {
+        "enemy_id": "trash_slime_hybrid",
+        "name": "Мусорный слайм",
+        "max_hp": 2000,
+        "wolf_hp": current_hp,
+        "start_damage": start_damage,
+        "phase": "1",
+        "stun_turns": 0,
+        "round": 1,
+        "last_log": first_log,
+        "large_trash": random.choice(LARGE_TRASH_POOL),
+        "small_trash": random.choice(SMALL_TRASH_POOL),
+        "attack_side": random.choice(["left", "right"]),
+    }
+    game.story_state = "l5_hybrid_battle"
+    game.active_story_callback = "l5_scout_final_attack_balanced"
+    return _render_hybrid_trash_battle(game)
+
+
+def _render_hybrid_trash_battle(game):
+    """Отрисовка текущего экрана гибридного боя."""
+    if getattr(game, "hp", 100) <= 0:
+        return _hybrid_player_death(game)
+
+    battle = getattr(game, "wolf_battle", None)
+    if not battle or battle.get("enemy_id") != "trash_slime_hybrid":
+        return start_hybrid_trash_battle(game)
+
+    wolf_hp = battle.get("wolf_hp", 2000)
+    phase = str(battle.get("phase", "1"))
+
+    # Проверка победы
+    if wolf_hp <= 0:
+        return _render_hybrid_win(game)
+
+    # Проверка перехода на фазу 5 при выборе точки зацепа (Фаза 1)
+    if phase == "1" and wolf_hp <= 400:
+        return _transition_to_phase_5(game)
+
+    max_hp = getattr(game, "max_hp", 100)
+    dodge_chance = int(getattr(game, "dodge_chance", 0) or 0)
+    header = (
+        f"⚔️ Позиционный бой: Мусорный слайм\n"
+        f"───────────────────\n"
+        f"❤️ Твоё здоровье: {game.hp}/{max_hp} HP | 🏃 Уворот: {dodge_chance}%\n"
+        f"🪨 Мусорный слайм: {wolf_hp}/2000 HP\n"
+        f"───────────────────\n\n"
+    )
+
+    last_log = battle.get("last_log", "")
+
+    if phase == "1":
+        large_item = battle.get("large_trash") or random.choice(LARGE_TRASH_POOL)
+        small_item = battle.get("small_trash") or random.choice(SMALL_TRASH_POOL)
+        battle["large_trash"] = large_item
+        battle["small_trash"] = small_item
+
+        obs = f"Слайм колышется! Из жижи торчит: 🪨 Крупный мусор ({large_item}) и 🪵 Мелкий мусор ({small_item})."
+        log_text = f"{last_log}\n\n{obs}" if last_log else obs
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🪝 Бросить крюк в Крупный мусор", callback_data="l5_hybrid_hook_large")],
+            [InlineKeyboardButton(text="🪝 Бросить крюк в Мелкий мусор", callback_data="l5_hybrid_hook_small")],
+            [InlineKeyboardButton(text="🧗 Спрятаться за каменный монолит", callback_data="l5_hybrid_hide_rock")],
+            [InlineKeyboardButton(text="🏃 Сбежать в лагерь", callback_data="l5_ancient_escape")],
+        ])
+        game.story_state = "l5_hybrid_phase_1"
+        game.active_story_callback = "l5_hybrid_phase_1"
+        return header + log_text, kb
+
+    elif phase == "2A":
+        obs = "Крюк намертво сел в крупный узел! Кожаная верёвка натянута до предела!"
+        log_text = f"{last_log}\n\n{obs}" if last_log else obs
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💪 Выдрать узел изо всех сил", callback_data="l5_hybrid_pull_large")],
+            [InlineKeyboardButton(text="🏃 Сбежать в лагерь", callback_data="l5_ancient_escape")],
+        ])
+        game.story_state = "l5_hybrid_phase_2a"
+        game.active_story_callback = "l5_hybrid_phase_2a"
+        return header + log_text, kb
+
+    elif phase == "3A":
+        kb_rows = [
+            [InlineKeyboardButton(text="🗡️ Выпад копьём в дыру", callback_data="l5_hybrid_spear_hole")],
+        ]
+        if game.inventory.get("Светящийся гриб", 0) > 0:
+            kb_rows.append([
+                InlineKeyboardButton(text="🍄 Бросить гриб в дыру", callback_data="l5_hybrid_shroom_hole")
+            ])
+        kb_rows.append([
+            InlineKeyboardButton(text="🧪 Лечение", callback_data="l5_hybrid_heal")
+        ])
+        kb_rows.append([
+            InlineKeyboardButton(text="🏃 Сбежать в лагерь", callback_data="l5_ancient_escape")
+        ])
+        game.story_state = "l5_hybrid_phase_3a"
+        game.active_story_callback = "l5_hybrid_phase_3a"
+        return header + last_log, InlineKeyboardMarkup(inline_keyboard=kb_rows)
+
+    elif phase == "3A_shroom":
+        stun_turns = battle.get("stun_turns", 1)
+        obs = (
+            f"Гриб разорван в дыре! Бурная реакция разъедает слизь, ядро оголяется ещё сильнее!\n"
+            f"Осталось времени до стяжки: {stun_turns} хода!"
+        )
+        log_text = f"{last_log}\n\n{obs}" if last_log else obs
+        kb_rows = [
+            [InlineKeyboardButton(text="🗡️ Всадить копьё в оголённое ядро", callback_data="l5_hybrid_crit_core")],
+            [InlineKeyboardButton(text="🧪 Лечение", callback_data="l5_hybrid_heal")],
+            [InlineKeyboardButton(text="🏃 Сбежать в лагерь", callback_data="l5_ancient_escape")],
+        ]
+        game.story_state = "l5_hybrid_phase_3a_shroom"
+        game.active_story_callback = "l5_hybrid_phase_3a_shroom"
+        return header + log_text, InlineKeyboardMarkup(inline_keyboard=kb_rows)
+
+    elif phase == "2B":
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🧗 Уйти перекатом за каменный монолит", callback_data="l5_hybrid_roll_rock")],
+            [InlineKeyboardButton(text="🛡️ Сгруппироваться на глине", callback_data="l5_hybrid_brace")],
+            [InlineKeyboardButton(text="🏃 Сбежать в лагерь", callback_data="l5_ancient_escape")],
+        ])
+        game.story_state = "l5_hybrid_phase_2b"
+        game.active_story_callback = "l5_hybrid_phase_2b"
+        return header + last_log, kb
+
+    elif phase == "5":
+        obs = (
+            "Ты замахиваешься крюком, но разъеденная кислотой верёвка и истончённая кость не выдерживают. "
+            "С сухим треском крюк разлетается в щепки! Странно, что он вообще не сломался раньше.\n\n"
+            "Тварь осела до двух метров — теперь она ростом с тебя, но стала бешено подвижной. "
+            "В тонкой слизи мелькают остатки мусора и янтарное ядро. Крюк уничтожен!"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗡️ Встать в боевую стойку со сланцевым копьём", callback_data="l5_hybrid_core_stance")],
+            [InlineKeyboardButton(text="🏃 Сбежать в лагерь", callback_data="l5_ancient_escape")],
+        ])
+        game.story_state = "l5_hybrid_phase_5"
+        game.active_story_callback = "l5_hybrid_phase_5"
+        return header + obs, kb
+
+    elif phase == "6":
+        attack_side = battle.get("attack_side", "left")
+        side_text = "СЛЕВА" if attack_side == "left" else "СПРАВА"
+        obs = f"Слайм хлещет мусорным выростом [{side_text}]! Ядро открылось с противоположной стороны!"
+        log_text = f"{last_log}\n\n{obs}" if last_log else obs
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗡️ Выпад в открытое ядро", callback_data="l5_hybrid_hit_core")],
+            [InlineKeyboardButton(text="🗡️ Выпад в мусорный вырост", callback_data="l5_hybrid_hit_trash")],
+            [InlineKeyboardButton(text="🧗 Спрятаться за каменным монолитом", callback_data="l5_hybrid_core_hide")],
+            [InlineKeyboardButton(text="🔙 Отступить в сухую промоину", callback_data="l5_hybrid_core_back")],
+            [InlineKeyboardButton(text="🏃 Сбежать в лагерь", callback_data="l5_ancient_escape")],
+        ])
+        game.story_state = "l5_hybrid_phase_6"
+        game.active_story_callback = "l5_hybrid_phase_6"
+        return header + log_text, kb
+
+    elif phase == "7":
+        obs = "Ядро вибрирует от трещины! Слайм замер в конвульсиях и не может атаковать!"
+        log_text = f"{last_log}\n\n{obs}" if last_log else obs
+
+        kb_rows = [
+            [InlineKeyboardButton(text="🗡️ Повторный выпад в ядро", callback_data="l5_hybrid_core_repeat")],
+        ]
+        if game.inventory.get("Светящийся гриб", 0) > 0:
+            kb_rows.append([
+                InlineKeyboardButton(text="🍄 Бросить гриб на ядро", callback_data="l5_hybrid_core_shroom")
+            ])
+        kb_rows.append([
+            InlineKeyboardButton(text="🧪 Лечение", callback_data="l5_hybrid_core_heal")
+        ])
+        kb_rows.append([
+            InlineKeyboardButton(text="🏃 Сбежать в лагерь", callback_data="l5_ancient_escape")
+        ])
+        game.story_state = "l5_hybrid_phase_7"
+        game.active_story_callback = "l5_hybrid_phase_7"
+        return header + log_text, InlineKeyboardMarkup(inline_keyboard=kb_rows)
+
+    return header + last_log, InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🏃 Сбежать в лагерь", callback_data="l5_ancient_escape")]
+    ])
+
+
+def handle_hybrid_trash_action(data: str, game):
+    """Обработка боевых действий игрока в гибридном бою."""
+    if data == "l5_hybrid_trigger_trap":
+        return start_hybrid_trash_battle(game)
+
+    battle = getattr(game, "wolf_battle", None)
+    if not battle or battle.get("enemy_id") != "trash_slime_hybrid":
+        return _render_hybrid_trash_battle(game)
+
+    # 1. Фаза 1
+    if data == "l5_hybrid_hide_rock":
+        battle["last_log"] = "Ты укрываешься за каменным монолитом. Слайм с глухим чавканьем бьёт в породу и промахивается (0 урона)!"
+        cur_large = battle.get("large_trash")
+        cur_small = battle.get("small_trash")
+        battle["large_trash"] = random.choice([x for x in LARGE_TRASH_POOL if x != cur_large] or LARGE_TRASH_POOL)
+        battle["small_trash"] = random.choice([x for x in SMALL_TRASH_POOL if x != cur_small] or SMALL_TRASH_POOL)
+        battle["phase"] = "1"
+        return _render_hybrid_trash_battle(game)
+
+    elif data == "l5_hybrid_hook_large":
+        battle["phase"] = "2A"
+        battle["last_log"] = ""
+        return _render_hybrid_trash_battle(game)
+
+    elif data == "l5_hybrid_hook_small":
+        dmg = random.randint(10, 15)
+        battle["wolf_hp"] = max(0, battle["wolf_hp"] - dmg)
+        battle["phase"] = "2B"
+        battle["last_log"] = (
+            f"Ты выдёргиваешь мелкий мусор. [Слайм: -{dmg} HP].\n"
+            f"Твари даже не требуется время на затягивание раны! Слайм тут же кренится для навала!"
+        )
+        return _render_hybrid_trash_battle(game)
+
+    # 2. Фаза 2A
+    elif data == "l5_hybrid_pull_large":
+        dmg = random.randint(50, 60)
+        self_dmg = random.randint(1, 5)
+        battle["wolf_hp"] = max(0, battle["wolf_hp"] - dmg)
+        game.hp -= self_dmg
+        if game.hp <= 0:
+            return _hybrid_player_death(game)
+
+        if battle["wolf_hp"] <= 0:
+            return _render_hybrid_win(game)
+
+        stun_turns = random.randint(2, 3)
+        battle["stun_turns"] = stun_turns
+        battle["phase"] = "3A"
+        battle["last_log"] = (
+            f"Чавкающий хлюп! Крупный мусор выдран наружу! [Слайм: -{dmg} HP].\n"
+            f"От вырванного остова летят едкие капли! [Тебе: -{self_dmg} HP].\n"
+            f"Слайм судорожно пытается стянуть мусор и закрыть ядро. Времени: {stun_turns} хода!"
+        )
+        return _render_hybrid_trash_battle(game)
+
+    # 3. Фаза 3A
+    elif data == "l5_hybrid_spear_hole":
+        dmg = random.randint(18, 23)
+        battle["wolf_hp"] = max(0, battle["wolf_hp"] - dmg)
+        if battle["wolf_hp"] <= 0:
+            return _render_hybrid_win(game)
+
+        stun_turns = max(0, battle.get("stun_turns", 1) - 1)
+        battle["stun_turns"] = stun_turns
+
+        if stun_turns > 0:
+            battle["last_log"] = (
+                f"Ты наносишь выпад копьём в дыру! [Слайм: -{dmg} HP, тебе: 0 урона].\n"
+                f"Слайм судорожно пытается стянуть мусор и закрыть ядро. Времени: {stun_turns} хода!"
+            )
+            battle["phase"] = "3A"
+        else:
+            battle["last_log"] = (
+                f"Ты наносишь выпад копьём в дыру! [Слайм: -{dmg} HP, тебе: 0 урона].\n"
+                f"Слайм стянул мусор и закрыл брешь!"
+            )
+            cur_large = battle.get("large_trash")
+            cur_small = battle.get("small_trash")
+            battle["large_trash"] = random.choice([x for x in LARGE_TRASH_POOL if x != cur_large] or LARGE_TRASH_POOL)
+            battle["small_trash"] = random.choice([x for x in SMALL_TRASH_POOL if x != cur_small] or SMALL_TRASH_POOL)
+            battle["phase"] = "1"
+        return _render_hybrid_trash_battle(game)
+
+    elif data == "l5_hybrid_shroom_hole":
+        if game.inventory.get("Светящийся гриб", 0) > 0:
+            game.inventory["Светящийся гриб"] -= 1
+            if game.inventory["Светящийся гриб"] <= 0:
+                del game.inventory["Светящийся гриб"]
+        stun_turns = max(0, battle.get("stun_turns", 1) - 1)
+        battle["stun_turns"] = stun_turns
+        battle["phase"] = "3A_shroom"
+        battle["last_log"] = ""
+        return _render_hybrid_trash_battle(game)
+
+    elif data == "l5_hybrid_crit_core":
+        dmg = random.randint(55, 65)
+        self_dmg = 3
+        battle["wolf_hp"] = max(0, battle["wolf_hp"] - dmg)
+        game.hp -= self_dmg
+        if game.hp <= 0:
+            return _hybrid_player_death(game)
+
+        if battle["wolf_hp"] <= 0:
+            return _render_hybrid_win(game)
+
+        stun_turns = max(0, battle.get("stun_turns", 1) - 1)
+        battle["stun_turns"] = stun_turns
+
+        if stun_turns > 0:
+            battle["last_log"] = (
+                f"КРИТ! Остриё бьёт прямо в сердцевину! [Слайм: -{dmg} HP, тебе: -3 HP].\n"
+                f"Слайм судорожно пытается стянуть мусор и закрыть ядро. Времени: {stun_turns} хода!"
+            )
+            battle["phase"] = "3A"
+        else:
+            battle["last_log"] = (
+                f"КРИТ! Остриё бьёт прямо в сердцевину! [Слайм: -{dmg} HP, тебе: -3 HP].\n"
+                f"Слайм стянул мусор и закрыл брешь!"
+            )
+            cur_large = battle.get("large_trash")
+            cur_small = battle.get("small_trash")
+            battle["large_trash"] = random.choice([x for x in LARGE_TRASH_POOL if x != cur_large] or LARGE_TRASH_POOL)
+            battle["small_trash"] = random.choice([x for x in SMALL_TRASH_POOL if x != cur_small] or SMALL_TRASH_POOL)
+            battle["phase"] = "1"
+        return _render_hybrid_trash_battle(game)
+
+    elif data == "l5_hybrid_heal":
+        heal_msg = _hybrid_heal_player(game)
+        stun_turns = max(0, battle.get("stun_turns", 1) - 1)
+        battle["stun_turns"] = stun_turns
+
+        if stun_turns > 0:
+            battle["last_log"] = (
+                f"{heal_msg}\n"
+                f"Слайм судорожно пытается стянуть мусор и закрыть ядро. Времени: {stun_turns} хода!"
+            )
+            battle["phase"] = "3A"
+        else:
+            battle["last_log"] = (
+                f"{heal_msg}\n"
+                f"Слайм стянул мусор и закрыл брешь!"
+            )
+            cur_large = battle.get("large_trash")
+            cur_small = battle.get("small_trash")
+            battle["large_trash"] = random.choice([x for x in LARGE_TRASH_POOL if x != cur_large] or LARGE_TRASH_POOL)
+            battle["small_trash"] = random.choice([x for x in SMALL_TRASH_POOL if x != cur_small] or SMALL_TRASH_POOL)
+            battle["phase"] = "1"
+        return _render_hybrid_trash_battle(game)
+
+    # 4. Фаза 2B
+    elif data == "l5_hybrid_roll_rock":
+        battle["last_log"] = "Ты уходишь перекатом за каменный монолит! Срез камня принял удар на себя, 0 урона."
+        cur_large = battle.get("large_trash")
+        cur_small = battle.get("small_trash")
+        battle["large_trash"] = random.choice([x for x in LARGE_TRASH_POOL if x != cur_large] or LARGE_TRASH_POOL)
+        battle["small_trash"] = random.choice([x for x in SMALL_TRASH_POOL if x != cur_small] or SMALL_TRASH_POOL)
+        battle["phase"] = "1"
+        return _render_hybrid_trash_battle(game)
+
+    elif data == "l5_hybrid_brace":
+        dodge_chance = int(getattr(game, "dodge_chance", 0) or 0)
+        if random.randint(1, 100) <= dodge_chance:
+            battle["last_log"] = f"Ты успел увернуться от навала! 0 урона (шанс уворота: {dodge_chance}%)."
+        else:
+            slam_dmg = random.randint(38, 44)
+            game.hp -= slam_dmg
+            if game.hp <= 0:
+                return _hybrid_player_death(game)
+            battle["last_log"] = f"Навал сбивает тебя с ног! Получено: {slam_dmg} урона!"
+
+        cur_large = battle.get("large_trash")
+        cur_small = battle.get("small_trash")
+        battle["large_trash"] = random.choice([x for x in LARGE_TRASH_POOL if x != cur_large] or LARGE_TRASH_POOL)
+        battle["small_trash"] = random.choice([x for x in SMALL_TRASH_POOL if x != cur_small] or SMALL_TRASH_POOL)
+        battle["phase"] = "1"
+        return _render_hybrid_trash_battle(game)
+
+    # 5. Фаза 5
+    elif data == "l5_hybrid_core_stance":
+        battle["phase"] = "6"
+        battle["attack_side"] = random.choice(["left", "right"])
+        battle["last_log"] = ""
+        return _render_hybrid_trash_battle(game)
+
+    # 6. Фаза 6
+    elif data == "l5_hybrid_hit_core":
+        dmg = random.randint(40, 50)
+        battle["wolf_hp"] = max(0, battle["wolf_hp"] - dmg)
+        game.hp -= 4
+        if game.hp <= 0:
+            return _hybrid_player_death(game)
+
+        if battle["wolf_hp"] <= 0:
+            return _render_hybrid_win(game)
+
+        battle["phase"] = "7"
+        battle["last_log"] = (
+            f"ТОЧНО В ЦЕЛЬ! Копьё бьёт в ядро! [Слайм: -{dmg} HP, тебе: -4 HP].\n"
+            f"Ты слышишь, как с каждым ударом наконечник глухо трещит и тупеет.\n"
+            f"Тварь парализована шоком на 1 ход!"
+        )
+        return _render_hybrid_trash_battle(game)
+
+    elif data == "l5_hybrid_hit_trash":
+        dodge_chance = int(getattr(game, "dodge_chance", 0) or 0)
+        if random.randint(1, 100) <= dodge_chance:
+            battle["wolf_hp"] = max(0, battle["wolf_hp"] - 15)
+            battle["last_log"] = f"Ты увернулся от встречного удара хлама! [Слайм: -15 HP, тебе: 0] (шанс уворота: {dodge_chance}%)."
+        else:
+            p_dmg = random.randint(38, 44)
+            battle["wolf_hp"] = max(0, battle["wolf_hp"] - 10)
+            game.hp -= p_dmg
+            if game.hp <= 0:
+                return _hybrid_player_death(game)
+            battle["last_log"] = f"Удар мусором сбивает выпад! Тебе: -{p_dmg} HP! [Слайм: -10 HP]."
+
+        if battle["wolf_hp"] <= 0:
+            return _render_hybrid_win(game)
+
+        battle["phase"] = "6"
+        battle["attack_side"] = random.choice(["left", "right"])
+        return _render_hybrid_trash_battle(game)
+
+    elif data == "l5_hybrid_core_hide":
+        battle["last_log"] = "Ты спрятался за каменным монолитом! Удар пришёлся в камень, 0 урона."
+        battle["phase"] = "6"
+        battle["attack_side"] = random.choice(["left", "right"])
+        return _render_hybrid_trash_battle(game)
+
+    elif data == "l5_hybrid_core_back":
+        battle["last_log"] = "Ты отступил в сухую промоину, разорвав дистанцию по сухой почве. Тварь бьёт мимо, 0 урона."
+        battle["phase"] = "6"
+        battle["attack_side"] = random.choice(["left", "right"])
+        return _render_hybrid_trash_battle(game)
+
+    # 7. Фаза 7
+    elif data == "l5_hybrid_core_repeat":
+        dmg = random.randint(35, 45)
+        battle["wolf_hp"] = max(0, battle["wolf_hp"] - dmg)
+        if battle["wolf_hp"] <= 0:
+            return _render_hybrid_win(game)
+        battle["last_log"] = f"Повторный выпад сотрясает ядро! [Слайм: -{dmg} HP]."
+        battle["phase"] = "6"
+        battle["attack_side"] = random.choice(["left", "right"])
+        return _render_hybrid_trash_battle(game)
+
+    elif data == "l5_hybrid_core_shroom":
+        if game.inventory.get("Светящийся гриб", 0) > 0:
+            game.inventory["Светящийся гриб"] -= 1
+            if game.inventory["Светящийся гриб"] <= 0:
+                del game.inventory["Светящийся гриб"]
+        shroom_dmg = random.randint(60, 70)
+        battle["wolf_hp"] = max(0, battle["wolf_hp"] - shroom_dmg)
+        if battle["wolf_hp"] <= 0:
+            return _render_hybrid_win(game)
+        battle["last_log"] = f"Ты швыряешь светящийся гриб на ядро! Вскипающая кислота наносит сокрушительный урон! [Слайм: -{shroom_dmg} HP]."
+        battle["phase"] = "6"
+        battle["attack_side"] = random.choice(["left", "right"])
+        return _render_hybrid_trash_battle(game)
+
+    elif data == "l5_hybrid_core_heal":
+        heal_msg = _hybrid_heal_player(game)
+        battle["last_log"] = f"{heal_msg}\nТварь в шоке, ты спокойно перевязываешь раны."
+        battle["phase"] = "6"
+        battle["attack_side"] = random.choice(["left", "right"])
+        return _render_hybrid_trash_battle(game)
+
+    return _render_hybrid_trash_battle(game)
+
+
+# ══════════════════════════════════════════════════════════════
+# ВЕКТОР 1: ТАКТИЧЕСКИЙ БОЙ ПО ПОВАДКАМ (Мусорный слайм, 2000 HP)
+# ══════════════════════════════════════════════════════════════
+
+HABITS_TRASH_POOL = ["олений рог", "ствол бревна", "обломок балки"]
+
+
+def start_habits_trash_battle(game):
+    """Инициализация тактического боя по повадкам против Мусорного слайма (2000 HP)."""
+    trash_item = random.choice(HABITS_TRASH_POOL)
+    game.wolf_battle = {
+        "enemy_id": "trash_slime_habits",
+        "max_hp": 2000,
+        "wolf_hp": 2000,
+        "phase": "1",
+        "trash_item": trash_item,
+        "stun_turns": 0,
+        "attack_side": random.choice(["left", "right"]),
+        "last_log": "",
+    }
+    return _render_habits_trash_battle(game)
+
+
+def _transition_to_habits_phase_5(game):
+    """Фаза 5: Поломка крюка при HP <= 400 перед броском в тактическом бою по повадкам."""
+    battle = game.wolf_battle
+    battle["phase"] = "5"
+    battle["last_log"] = ""
+
+    # Удалить костяной крюк из инвентаря и слотов экипировки
+    game.inventory.pop("Костяной крюк на кожаной верёвке", None)
+    for slot, item in list(game.equipment.items()):
+        if item == "Костяной крюк на кожаной верёвке":
+            game.equipment[slot] = None
+
+    return _render_habits_trash_battle(game)
+
+
+def _render_habits_win(game):
+    """Победа над Мусорным слаймом в тактическом бою по повадкам (Вектор 1)."""
+    # Растворение острия копья: левая рука не трогается!
+    if game.equipment.get("hand_right") in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
+        game.equipment["hand_right"] = None
+    if game.equipment.get("weapon") in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
+        game.equipment["weapon"] = None
+
+    for s_name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
+        game.inventory.pop(s_name, None)
+
+    # Экипировать в активный слот оружия правой руки: Крепкий посох
+    game.equipment["hand_right"] = "Крепкий посох"
+
+    # В инвентаре не дублируем: если посоха ещё нет в инвентаре, фиксируем ровно 1 шт.
+    if game.inventory.get("Крепкий посох", 0) < 1:
+        game.inventory["Крепкий посох"] = 1
+
+    # Выставить флаги победы
+    game.set_story_flag("trash_slime_defeated", True)
+    game.set_story_flag("boss_trash_slime_defeated", True)
+    game.set_story_flag("l5_ancient_defeated", True)
+    game.set_story_flag("l6_unlocked", True)
+    game.kills_count = getattr(game, "kills_count", 0) + 1
+
+    unlocked = getattr(game, "unlocked_locations", None)
+    if unlocked is not None:
+        game.unlocked_locations = [
+            loc for loc in unlocked
+            if not any(kw in str(loc).lower() for kw in ("яр", "слизн", "заводь", "логово древнего"))
+        ]
+        if "Мохнатая пещера" not in game.unlocked_locations and "Мохнатая Пещера" not in game.unlocked_locations:
+            game.unlocked_locations.append("Мохнатая пещера")
+
+    game.wolf_battle = None
+    game.story_state = "l5_habits_win"
+
+    text = (
+        "Точный укол раскалывает янтарное ядро пополам!\n\n"
+        "С каждым ударом сланцевый наконечник крошился всё сильнее, и удивительно, как он дожил до конца схватки. "
+        "От разрушительной силы кислоты наконечник отваливается от древка.\n"
+        "В руках остаётся лишь гладкое Крепкое древко (Крепкий посох).\n\n"
+        "Слайм теряет форму и опадает на дно котловины огромной светящейся лужей кислотной жижи, "
+        "подсвечиваемой изнутри разбитым ядром.\n\n"
+        "Открыта новая локация: Мохнатая пещера."
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="l5_scout_leave_to_camp")]
+    ])
+    game.active_story_callback = "l5_habits_win"
+    return text, kb
+
+
+def _render_habits_trash_battle(game):
+    """Отрисовка текущего экрана тактического боя по повадкам (Вектор 1)."""
+    battle = game.wolf_battle
+    if not battle:
+        return handle_location_5_slug_pit("l5_ancient_lair", game, getattr(game, "player_id", 0))
+
+    wolf_hp = battle.get("wolf_hp", 2000)
+    phase = str(battle.get("phase", "1"))
+
+    # Проверка победы
+    if wolf_hp <= 0:
+        return _render_habits_win(game)
+
+    # Проверка перехода на фазу 5 при выборе точки зацепа (Фаза 1)
+    if phase == "1" and wolf_hp <= 400:
+        return _transition_to_habits_phase_5(game)
+
+    max_hp = getattr(game, "max_hp", 100)
+    dodge_chance = int(getattr(game, "dodge_chance", 0) or 0) + 10
+    header = (
+        f"⚔️ Тактический бой: Мусорный слайм\n"
+        f"───────────────────\n"
+        f"❤️ Твоё здоровье: {game.hp}/{max_hp} HP | 🏃 Уворот: {dodge_chance}%\n"
+        f"🪨 Мусорный слайм: {wolf_hp}/2000 HP\n"
+        f"───────────────────\n\n"
+    )
+
+    last_log = battle.get("last_log", "")
+
+    if phase == "1":
+        trash_item = battle.get("trash_item") or random.choice(HABITS_TRASH_POOL)
+        battle["trash_item"] = trash_item
+
+        obs = (
+            f"Слайм колышется, перекатывая жижу. Ты выжидаешь момент пульсации:\n"
+            f"из массы выпирает крупный узел: 🪨 {trash_item}."
+        )
+        log_text = f"{last_log}\n\n{obs}" if last_log else obs
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🪝 Бросить крюк", callback_data="l5_habits_hook")],
+            [InlineKeyboardButton(text="🛡️ Выждать момент", callback_data="l5_habits_wait")],
+            [InlineKeyboardButton(text="🏃 Сбежать в лагерь", callback_data="l5_ancient_escape")],
+        ])
+        game.story_state = "l5_habits_phase_1"
+        game.active_story_callback = "l5_habits_phase_1"
+        return header + log_text, kb
+
+    elif phase == "2":
+        trash_item = battle.get("trash_item") or "олений рог"
+        obs = f"Крюк глубоко сел в {trash_item}. Тварь тянет желе вглубь, но ты знаешь фазу её движения."
+        log_text = f"{last_log}\n\n{obs}" if last_log else obs
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💪 Выдрать", callback_data="l5_habits_pull")],
+            [InlineKeyboardButton(text="🏃 Сбежать в лагерь", callback_data="l5_ancient_escape")],
+        ])
+        game.story_state = "l5_habits_phase_2"
+        game.active_story_callback = "l5_habits_phase_2"
+        return header + log_text, kb
+
+    elif phase == "3":
+        kb_rows = [
+            [InlineKeyboardButton(text="🗡️ Ударить копьём", callback_data="l5_habits_spear")],
+        ]
+        if game.inventory.get("Светящийся гриб", 0) > 0:
+            kb_rows.append([
+                InlineKeyboardButton(text="🍄 Бросить гриб", callback_data="l5_habits_shroom")
+            ])
+        kb_rows.append([
+            InlineKeyboardButton(text="🧪 Лечение", callback_data="l5_habits_heal")
+        ])
+        kb_rows.append([
+            InlineKeyboardButton(text="🏃 Сбежать в лагерь", callback_data="l5_ancient_escape")
+        ])
+        game.story_state = "l5_habits_phase_3"
+        game.active_story_callback = "l5_habits_phase_3"
+        return header + last_log, InlineKeyboardMarkup(inline_keyboard=kb_rows)
+
+    elif phase == "3_shroom":
+        stun_turns = battle.get("stun_turns", 1)
+        obs = (
+            f"Гриб разорван в ране! Реакция вскипятила слизь, ядро обнажилось ещё сильнее!\n"
+            f"Осталось времени до стяжки: {stun_turns} хода!"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗡️ Ударить копьём", callback_data="l5_habits_crit_spear")],
+            [InlineKeyboardButton(text="🧪 Лечение", callback_data="l5_habits_heal")],
+            [InlineKeyboardButton(text="🏃 Сбежать в лагерь", callback_data="l5_ancient_escape")],
+        ])
+        game.story_state = "l5_habits_phase_3_shroom"
+        game.active_story_callback = "l5_habits_phase_3_shroom"
+        return header + obs, kb
+
+    elif phase == "5":
+        obs = (
+            "Ты бросаешь крюк в последний крупный мусор, но разъеденная кислотой верёвка и кость трещат.\n"
+            "Крюк разлетается в щепки! Удивительно, как он вообще не сломался раньше.\n\n"
+            "Тварь осела до двух метров — теперь она ростом с тебя и стала быстрее.\n"
+            "Внутри тонкой слизи бьётся янтарное ядро. Крюк уничтожен!"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗡️ Встать в стойку", callback_data="l5_habits_stance")],
+            [InlineKeyboardButton(text="🏃 Сбежать в лагерь", callback_data="l5_ancient_escape")],
+        ])
+        game.story_state = "l5_habits_phase_5"
+        game.active_story_callback = "l5_habits_phase_5"
+        return header + obs, kb
+
+    elif phase == "6":
+        attack_side = battle.get("attack_side", "left")
+        side_text = "СЛЕВА" if attack_side == "left" else "СПРАВА"
+        obs = f"Слайм вздувается и хлещет массой [{side_text}]! По движению студня ты видишь: ядро на миг открылось с противоположной стороны!"
+        log_text = f"{last_log}\n\n{obs}" if last_log else obs
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗡️ Ударить в ядро", callback_data="l5_habits_hit_core")],
+            [InlineKeyboardButton(text="🗡️ Ударить в накат", callback_data="l5_habits_hit_side")],
+            [InlineKeyboardButton(text="🛡️ Увернуться", callback_data="l5_habits_dodge")],
+            [InlineKeyboardButton(text="🏃 Сбежать в лагерь", callback_data="l5_ancient_escape")],
+        ])
+        game.story_state = "l5_habits_phase_6"
+        game.active_story_callback = "l5_habits_phase_6"
+        return header + log_text, kb
+
+    elif phase == "7":
+        obs = "Ядро вибрирует от удара! Слайм замер и не может атаковать!"
+        log_text = f"{last_log}\n\n{obs}" if last_log else obs
+
+        kb_rows = [
+            [InlineKeyboardButton(text="🗡️ Ударить копьём", callback_data="l5_habits_core_spear")],
+        ]
+        if game.inventory.get("Светящийся гриб", 0) > 0:
+            kb_rows.append([
+                InlineKeyboardButton(text="🍄 Бросить гриб", callback_data="l5_habits_core_shroom")
+            ])
+        kb_rows.append([
+            InlineKeyboardButton(text="🧪 Лечение", callback_data="l5_habits_core_heal")
+        ])
+        kb_rows.append([
+            InlineKeyboardButton(text="🏃 Сбежать в лагерь", callback_data="l5_ancient_escape")
+        ])
+        game.story_state = "l5_habits_phase_7"
+        game.active_story_callback = "l5_habits_phase_7"
+        return header + log_text, InlineKeyboardMarkup(inline_keyboard=kb_rows)
+
+    return header + last_log, get_main_kb(game)
+
+
+def handle_habits_trash_action(data: str, game):
+    """Обработчик интерактивных действий в тактическом бою по повадкам (Вектор 1)."""
+    battle = getattr(game, "wolf_battle", None)
+    if not battle:
+        return _render_habits_trash_battle(game)
+
+    # 1. Фаза 1
+    if data == "l5_habits_hook":
+        if battle.get("wolf_hp", 2000) <= 400:
+            return _transition_to_habits_phase_5(game)
+        battle["phase"] = "2"
+        battle["last_log"] = ""
+        return _render_habits_trash_battle(game)
+
+    elif data == "l5_habits_wait":
+        battle["last_log"] = "Ты выжидаешь такт пульсации, читая ритм движения студня. 0 урона."
+        cur_item = battle.get("trash_item")
+        battle["trash_item"] = random.choice([x for x in HABITS_TRASH_POOL if x != cur_item] or HABITS_TRASH_POOL)
+        battle["phase"] = "1"
+        return _render_habits_trash_battle(game)
+
+    # 2. Фаза 2
+    elif data == "l5_habits_pull":
+        dmg = random.randint(80, 100)
+        self_dmg = random.randint(1, 3)
+        battle["wolf_hp"] = max(0, battle["wolf_hp"] - dmg)
+        game.hp -= self_dmg
+        if game.hp <= 0:
+            return _hybrid_player_death(game)
+
+        if battle["wolf_hp"] <= 0:
+            return _render_habits_win(game)
+
+        stun_turns = random.randint(2, 3)
+        battle["stun_turns"] = stun_turns
+        battle["phase"] = "3"
+        battle["last_log"] = (
+            f"Хлюп! Узел вырван наружу! [Слайм: -{dmg} HP].\n"
+            f"Брызги кислоты летят на одежду! [Тебе: -{self_dmg} HP].\n"
+            f"Зная повадки твари, ты сорвал критический узел: слайм ошеломлён на {stun_turns} хода!"
+        )
+        return _render_habits_trash_battle(game)
+
+    # 3. Фаза 3
+    elif data == "l5_habits_spear":
+        dmg = random.randint(28, 35)
+        battle["wolf_hp"] = max(0, battle["wolf_hp"] - dmg)
+        if battle["wolf_hp"] <= 0:
+            return _render_habits_win(game)
+
+        stun_turns = max(0, battle.get("stun_turns", 1) - 1)
+        battle["stun_turns"] = stun_turns
+
+        if stun_turns > 0:
+            battle["last_log"] = (
+                f"Ты наносишь выпад копьём в дыру! [Слайм: -{dmg} HP, тебе: 0 урона].\n"
+                f"Осталось времени до стяжки: {stun_turns} хода!"
+            )
+            battle["phase"] = "3"
+        else:
+            battle["last_log"] = (
+                f"Ты наносишь выпад копьём в дыру! [Слайм: -{dmg} HP, тебе: 0 урона].\n"
+                f"Слайм стянул жижу и закрыл дыру!"
+            )
+            cur_item = battle.get("trash_item")
+            battle["trash_item"] = random.choice([x for x in HABITS_TRASH_POOL if x != cur_item] or HABITS_TRASH_POOL)
+            battle["phase"] = "1"
+        return _render_habits_trash_battle(game)
+
+    elif data == "l5_habits_shroom":
+        if game.inventory.get("Светящийся гриб", 0) > 0:
+            game.inventory["Светящийся гриб"] -= 1
+            if game.inventory["Светящийся гриб"] <= 0:
+                del game.inventory["Светящийся гриб"]
+        stun_turns = max(0, battle.get("stun_turns", 1) - 1)
+        battle["stun_turns"] = stun_turns
+        battle["phase"] = "3_shroom"
+        battle["last_log"] = ""
+        return _render_habits_trash_battle(game)
+
+    elif data == "l5_habits_crit_spear":
+        dmg = random.randint(85, 105)
+        self_dmg = 2
+        battle["wolf_hp"] = max(0, battle["wolf_hp"] - dmg)
+        game.hp -= self_dmg
+        if game.hp <= 0:
+            return _hybrid_player_death(game)
+
+        if battle["wolf_hp"] <= 0:
+            return _render_habits_win(game)
+
+        stun_turns = max(0, battle.get("stun_turns", 1) - 1)
+        battle["stun_turns"] = stun_turns
+
+        if stun_turns > 0:
+            battle["last_log"] = (
+                f"КРИТ! Знание анатомии направляет удар точно в сердцевину! [Слайм: -{dmg} HP, тебе: -2 HP].\n"
+                f"Осталось времени до стяжки: {stun_turns} хода!"
+            )
+            battle["phase"] = "3"
+        else:
+            battle["last_log"] = (
+                f"КРИТ! Знание анатомии направляет удар точно в сердцевину! [Слайм: -{dmg} HP, тебе: -2 HP].\n"
+                f"Слайм стянул жижу и закрыл дыру!"
+            )
+            cur_item = battle.get("trash_item")
+            battle["trash_item"] = random.choice([x for x in HABITS_TRASH_POOL if x != cur_item] or HABITS_TRASH_POOL)
+            battle["phase"] = "1"
+        return _render_habits_trash_battle(game)
+
+    elif data == "l5_habits_heal":
+        heal_msg = _hybrid_heal_player(game)
+        stun_turns = max(0, battle.get("stun_turns", 1) - 1)
+        battle["stun_turns"] = stun_turns
+        if stun_turns > 0:
+            battle["last_log"] = f"{heal_msg}\nТварь в ступоре, ты перевязываешь раны. Времени: {stun_turns} хода!"
+            battle["phase"] = "3"
+        else:
+            battle["last_log"] = f"{heal_msg}\nСлайм стянул жижу и закрыл дыру!"
+            cur_item = battle.get("trash_item")
+            battle["trash_item"] = random.choice([x for x in HABITS_TRASH_POOL if x != cur_item] or HABITS_TRASH_POOL)
+            battle["phase"] = "1"
+        return _render_habits_trash_battle(game)
+
+    # 4. Фаза 5
+    elif data == "l5_habits_stance":
+        battle["phase"] = "6"
+        battle["attack_side"] = random.choice(["left", "right"])
+        battle["last_log"] = ""
+        return _render_habits_trash_battle(game)
+
+    # 5. Фаза 6
+    elif data == "l5_habits_hit_core":
+        dmg = random.randint(55, 70)
+        self_dmg = 3
+        battle["wolf_hp"] = max(0, battle["wolf_hp"] - dmg)
+        game.hp -= self_dmg
+        if game.hp <= 0:
+            return _hybrid_player_death(game)
+
+        if battle["wolf_hp"] <= 0:
+            return _render_habits_win(game)
+
+        battle["phase"] = "7"
+        battle["last_log"] = (
+            f"ТОЧНО В ЦЕЛЬ! Остриё вонзается в ядро! [Слайм: -{dmg} HP, тебе: -3 HP].\n"
+            f"С каждым ударом наконечник глухо трещит и тупеет.\n"
+            f"Тварь ошеломлена на 1 ход!"
+        )
+        return _render_habits_trash_battle(game)
+
+    elif data == "l5_habits_hit_side":
+        dodge_chance = int(getattr(game, "dodge_chance", 0) or 0) + 10
+        if random.randint(1, 100) <= dodge_chance:
+            battle["wolf_hp"] = max(0, battle["wolf_hp"] - 20)
+            battle["last_log"] = f"Ты увернулся от удара массы! [Слайм: -20 HP, тебе: 0] (шанс уворота: {dodge_chance}%)."
+        else:
+            p_dmg = random.randint(35, 40)
+            battle["wolf_hp"] = max(0, battle["wolf_hp"] - 10)
+            game.hp -= p_dmg
+            if game.hp <= 0:
+                return _hybrid_player_death(game)
+            battle["last_log"] = f"Удар жижи сбивает выпад! Тебе: -{p_dmg} HP! [Слайм: -10 HP]."
+
+        if battle["wolf_hp"] <= 0:
+            return _render_habits_win(game)
+
+        battle["phase"] = "6"
+        battle["attack_side"] = random.choice(["left", "right"])
+        return _render_habits_trash_battle(game)
+
+    elif data == "l5_habits_dodge":
+        battle["last_log"] = "Ты уходишь из-под удара по знанию ритма, читая движение студня. 0 урона."
+        battle["phase"] = "6"
+        battle["attack_side"] = random.choice(["left", "right"])
+        return _render_habits_trash_battle(game)
+
+    # 6. Фаза 7
+    elif data == "l5_habits_core_spear":
+        dmg = random.randint(50, 65)
+        battle["wolf_hp"] = max(0, battle["wolf_hp"] - dmg)
+        if battle["wolf_hp"] <= 0:
+            return _render_habits_win(game)
+        battle["last_log"] = f"Повторный укол сотрясает ядро! [Слайм: -{dmg} HP]."
+        battle["phase"] = "6"
+        battle["attack_side"] = random.choice(["left", "right"])
+        return _render_habits_trash_battle(game)
+
+    elif data == "l5_habits_core_shroom":
+        if game.inventory.get("Светящийся гриб", 0) > 0:
+            game.inventory["Светящийся гриб"] -= 1
+            if game.inventory["Светящийся гриб"] <= 0:
+                del game.inventory["Светящийся гриб"]
+        shroom_dmg = random.randint(80, 95)
+        battle["wolf_hp"] = max(0, battle["wolf_hp"] - shroom_dmg)
+        if battle["wolf_hp"] <= 0:
+            return _render_habits_win(game)
+        battle["last_log"] = f"Ты швыряешь светящийся гриб на ядро! Вскипающая кислота разъедает сердцевину! [Слайм: -{shroom_dmg} HP]."
+        battle["phase"] = "6"
+        battle["attack_side"] = random.choice(["left", "right"])
+        return _render_habits_trash_battle(game)
+
+    elif data == "l5_habits_core_heal":
+        heal_msg = _hybrid_heal_player(game)
+        battle["last_log"] = f"{heal_msg}\nТварь в шоке, ты спокойно перевязываешь раны."
+        battle["phase"] = "6"
+        battle["attack_side"] = random.choice(["left", "right"])
+        return _render_habits_trash_battle(game)
+
+    return _render_habits_trash_battle(game)
+
+
 def handle_location_5_slug_pit(data, game, uid):
     """Обработать события на локации 'Яр Слизней' (канонический сюжет L5)."""
     text = None
@@ -661,6 +1721,14 @@ def handle_location_5_slug_pit(data, game, uid):
 
     # Вход на локацию
     if data in ("slug_pit_start", "location_enter_5", "l5_1a"):
+        if (
+            game.is_story_flag_set("boss_trash_slime_defeated")
+            or game.is_story_flag_set("trash_slime_defeated")
+            or game.is_story_flag_set("l5_ancient_defeated")
+        ):
+            game.add_log("Яр Слизней опустел и больше недоступен.")
+            return game.get_ui(), keyboards.get_locations_kb(game)
+
         game.reset_nav()
         game.current_location = "Яр Слизней"
         unlocked = getattr(game, "unlocked_locations", []) or []
@@ -1526,7 +2594,7 @@ def handle_location_5_slug_pit(data, game, uid):
             game.story_state = "l5_ancient_cleared"
             text = (
                 "На дне котловины яра тихо. Останки Древнего слайма рассосались в грязи, "
-                "а широкий зев Мохнатой пещеры (L6) остаётся открытым."
+                "а широкий зев Мохнатой пещеры остаётся открытым."
             )
             kb = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="l5_scout_leave_to_camp")]
@@ -1820,20 +2888,64 @@ def handle_location_5_slug_pit(data, game, uid):
                 game.current_day = new_recon
                 game.day_researches_done = 0
 
+        game.current_location = "Стартовый лес"
         game.active_story_callback = None
         game.story_state = None
         game.reset_nav()
+
+        is_boss_defeated = bool(
+            game.is_story_flag_set("boss_trash_slime_defeated")
+            or game.is_story_flag_set("trash_slime_defeated")
+            or game.is_story_flag_set("l5_ancient_defeated")
+        )
+        if is_boss_defeated:
+            unlocked = getattr(game, "unlocked_locations", None)
+            if unlocked is not None:
+                game.unlocked_locations = [
+                    loc for loc in unlocked
+                    if not any(kw in str(loc).lower() for kw in ("яр", "слизн", "заводь", "логово древнего"))
+                ]
+                if "Мохнатая пещера" not in game.unlocked_locations and "Мохнатая Пещера" not in game.unlocked_locations:
+                    game.unlocked_locations.append("Мохнатая пещера")
+
+            if not game.is_story_flag_set("l5_boss_camp_welcomed"):
+                game.set_story_flag("l5_boss_camp_welcomed", True)
+                game.add_log("🎉 Открыта новая локация: Мохнатая пещера")
+                return f"🎉 Открыта новая локация: Мохнатая пещера\n\n{game.get_ui()}", get_main_kb(game)
+
         return game.get_ui(), get_main_kb(game)
 
     # ── Финальные действия после 23 исследований ──
     elif data == "l5_scout_final_attack_habits":
+        if game.is_story_flag_set("trash_slime_defeated") or game.is_story_flag_set("l5_ancient_defeated"):
+            return handle_location_5_slug_pit("l5_ancient_lair", game, uid)
+        battle = getattr(game, "wolf_battle", None)
+        if battle and battle.get("enemy_id") == "trash_slime_habits":
+            return _render_habits_trash_battle(game)
+        # Исключение перекрестного запуска: ветка повадок доступна только при habits >= 16
+        if getattr(game, "habits_count", 0) < 16:
+            return handle_location_5_slug_pit("l5_ancient_lair", game, uid)
         if not (has_slate_spear(game) and has_bone_hook(game)):
             return _render_gear_warning(game)
-        if has_glowing_shroom(game):
-            game.set_story_flag("l5_shroom_poison_bonus", True)
-        return start_battle(game, "trash_slime")
+        if not is_slate_spear_in_hand(game):
+            for sp_name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
+                if game.inventory.get(sp_name, 0) > 0:
+                    game.equipment["hand_right"] = sp_name
+                    break
+                elif game.equipment.get("weapon") == sp_name:
+                    game.equipment["hand_right"] = sp_name
+                    break
+        return start_habits_trash_battle(game)
+
+    elif data.startswith("l5_habits_"):
+        return handle_habits_trash_action(data, game)
 
     elif data in ("l5_scout_final_trap_surroundings", "l5_trap_op_start"):
+        if game.is_story_flag_set("trash_slime_defeated") or game.is_story_flag_set("l5_ancient_defeated"):
+            return handle_location_5_slug_pit("l5_ancient_lair", game, uid)
+        # Исключение перекрестного запуска: спецоперация доступна только при surroundings >= 16
+        if getattr(game, "surroundings_count", 0) < 16:
+            return handle_location_5_slug_pit("l5_ancient_lair", game, uid)
         # Проверка снаряжения перед стартом
         is_spear_in_hand = is_slate_spear_in_hand(game)
         bone_hook_count = game.inventory.get("Костяной крюк на кожаной верёвке", 0)
@@ -2038,6 +3150,13 @@ def handle_location_5_slug_pit(data, game, uid):
         game.set_story_flag("l5_ancient_defeated", True)
         game.kills_count = getattr(game, "kills_count", 0) + 1
 
+        unlocked = getattr(game, "unlocked_locations", None)
+        if unlocked is not None:
+            game.unlocked_locations = [
+                loc for loc in unlocked
+                if not any(kw in str(loc).lower() for kw in ("яр", "слизн", "заводь", "логово древнего"))
+            ]
+
         text = (
             "Ты падаешь на спину на сухую породу, судорожно глотая холодный воздух. "
             "В котловине воцаряется мертвая тишина, нарушаемая лишь звуком капели. "
@@ -2058,8 +3177,12 @@ def handle_location_5_slug_pit(data, game, uid):
         # Разблокировать для перемещения локацию L6: Мохнатая пещера
         unlocked = getattr(game, "unlocked_locations", None)
         if unlocked is not None:
-            if "Мохнатая пещера" not in unlocked and "Мохнатая Пещера" not in unlocked:
-                unlocked.append("Мохнатая пещера")
+            game.unlocked_locations = [
+                loc for loc in unlocked
+                if not any(kw in str(loc).lower() for kw in ("яр", "слизн", "заводь", "логово древнего"))
+            ]
+            if "Мохнатая пещера" not in game.unlocked_locations and "Мохнатая Пещера" not in game.unlocked_locations:
+                game.unlocked_locations.append("Мохнатая пещера")
         game.set_story_flag("l6_unlocked", True)
 
         text = (
@@ -2077,9 +3200,20 @@ def handle_location_5_slug_pit(data, game, uid):
         return text, kb
 
     elif data == "l5_scout_final_attack_balanced":
+        if game.is_story_flag_set("trash_slime_defeated") or game.is_story_flag_set("l5_ancient_defeated"):
+            return handle_location_5_slug_pit("l5_ancient_lair", game, uid)
+        battle = getattr(game, "wolf_battle", None)
+        if battle and battle.get("enemy_id") == "trash_slime_hybrid":
+            return _render_hybrid_trash_battle(game)
+        # Исключение перекрестного запуска: гибридный бой недоступен, если есть доминирующая ветка
+        if getattr(game, "habits_count", 0) >= 16 or getattr(game, "surroundings_count", 0) >= 16:
+            return handle_location_5_slug_pit("l5_ancient_lair", game, uid)
         if not (has_slate_spear(game) and has_bone_hook(game)):
             return _render_gear_warning(game)
-        return start_battle(game, "trash_slime")
+        return _render_hybrid_trap_intro(game)
+
+    elif data.startswith("l5_hybrid_"):
+        return handle_hybrid_trash_action(data, game)
 
     elif data == "l5_scout_final_trap_pocket":
         game.story_state = "l5_scout_final_trap_pocket"
@@ -2104,6 +3238,10 @@ def handle_location_5_slug_pit(data, game, uid):
 
     elif data in ("trash_slime_battle_screen", "l5_trash_slime_screen"):
         battle = getattr(game, "wolf_battle", None)
+        if battle and battle.get("enemy_id") == "trash_slime_hybrid":
+            return _render_hybrid_trash_battle(game)
+        if battle and battle.get("enemy_id") == "trash_slime_habits":
+            return _render_habits_trash_battle(game)
         if battle and battle.get("wolf_hp", 0) > 0 and getattr(game, "hp", 100) > 0:
             return get_battle_text(game, "trash_slime"), get_battle_kb(game, "trash_slime")
         if game.is_story_flag_set("l5_ancient_defeated") or not battle:
@@ -2114,10 +3252,21 @@ def handle_location_5_slug_pit(data, game, uid):
         game.wolf_battle = None
         game.set_story_flag("l5_ancient_defeated", True)
         game.set_story_flag("boss_trash_slime_defeated", True)
+        game.set_story_flag("trash_slime_defeated", True)
+        game.set_story_flag("l6_unlocked", True)
         game.kills_count = getattr(game, "kills_count", 0) + 1
+        unlocked = getattr(game, "unlocked_locations", None)
+        if unlocked is not None:
+            game.unlocked_locations = [
+                loc for loc in unlocked
+                if not any(kw in str(loc).lower() for kw in ("яр", "слизн", "заводь", "логово древнего"))
+            ]
+            if "Мохнатая пещера" not in game.unlocked_locations and "Мохнатая Пещера" not in game.unlocked_locations:
+                game.unlocked_locations.append("Мохнатая пещера")
         text = (
             "Древний мусорный слайм с глухим хлюпом опадает на дно промоины. "
-            "Ядро разбито, а вход в пещеру под знаком охотников наконец свободен!"
+            "Ядро разбито, а вход в пещеру под знаком охотников наконец свободен!\n\n"
+            "Открыта новая локация: Мохнатая пещера."
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="l5_scout_leave_to_camp")]
@@ -2140,6 +3289,7 @@ def handle_location_5_slug_pit(data, game, uid):
     terminators = (
         "l5_leave_early", "l5_5_lantern", "l5_5_left", "back", "l5_slug_flee",
         "l5_slug_battle_finish", "l5_bait_remove", "l5_arena_escape", "l5_scout_leave_to_camp",
+        "l5_ancient_escape",
     )
     if kb == get_main_kb(game) or data in terminators or getattr(game, "hp", 100) <= 0:
         game.active_story_callback = None

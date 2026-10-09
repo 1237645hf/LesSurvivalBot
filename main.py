@@ -982,8 +982,11 @@ async def process_callback(callback: types.CallbackQuery):
         text = None
         kb = None
 
-        if data == "noop":
-            await callback.answer()
+        if data in ("noop", "already_here", "loc_already_here"):
+            if data in ("already_here", "loc_already_here"):
+                await callback.answer("Ты уже здесь!", show_alert=True)
+            else:
+                await callback.answer()
             return
 
         elif data in ("menu_character", "inv_character", "character_screen"):

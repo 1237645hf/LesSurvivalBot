@@ -22,7 +22,7 @@ def test_canonical_location_names():
     cbs = [btn.callback_data for row in loc_kb.inline_keyboard for btn in row]
 
     expected = [
-        "1. 🌲 Стартовый лес",
+        "1. 🌲 Стартовый лес 📍",
         "2. 🏞️ Ручей со змеями",
         "3. ⛰️ Скромная лощина",
         "4. 🏹 Просека охотников",
@@ -32,7 +32,7 @@ def test_canonical_location_names():
         "↩️ Назад",
     ]
     assert texts == expected
-    assert "location_enter_1" in cbs
+    assert "already_here" in cbs
     assert "location_enter_2" in cbs
     assert "location_enter_3" in cbs
     assert "location_enter_4" in cbs

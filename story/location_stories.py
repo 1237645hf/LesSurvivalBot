@@ -74,6 +74,10 @@ from story.locations.loc7_sanctuary import (
 
 def handle_story(data: str, game, uid: int):
     """Обработать сюжетную сцену волка и котёнка или передать в ветку других локаций."""
+    if data in ("already_here", "loc_already_here"):
+        game.add_log("Ты уже находишься в этой локации.")
+        return game.get_ui(), get_locations_kb(game)
+
     res = None
     if data.startswith("l1_dome"):
         res = handle_l1_dome(data, game, uid)
@@ -106,6 +110,13 @@ def handle_story(data: str, game, uid: int):
             res = handle_location_4_hunters_glade(data, game, uid)
     elif data.startswith("slug_") or data.startswith("pit_") or data.startswith("l5_") or data.startswith("slime_battle") or data == "location_enter_5":
         if data == "location_enter_5":
+            if (
+                game.is_story_flag_set("boss_trash_slime_defeated")
+                or game.is_story_flag_set("trash_slime_defeated")
+                or game.is_story_flag_set("l5_ancient_defeated")
+            ):
+                game.add_log("Яр Слизней опустел и больше недоступен.")
+                return game.get_ui(), get_locations_kb(game)
             game.current_location = "Яр слизней"
             res = handle_location_5_slug_pit("slug_pit_start", game, uid)
         else:
