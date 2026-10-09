@@ -1,26 +1,18 @@
-import re
-from pathlib import Path
+import sys, os, re
+sys.path.insert(0, os.path.abspath('.'))
+from story.location_stories import is_story_callback
 
-files = [
-    Path("story/location_stories.py"),
-    Path("keyboards.py"),
-    Path("main.py"),
-    Path("modules/finds.py"),
-    Path("game_state.py"),
-]
+with open('story/locations/loc5_slug_pit.py', encoding='utf-8') as f:
+    content = f.read()
 
-all_callbacks = {}
-for file in files:
-    if not file.exists():
+cbs = re.findall(r'callback_data=["\']([^"\']+)["\']', content)
+unique_cbs = sorted(set(cbs))
+
+not_story = []
+for cb in unique_cbs:
+    if cb in ('back', 'menu_main', 'already_here', 'locations_menu', 'location_enter_1', 'location_enter_2', 'location_enter_3', 'location_enter_4', 'location_enter_5', 'location_enter_6', 'location_enter_7'):
         continue
-    content = file.read_text(encoding="utf-8")
-    cbs = re.findall(r'callback_data=[\'"]([^\'"]+)[\'"]', content)
-    all_callbacks[str(file)] = sorted(set(cbs))
-    print(f"{file}: {len(set(cbs))} unique callbacks found")
+    if not is_story_callback(cb):
+        not_story.append(cb)
 
-for file, cbs in all_callbacks.items():
-    print(f"\n--- {file} ({len(cbs)}) ---")
-    for cb in cbs[:20]:
-        print(" ", cb)
-    if len(cbs) > 20:
-        print(f"  ... and {len(cbs) - 20} more")
+print('Callbacks not recognized by is_story_callback:', not_story)

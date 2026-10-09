@@ -419,8 +419,8 @@ def test_stage_20_l1_7_finish_and_inspect_open_stream():
     text_finish, kb_finish = handle_story("l1_7_finish", game, 101)
     assert game.wolf_lair_active is False
     assert game.wolf_lair_defeated is True
-    assert "Лесной старт" in game.unlocked_locations
-    assert "Ручей" in game.unlocked_locations
+    assert "Стартовый лес" in game.unlocked_locations
+    assert "Ручей со змеями" in game.unlocked_locations
     assert kb_finish.inline_keyboard[0][0].callback_data == "l1_7_inspect"
 
     # Меню локаций теперь содержит только Стартовый лес и Ручей (логова нет)
@@ -432,7 +432,7 @@ def test_stage_20_l1_7_finish_and_inspect_open_stream():
 
     # 2. Осмотр нового места (l1_7_inspect) переводит на сюжет Ручья
     text_inspect, kb_inspect = handle_story("l1_7_inspect", game, 101)
-    assert game.current_location == "Ручей"
+    assert game.current_location == "Ручей со змеями"
     assert "СТУК У ВОДЫ" in text_inspect or "Ручей слышно" in text_inspect
 
 

@@ -78,13 +78,19 @@ def handle_story(data: str, game, uid: int):
         game.add_log("Ты уже находишься в этой локации.")
         return game.get_ui(), get_locations_kb(game)
 
+    if not getattr(game, "active_story_callback", None) and not getattr(game, "story_state", None):
+        if not getattr(game, "pre_story_location", None):
+            game.pre_story_location = getattr(game, "current_location", "Стартовый лес")
+
     res = None
     if data.startswith("l1_dome"):
         res = handle_l1_dome(data, game, uid)
     elif data.startswith("l2_") or data.startswith("ruchey_") or data.startswith("river_") or data.startswith("snake_") or data.startswith("story_") or data == "location_enter_2":
         if data == "location_enter_2":
             game.current_location = "Ручей со змеями"
+            game.location_index = 1
             game.location = game.current_location
+            game.pre_story_location = game.current_location
         res = handle_location_2_ruchey(data, game, uid)
     elif (
         data.startswith("l3_")
@@ -96,15 +102,20 @@ def handle_story(data: str, game, uid: int):
     ):
         if data == "location_enter_3":
             game.current_location = "Скромная лощина"
+            game.location_index = 2
+            game.location = game.current_location
+            game.pre_story_location = game.current_location
         res = handle_location_3_slate_hollow(data, game, uid)
     elif data.startswith("l4_") or data.startswith("hunters_") or data.startswith("glade_") or data == "location_enter_4":
         if data == "location_enter_4":
             unlocked = getattr(game, "unlocked_locations", []) or []
-            if "Просека охотников" not in unlocked and "Просека Охотников" not in unlocked:
+            if "Просека охотников" not in unlocked:
                 unlocked.append("Просека охотников")
-                unlocked.append("Просека Охотников")
                 game.unlocked_locations = unlocked
             game.current_location = "Просека охотников"
+            game.location_index = 3
+            game.location = game.current_location
+            game.pre_story_location = game.current_location
             res = handle_location_4_hunters_glade("hunters_glade_start", game, uid)
         else:
             res = handle_location_4_hunters_glade(data, game, uid)
@@ -115,21 +126,33 @@ def handle_story(data: str, game, uid: int):
                 or game.is_story_flag_set("trash_slime_defeated")
                 or game.is_story_flag_set("l5_ancient_defeated")
             ):
-                game.add_log("Яр Слизней опустел и больше недоступен.")
+                game.add_log("Яр Слаймов опустел и больше недоступен.")
+                game.active_story_callback = None
+                game.story_state = None
+                game.wolf_battle = None
                 return game.get_ui(), get_locations_kb(game)
-            game.current_location = "Яр слизней"
+            game.current_location = "Яр Слаймов"
+            game.location_index = 4
+            game.location = game.current_location
+            game.pre_story_location = game.current_location
             res = handle_location_5_slug_pit("slug_pit_start", game, uid)
         else:
             res = handle_location_5_slug_pit(data, game, uid)
     elif data.startswith("furry_") or data.startswith("warm_") or data.startswith("cave_") or data == "location_enter_6":
         if data == "location_enter_6":
             game.current_location = "Мохнатая пещера"
+            game.location_index = 5
+            game.location = game.current_location
+            game.pre_story_location = game.current_location
             res = handle_location_6_furry_cave("furry_cave_start", game, uid)
         else:
             res = handle_location_6_furry_cave(data, game, uid)
     elif data.startswith("sanctuary_") or data == "location_enter_7":
         if data == "location_enter_7":
             game.current_location = "Святилище"
+            game.location_index = 6
+            game.location = game.current_location
+            game.pre_story_location = game.current_location
             res = handle_location_7_sanctuary_peak("sanctuary_peak_start", game, uid)
         else:
             res = handle_location_7_sanctuary_peak(data, game, uid)
@@ -141,6 +164,11 @@ def handle_story(data: str, game, uid: int):
         or data.startswith("wolf_battle")
         or data in ("location_enter_1",)
     ):
+        if data == "location_enter_1":
+            game.current_location = "Стартовый лес"
+            game.location_index = 0
+            game.location = game.current_location
+            game.pre_story_location = game.current_location
         res = handle_l1_wolf_lair(data, game, uid)
     else:
         res = handle_location_1_forest_start(data, game, uid)
@@ -283,13 +311,13 @@ def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool)
         # 3. На 3-й день (или позже) после завершения L5 Chapter 1 (или общего дня >= 3).
         # 4. На 3-й день — 3-е исследование локации 5 (не обязательно подряд, можно заходить в костёр и т.д.).
         if (
-            game.is_story_flag_set("l5_completed")
+            (game.is_story_flag_set("l5_ch1_completed") or game.is_story_flag_set("l5_completed"))
             and not game.is_story_flag_set("l5_ch2_completed")
             and not game.is_story_flag_set("l5_ch2_started")
         ):
-            if "l5_completed_day" not in game.story_flags:
+            if "l5_completed_day" not in game.story_flags and "l5_ch1_completed_day" not in game.story_flags:
                 game.story_flags["l5_completed_day"] = getattr(game, "day", 1)
-            base_day = game.story_flags.get("l5_completed_day", 1)
+            base_day = game.story_flags.get("l5_ch1_completed_day", game.story_flags.get("l5_completed_day", 1))
             cur_day = getattr(game, "day", 1)
 
             if cur_day >= base_day + 2 or cur_day >= 3:

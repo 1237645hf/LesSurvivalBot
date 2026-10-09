@@ -1,5 +1,5 @@
 # =============================================================================
-# ЛОКАЦИЯ 5: Яр Слизней
+# ЛОКАЦИЯ 5: Яр Слаймов
 # =============================================================================
 #
 # ПРАВИЛА ЭТОГО ФАЙЛА:
@@ -612,7 +612,7 @@ def _render_slug_pack_battle(game):
         game.hp = 0
         game.active_story_callback = None
         game.slug_pack_battle = None
-        text = get_death_text(game, "Слизни погребли тебя под тоннами едкой янтарной жижи.", "Яр слизней")
+        text = get_death_text(game, "Слизни погребли тебя под тоннами едкой янтарной жижи.", "Яр Слаймов")
         kb = get_death_kb()
         return text, kb
 
@@ -710,7 +710,7 @@ def _hybrid_player_death(game):
     game.wolf_battle = None
     game.story_state = None
     game.active_story_callback = None
-    return get_death_text(game, "Тварь погребла тебя под тоннами едкой жижи и костяного мусора.", "Яр Слизней"), get_death_kb()
+    return get_death_text(game, "Тварь погребла тебя под тоннами едкой жижи и костяного мусора.", "Яр Слаймов"), get_death_kb()
 
 
 def _render_hybrid_win(game):
@@ -727,22 +727,19 @@ def _render_hybrid_win(game):
     # Экипировать в активный слот оружия правой руки: Крепкий посох
     game.equipment["hand_right"] = "Крепкий посох"
 
-    # В инвентаре не дублируем: если посоха ещё нет в инвентаре, фиксируем ровно 1 шт.
-    if game.inventory.get("Крепкий посох", 0) < 1:
-        game.inventory["Крепкий посох"] = 1
-
     # Выставить флаги победы
     game.set_story_flag("trash_slime_defeated", True)
     game.set_story_flag("boss_trash_slime_defeated", True)
     game.set_story_flag("l5_ancient_defeated", True)
     game.set_story_flag("l6_unlocked", True)
+    game.set_story_flag("l5_completed", True)
     game.kills_count = getattr(game, "kills_count", 0) + 1
 
     unlocked = getattr(game, "unlocked_locations", None)
     if unlocked is not None:
         game.unlocked_locations = [
             loc for loc in unlocked
-            if not any(kw in str(loc).lower() for kw in ("яр", "слизн", "заводь", "логово древнего"))
+            if not any(kw in str(loc).lower() for kw in ("яр", "слизн", "слайм", "заводь", "логово древнего"))
         ]
         if "Мохнатая пещера" not in game.unlocked_locations and "Мохнатая Пещера" not in game.unlocked_locations:
             game.unlocked_locations.append("Мохнатая пещера")
@@ -1315,22 +1312,19 @@ def _render_habits_win(game):
     # Экипировать в активный слот оружия правой руки: Крепкий посох
     game.equipment["hand_right"] = "Крепкий посох"
 
-    # В инвентаре не дублируем: если посоха ещё нет в инвентаре, фиксируем ровно 1 шт.
-    if game.inventory.get("Крепкий посох", 0) < 1:
-        game.inventory["Крепкий посох"] = 1
-
     # Выставить флаги победы
     game.set_story_flag("trash_slime_defeated", True)
     game.set_story_flag("boss_trash_slime_defeated", True)
     game.set_story_flag("l5_ancient_defeated", True)
     game.set_story_flag("l6_unlocked", True)
+    game.set_story_flag("l5_completed", True)
     game.kills_count = getattr(game, "kills_count", 0) + 1
 
     unlocked = getattr(game, "unlocked_locations", None)
     if unlocked is not None:
         game.unlocked_locations = [
             loc for loc in unlocked
-            if not any(kw in str(loc).lower() for kw in ("яр", "слизн", "заводь", "логово древнего"))
+            if not any(kw in str(loc).lower() for kw in ("яр", "слизн", "слайм", "заводь", "логово древнего"))
         ]
         if "Мохнатая пещера" not in game.unlocked_locations and "Мохнатая Пещера" not in game.unlocked_locations:
             game.unlocked_locations.append("Мохнатая пещера")
@@ -1715,7 +1709,7 @@ def handle_habits_trash_action(data: str, game):
 
 
 def handle_location_5_slug_pit(data, game, uid):
-    """Обработать события на локации 'Яр Слизней' (канонический сюжет L5)."""
+    """Обработать события на локации 'Яр Слаймов' (канонический сюжет L5)."""
     text = None
     kb = None
 
@@ -1726,26 +1720,62 @@ def handle_location_5_slug_pit(data, game, uid):
             or game.is_story_flag_set("trash_slime_defeated")
             or game.is_story_flag_set("l5_ancient_defeated")
         ):
-            game.add_log("Яр Слизней опустел и больше недоступен.")
+            game.add_log("Яр Слаймов опустел и больше недоступен.")
+            game.active_story_callback = None
+            game.story_state = None
+            game.wolf_battle = None
             return game.get_ui(), keyboards.get_locations_kb(game)
 
         game.reset_nav()
-        game.current_location = "Яр Слизней"
+        game.current_location = "Яр Слаймов"
         unlocked = getattr(game, "unlocked_locations", []) or []
-        if "Яр Слизней" not in unlocked:
-            unlocked.append("Яр Слизней")
+        if "Яр Слаймов" not in unlocked:
+            unlocked.append("Яр Слаймов")
             game.unlocked_locations = unlocked
 
-        # Если сюжетная ветка L5 уже полностью завершена — мирное пребывание
-        if game.is_story_flag_set("l5_completed"):
+        # Если босс повержен — мирное пребывание
+        if (
+            game.is_story_flag_set("boss_trash_slime_defeated")
+            or game.is_story_flag_set("trash_slime_defeated")
+            or game.is_story_flag_set("l5_ancient_defeated")
+            or (game.is_story_flag_set("l5_completed") and not game.is_story_flag_set("l5_ch1_completed"))
+        ):
+            game.active_story_callback = None
+            game.story_state = None
+            game.wolf_battle = None
             text = (
-                "Ты стоишь на краю Яра Слизней.\n\n"
+                "Ты стоишь на краю Яра Слаймов.\n\n"
                 "В глубине низины тихо пульсирует бирюзовый свет грибов. "
                 "Яр теперь спокоен: по стенам медленно стекает смола, "
                 "а земля свободна для сбора ресурсов и установки ловушек."
             )
             kb = get_main_kb(game)
             return text, kb
+
+        # Если первая глава завершена, но босс ещё не побежден — доступ к Главе 2 и разведке
+        if game.is_story_flag_set("l5_ch1_completed"):
+            game.active_story_callback = None
+            game.wolf_battle = None
+            if getattr(game, "story_state", None) and str(game.story_state).startswith("l5_") and game.story_state != "l5_1a" and game.story_state != data:
+                return handle_location_5_slug_pit(game.story_state, game, uid)
+
+            buttons = []
+            if game.is_story_flag_set("l5_ancient_unlocked"):
+                buttons.append([InlineKeyboardButton(text="🕳️ Отправиться к Логову Древнего", callback_data="l5_ancient_lair")])
+            elif game.is_story_flag_set("l5_arena_unlocked"):
+                buttons.append([InlineKeyboardButton(text="☣️ Отправиться в Заводь Исполина", callback_data="l5_arena_start")])
+            elif game.is_story_flag_set("l5_ch2_started"):
+                buttons.append([InlineKeyboardButton(text="👣 Продолжить выслеживание Исполина", callback_data="l5_2_1")])
+            else:
+                buttons.append([InlineKeyboardButton(text="👣 Выйти на разведку следов", callback_data="l5_2_1")])
+
+            buttons.append([InlineKeyboardButton(text="🏕️ Обустроить стоянку в яру", callback_data="back")])
+            text = (
+                "Ты спускаешься на дно Яра Слаймов.\n\n"
+                "Янтарный кокон остался позади, но в глубине расщелин слышится тяжелое хлюпанье исполинских тварей. "
+                "Здесь небезопасно, воздух полон едких испарений. Ты осматриваешься, готовый продолжить разведку или вернуться к костру."
+            )
+            return text, InlineKeyboardMarkup(inline_keyboard=buttons)
 
         # Если сюжет уже начат и сохранён шаг:
         if getattr(game, "story_state", None) and str(game.story_state).startswith("l5_") and data != "l5_1a" and game.story_state != data:
@@ -1907,17 +1937,15 @@ def handle_location_5_slug_pit(data, game, uid):
             [InlineKeyboardButton(text="🚪 Не трогать и уйти", callback_data="l5_leave_early")]
         ])
 
-    # Окно 6: L5.2b — Не трогать и уйти (Ранний уход)
+    # Окно 6: L5.2b — Не трогать и уйти (Ранний уход / Отступление в лагерь)
     elif data == "l5_leave_early":
-        game.adjust_narrative_karma("intervention", -2)
-        game.adjust_narrative_karma("compassion", 1)
-        game.adjust_narrative_karma("pragmatism", 2)
-        game.adjust_narrative_karma("observation", 1)
-        game.set_story_flag("l5_completed", True)
-        if "l5_completed_day" not in game.story_flags:
-            game.story_flags["l5_completed_day"] = getattr(game, "day", 1)
+        if not game.is_story_flag_set("l5_leave_early_karma_applied"):
+            game.set_story_flag("l5_leave_early_karma_applied", True)
+            game.adjust_narrative_karma("intervention", -2)
+            game.adjust_narrative_karma("compassion", 1)
+            game.adjust_narrative_karma("pragmatism", 2)
+            game.adjust_narrative_karma("observation", 1)
         game.set_story_flag("lantern_taken", False)
-        game.story_state = None
 
         has_lantern = (
             game.equipment.get("hand_left") == "Старый фонарь"
@@ -1932,10 +1960,14 @@ def handle_location_5_slug_pit(data, game, uid):
             elif r not in getattr(game, "unlocked_crafts", []):
                 game.unlocked_crafts.append(r)
 
-        unlocked = getattr(game, "unlocked_locations", []) or []
-        if "Мохнатая пещера" not in unlocked and "Мохнатая Пещера" not in unlocked:
-            unlocked.append("Мохнатая пещера")
-            game.unlocked_locations = unlocked
+        target_loc = getattr(game, "pre_story_location", None) or getattr(game, "current_location", None) or "Стартовый лес"
+        game.current_location = target_loc
+        game.location = target_loc
+        game.pre_story_location = None
+        game.active_story_callback = None
+        game.story_state = None
+        game.wolf_battle = None
+        game.reset_nav()
 
         text = (
             "Ты смотришь на пульсирующий кокон, на ручейки слизи и холодные бирюзовые отсветы грибов. "
@@ -1947,6 +1979,7 @@ def handle_location_5_slug_pit(data, game, uid):
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🏕 Вернуться в лагерь", callback_data="back")]
         ])
+        return text, kb
 
     # Окно 7.1: L5.3_step — Пробуждение стены и гигантское ядро
     elif data == "l5_3_step":
@@ -2120,20 +2153,18 @@ def handle_location_5_slug_pit(data, game, uid):
 
     # Окно 12.1: L5.5_lantern — Финал с фонарём (Выход из яра)
     elif data == "l5_5_lantern":
-        game.set_story_flag("l5_completed", True)
+        game.set_story_flag("l5_ch1_completed", True)
         if "l5_completed_day" not in game.story_flags:
             game.story_flags["l5_completed_day"] = getattr(game, "day", 1)
+        if "l5_ch1_completed_day" not in game.story_flags:
+            game.story_flags["l5_ch1_completed_day"] = getattr(game, "day", 1)
         game.story_state = None
+        game.wolf_battle = None
         for r in ("Зарядить фонарь", "Пузырёк", "Янтарное зелье", "Приманка для слизней"):
             if hasattr(game, "unlock_craft"):
                 game.unlock_craft(r)
             elif r not in getattr(game, "unlocked_crafts", []):
                 game.unlocked_crafts.append(r)
-
-        unlocked = getattr(game, "unlocked_locations", []) or []
-        if "Мохнатая пещера" not in unlocked and "Мохнатая Пещера" not in unlocked:
-            unlocked.append("Мохнатая пещера")
-            game.unlocked_locations = unlocked
 
         has_pet = bool(game.equipment.get("pet"))
         pet_note = (
@@ -2154,10 +2185,13 @@ def handle_location_5_slug_pit(data, game, uid):
 
     # Окно 12.2: L5.5_left — Финал без фонаря (Выход из яра)
     elif data == "l5_5_left":
-        game.set_story_flag("l5_completed", True)
+        game.set_story_flag("l5_ch1_completed", True)
         if "l5_completed_day" not in game.story_flags:
             game.story_flags["l5_completed_day"] = getattr(game, "day", 1)
+        if "l5_ch1_completed_day" not in game.story_flags:
+            game.story_flags["l5_ch1_completed_day"] = getattr(game, "day", 1)
         game.story_state = None
+        game.wolf_battle = None
         has_lantern = (
             game.equipment.get("hand_left") == "Старый фонарь"
             or game.inventory.get("Старый фонарь", 0) > 0
@@ -2170,11 +2204,6 @@ def handle_location_5_slug_pit(data, game, uid):
                 game.unlock_craft(r)
             elif r not in getattr(game, "unlocked_crafts", []):
                 game.unlocked_crafts.append(r)
-
-        unlocked = getattr(game, "unlocked_locations", []) or []
-        if "Мохнатая пещера" not in unlocked and "Мохнатая Пещера" not in unlocked:
-            unlocked.append("Мохнатая пещера")
-            game.unlocked_locations = unlocked
 
         text = (
             "Ты выбираешься из яра и долго стоишь у кромки обрыва, глядя в глубину.\n\n"
@@ -2888,9 +2917,11 @@ def handle_location_5_slug_pit(data, game, uid):
                 game.current_day = new_recon
                 game.day_researches_done = 0
 
-        game.current_location = "Стартовый лес"
+        target_loc = getattr(game, "pre_story_location", None) or getattr(game, "current_location", None) or "Стартовый лес"
+        game.pre_story_location = None
         game.active_story_callback = None
         game.story_state = None
+        game.wolf_battle = None
         game.reset_nav()
 
         is_boss_defeated = bool(
@@ -2903,16 +2934,24 @@ def handle_location_5_slug_pit(data, game, uid):
             if unlocked is not None:
                 game.unlocked_locations = [
                     loc for loc in unlocked
-                    if not any(kw in str(loc).lower() for kw in ("яр", "слизн", "заводь", "логово древнего"))
+                    if not any(kw in str(loc).lower() for kw in ("яр", "слизн", "слайм", "заводь", "логово древнего"))
                 ]
                 if "Мохнатая пещера" not in game.unlocked_locations and "Мохнатая Пещера" not in game.unlocked_locations:
                     game.unlocked_locations.append("Мохнатая пещера")
+
+            if target_loc not in (game.unlocked_locations or []):
+                target_loc = "Стартовый лес"
+
+            game.current_location = target_loc
+            game.location = target_loc
 
             if not game.is_story_flag_set("l5_boss_camp_welcomed"):
                 game.set_story_flag("l5_boss_camp_welcomed", True)
                 game.add_log("🎉 Открыта новая локация: Мохнатая пещера")
                 return f"🎉 Открыта новая локация: Мохнатая пещера\n\n{game.get_ui()}", get_main_kb(game)
 
+        game.current_location = target_loc
+        game.location = target_loc
         return game.get_ui(), get_main_kb(game)
 
     # ── Финальные действия после 23 исследований ──
@@ -3043,7 +3082,7 @@ def handle_location_5_slug_pit(data, game, uid):
         if game.hp <= 0:
             game.hp = 0
             game.active_story_callback = None
-            return get_death_text(game, "Обвал камней и кислотные пары на дне котловины стали для тебя фатальными.", "Яр слизней"), get_death_kb()
+            return get_death_text(game, "Обвал камней и кислотные пары на дне котловины стали для тебя фатальными.", "Яр Слаймов"), get_death_kb()
 
         text = (
             "Глухой сокрушительный удар о дно котловины выбивает весь воздух из легких. "
@@ -3142,19 +3181,19 @@ def handle_location_5_slug_pit(data, game, uid):
 
         # Экипировать в активный слот оружия предмет: Крепкий посох
         game.equipment["hand_right"] = "Крепкий посох"
-        game.inventory["Крепкий посох"] = 1
 
         # Выставить флаг поверженного босса
         game.set_story_flag("trash_slime_defeated", True)
         game.set_story_flag("boss_trash_slime_defeated", True)
         game.set_story_flag("l5_ancient_defeated", True)
+        game.set_story_flag("l5_completed", True)
         game.kills_count = getattr(game, "kills_count", 0) + 1
 
         unlocked = getattr(game, "unlocked_locations", None)
         if unlocked is not None:
             game.unlocked_locations = [
                 loc for loc in unlocked
-                if not any(kw in str(loc).lower() for kw in ("яр", "слизн", "заводь", "логово древнего"))
+                if not any(kw in str(loc).lower() for kw in ("яр", "слизн", "слайм", "заводь", "логово древнего"))
             ]
 
         text = (
@@ -3179,7 +3218,7 @@ def handle_location_5_slug_pit(data, game, uid):
         if unlocked is not None:
             game.unlocked_locations = [
                 loc for loc in unlocked
-                if not any(kw in str(loc).lower() for kw in ("яр", "слизн", "заводь", "логово древнего"))
+                if not any(kw in str(loc).lower() for kw in ("яр", "слизн", "слайм", "заводь", "логово древнего"))
             ]
             if "Мохнатая пещера" not in game.unlocked_locations and "Мохнатая Пещера" not in game.unlocked_locations:
                 game.unlocked_locations.append("Мохнатая пещера")
@@ -3259,7 +3298,7 @@ def handle_location_5_slug_pit(data, game, uid):
         if unlocked is not None:
             game.unlocked_locations = [
                 loc for loc in unlocked
-                if not any(kw in str(loc).lower() for kw in ("яр", "слизн", "заводь", "логово древнего"))
+                if not any(kw in str(loc).lower() for kw in ("яр", "слизн", "слайм", "заводь", "логово древнего"))
             ]
             if "Мохнатая пещера" not in game.unlocked_locations and "Мохнатая Пещера" not in game.unlocked_locations:
                 game.unlocked_locations.append("Мохнатая пещера")

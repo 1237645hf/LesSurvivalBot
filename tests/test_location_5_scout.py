@@ -305,7 +305,7 @@ def test_scout_final_screen_vector_2_surroundings():
     t9, kb9 = handle_location_5_slug_pit("l5_trap_op_step9", game, uid)
     assert "Ты падаешь на спину на сухую породу" in t9
     assert game.equipment.get("hand_right") == "Крепкий посох"
-    assert game.inventory.get("Крепкий посох") == 1
+    assert "Крепкий посох" not in game.inventory
     assert "Охотничье сланцевое копьё" not in game.inventory
     assert "🔱 Охотничье сланцевое копьё" not in game.inventory
     assert game.is_story_flag_set("trash_slime_defeated")
@@ -1132,7 +1132,7 @@ def test_post_boss_flow_and_locations_kb_pin():
 
     # 1. Проверка строго 1 кнопки на всех трёх экранах победы
     game = GameState()
-    game.unlocked_locations = ["Стартовый лес", "Ручей со змеями", "Скромная лощина", "Просека охотников", "Яр Слизней"]
+    game.unlocked_locations = ["Стартовый лес", "Ручей со змеями", "Скромная лощина", "Просека охотников", "Яр Слаймов"]
     uid = 999
 
     # Вектор 1 (Повадки)
@@ -1161,16 +1161,16 @@ def test_post_boss_flow_and_locations_kb_pin():
     text_camp, kb_camp = handle_location_5_slug_pit("l5_scout_leave_to_camp", game, uid)
     assert text_camp.startswith("🎉 Открыта новая локация: Мохнатая пещера")
     assert game.current_location == "Стартовый лес"
-    assert not any("яр" in loc.lower() or "слизн" in loc.lower() for loc in game.unlocked_locations)
+    assert not any("яр" in loc.lower() or "слизн" in loc.lower() or "слайм" in loc.lower() for loc in game.unlocked_locations)
     assert "Мохнатая пещера" in game.unlocked_locations
 
     # 3. Повторная попытка войти в L5 блокируется
     game.event_log = []
     text_blocked, _ = handle_location_5_slug_pit("slug_pit_start", game, uid)
-    assert any("Яр Слизней опустел и больше недоступен" in l for l in game.event_log)
+    assert any("Яр Слаймов опустел и больше недоступен" in l for l in game.event_log)
 
     # 4. Проверка меню локаций (get_locations_kb):
-    # - Яр Слизней отсутствует
+    # - Яр Слаймов отсутствует
     # - Номера последовательные (1, 2, 3, 4, 5)
     # - Стартовый лес имеет маркер « 📍» и callback="already_here"
     loc_kb = get_locations_kb(game)
@@ -1182,7 +1182,7 @@ def test_post_boss_flow_and_locations_kb_pin():
     assert "3. ⛰️ Скромная лощина" in btn_texts
     assert "4. 🏹 Просека охотников" in btn_texts
     assert "5. 🦇 Мохнатая пещера" in btn_texts
-    assert not any("яр" in t.lower() or "слизн" in t.lower() for t in btn_texts)
+    assert not any("яр" in t.lower() or "слизн" in t.lower() or "слайм" in t.lower() for t in btn_texts)
     assert "already_here" in btn_cbs
 
     # 5. При перемещении в Мохнатую пещеру пин перемещается на нее
@@ -1195,6 +1195,342 @@ def test_post_boss_flow_and_locations_kb_pin():
     # 6. Клик по already_here возвращает уведомление и не ломает экран
     t_ah, _ = handle_story("already_here", game, uid)
     assert any("Ты уже находишься в этой локации" in l for l in game.event_log)
+
+
+def test_l5_blocked_entry_clears_fsm_story_triggers():
+    """Тест: при попытке входа на пройденную L5 FSM-состояния гарантированно сбрасываются."""
+    from main import is_in_active_story
+    from story.location_stories import handle_story
+
+    game = GameState()
+    uid = 99999
+    game.set_story_flag("boss_trash_slime_defeated", True)
+
+    # Имитируем зависшие сюжетные и боевые состояния
+    game.active_story_callback = "l5_1a"
+    game.story_state = "l5_1a"
+    game.wolf_battle = {"enemy_id": "trash_slime", "hp": 50}
+    assert is_in_active_story(game) is True
+
+    # 1. Вызов через handle_location_5_slug_pit
+    text, kb = handle_location_5_slug_pit("slug_pit_start", game, uid)
+    assert any("Яр Слаймов опустел и больше недоступен" in l for l in game.event_log)
+    assert game.active_story_callback is None
+    assert game.story_state is None
+    assert game.wolf_battle is None
+    assert is_in_active_story(game) is False
+
+    # 2. Вызов через handle_story("location_enter_5")
+    game.active_story_callback = "slug_pit_start"
+    game.story_state = "slug_pit_start"
+    game.wolf_battle = {"enemy_id": "trash_slime", "hp": 50}
+    assert is_in_active_story(game) is True
+
+    text2, kb2 = handle_story("location_enter_5", game, uid)
+    assert game.active_story_callback is None
+    assert game.story_state is None
+    assert game.wolf_battle is None
+    assert is_in_active_story(game) is False
+
+
+def _assert_valid_screen(text, kb, expected_next_cb=None):
+    """Вспомогательная проверка валидности текста, клавиатуры и отсутствия битых коллбэков."""
+    assert isinstance(text, str) and len(text.strip()) > 0
+    assert kb is not None
+    all_cbs = []
+    for row in kb.inline_keyboard:
+        for btn in row:
+            assert isinstance(btn.text, str) and len(btn.text.strip()) > 0
+            assert isinstance(btn.callback_data, str) and len(btn.callback_data.strip()) > 0
+            assert not any(err in btn.callback_data for err in ["None", "undefined", "{", "}"])
+            all_cbs.append(btn.callback_data)
+    if expected_next_cb:
+        assert expected_next_cb in all_cbs, f"Ожидался callback '{expected_next_cb}' среди {all_cbs}"
+    return all_cbs
+
+
+def test_l5_vector_2_trap_operation_e2e_happy_path():
+    """Сквозной интеграционный тест спецоперации Вектора 2 (Окрестности): от l5_trap_op_start до лагеря."""
+    game = GameState()
+    uid = 7001
+    game.intro_seen = True
+    game.surroundings_count = 23
+    game.habits_count = 0
+    game.hp = 100
+    game.equipment["hand_right"] = "Охотничье сланцевое копьё"
+    game.inventory["Охотничье сланцевое копьё"] = 1
+    game.inventory["Костяной крюк на кожаной верёвке"] = 1
+    game.inventory["Лесная ягода"] = 7
+    game.inventory["Светящийся гриб"] = 4
+    game.unlocked_locations = ["Стартовый лес", "Ручей со змеями", "Скромная лощина", "Просека охотников", "Яр Слаймов"]
+
+    # Шаг 0 -> Шаг 1: списание 5 ягод
+    t1, kb1 = handle_location_5_slug_pit("l5_trap_op_start", game, uid)
+    _assert_valid_screen(t1, kb1, "l5_trap_op_step2")
+    assert game.story_state == "l5_trap_op_step1"
+    assert game.inventory.get("Лесная ягода") == 2
+    assert game.inventory.get("Костяной крюк на кожаной верёвке") == 1
+    assert game.inventory.get("Светящийся гриб") == 4
+
+    # Шаг 1 -> Шаг 2: подъем к узлу
+    t2, kb2 = handle_location_5_slug_pit("l5_trap_op_step2", game, uid)
+    _assert_valid_screen(t2, kb2, "l5_trap_op_step3")
+    assert game.story_state == "l5_trap_op_step2"
+
+    # Шаг 2 -> Шаг 3: поломка и удаление костяного крюка
+    t3, kb3 = handle_location_5_slug_pit("l5_trap_op_step3", game, uid)
+    _assert_valid_screen(t3, kb3, "l5_trap_op_step4")
+    assert game.story_state == "l5_trap_op_step3"
+    assert "Костяной крюк на кожаной верёвке" not in game.inventory
+    assert "Костяной крюк на кожаной верёвке" not in game.equipment.values()
+
+    # Шаг 3 -> Шаг 4: обвал и получение урона (при капе 23 урон минимален: 15 HP)
+    t4, kb4 = handle_location_5_slug_pit("l5_trap_op_step4", game, uid)
+    _assert_valid_screen(t4, kb4, "l5_trap_op_step5")
+    assert game.story_state == "l5_trap_op_step4"
+    assert game.hp == 85
+
+    # Шаг 4 -> Шаг 5: подъем на ноги
+    t5, kb5 = handle_location_5_slug_pit("l5_trap_op_step5", game, uid)
+    _assert_valid_screen(t5, kb5, "l5_trap_op_step6")
+    assert game.story_state == "l5_trap_op_step5"
+
+    # Шаг 5 -> Шаг 6: списание ВСЕХ светящихся грибов
+    t6, kb6 = handle_location_5_slug_pit("l5_trap_op_step6", game, uid)
+    _assert_valid_screen(t6, kb6, "l5_trap_op_step7")
+    assert game.story_state == "l5_trap_op_step6"
+    assert "Светящийся гриб" not in game.inventory
+
+    # Шаг 6 -> Шаг 7: первый удар
+    t7, kb7 = handle_location_5_slug_pit("l5_trap_op_step7", game, uid)
+    _assert_valid_screen(t7, kb7, "l5_trap_op_step8")
+    assert game.story_state == "l5_trap_op_step7"
+
+    # Шаг 7 -> Шаг 8: сокрушение ядра
+    t8, kb8 = handle_location_5_slug_pit("l5_trap_op_step8", game, uid)
+    _assert_valid_screen(t8, kb8, "l5_trap_op_step9")
+    assert game.story_state == "l5_trap_op_step8"
+
+    # Шаг 8 -> Шаг 9: растворение копья, выдача и экипировка «Крепкий посох», флаги победы
+    t9, kb9 = handle_location_5_slug_pit("l5_trap_op_step9", game, uid)
+    _assert_valid_screen(t9, kb9, "l5_trap_op_step10")
+    assert game.story_state == "l5_trap_op_step9"
+    assert "Охотничье сланцевое копьё" not in game.inventory
+    assert "Охотничье сланцевое копьё" not in game.equipment.values()
+    assert game.equipment.get("hand_right") == "Крепкий посох"
+    assert "Крепкий посох" not in game.inventory
+    assert game.is_story_flag_set("trash_slime_defeated")
+    assert game.is_story_flag_set("boss_trash_slime_defeated")
+    assert game.is_story_flag_set("l5_ancient_defeated")
+    assert not any("яр" in l.lower() or "слайм" in l.lower() for l in game.unlocked_locations)
+
+    # Шаг 9 -> Шаг 10: разблокировка локации L6 «Мохнатая пещера»
+    t10, kb10 = handle_location_5_slug_pit("l5_trap_op_step10", game, uid)
+    _assert_valid_screen(t10, kb10, "l5_scout_leave_to_camp")
+    assert game.story_state == "l5_trap_op_step10"
+    assert game.is_story_flag_set("l6_unlocked")
+    assert "Мохнатая пещера" in game.unlocked_locations
+
+    # Финал спецоперации: возврат в лагерь
+    t_camp, kb_camp = handle_location_5_slug_pit("l5_scout_leave_to_camp", game, uid)
+    _assert_valid_screen(t_camp, kb_camp)
+    assert game.current_location == "Стартовый лес"
+    assert game.active_story_callback is None
+    assert game.story_state is None
+    assert game.wolf_battle is None
+
+
+def test_l5_vector_1_habits_battle_e2e_happy_path():
+    """Сквозной интеграционный тест тактического боя Вектора 1 (Повадки) от старта до победы и выхода в лагерь."""
+    game = GameState()
+    uid = 7002
+    game.intro_seen = True
+    game.habits_count = 23
+    game.surroundings_count = 0
+    game.hp = 100
+    game.equipment["hand_right"] = "Охотничье сланцевое копьё"
+    game.inventory["Охотничье сланцевое копьё"] = 1
+    game.inventory["Костяной крюк на кожаной верёвке"] = 1
+    game.inventory["Светящийся гриб"] = 2
+    game.unlocked_locations = ["Стартовый лес", "Ручей со змеями", "Скромная лощина", "Просека охотников", "Яр Слаймов"]
+
+    # 1. Старт боя
+    t1, kb1 = handle_location_5_slug_pit("l5_scout_final_attack_habits", game, uid)
+    _assert_valid_screen(t1, kb1, "l5_habits_hook")
+    assert game.wolf_battle is not None
+    assert game.wolf_battle["enemy_id"] == "trash_slime_habits"
+    assert game.wolf_battle["wolf_hp"] == 2000
+    assert game.wolf_battle["phase"] == "1"
+
+    # 2. Фаза 1: Бросить крюк
+    t2, kb2 = handle_location_5_slug_pit("l5_habits_hook", game, uid)
+    _assert_valid_screen(t2, kb2, "l5_habits_pull")
+    assert game.wolf_battle["phase"] == "2"
+
+    # 3. Фаза 2: Выдрать узел -> Фаза 3 (ошеломление)
+    t3, kb3 = handle_location_5_slug_pit("l5_habits_pull", game, uid)
+    _assert_valid_screen(t3, kb3, "l5_habits_spear")
+    assert game.wolf_battle["phase"] == "3"
+    assert game.wolf_battle["wolf_hp"] < 2000
+
+    # 4. Фаза 3: Ударить копьем
+    t3b, kb3b = handle_location_5_slug_pit("l5_habits_spear", game, uid)
+    _assert_valid_screen(t3b, kb3b)
+
+    # 5. Переход в Фазу 5 при здоровье босса <= 400
+    game.wolf_battle["wolf_hp"] = 350
+    game.wolf_battle["phase"] = "1"
+    t5, kb5 = handle_location_5_slug_pit("l5_habits_hook", game, uid)
+    _assert_valid_screen(t5, kb5, "l5_habits_stance")
+    assert game.wolf_battle["phase"] == "5"
+    # Крюк ломается и удаляется
+    assert "Костяной крюк на кожаной верёвке" not in game.inventory
+    assert "Костяной крюк на кожаной верёвке" not in game.equipment.values()
+
+    # 6. Фаза 5 -> Фаза 6: Встать в стойку
+    t6, kb6 = handle_location_5_slug_pit("l5_habits_stance", game, uid)
+    _assert_valid_screen(t6, kb6, "l5_habits_hit_core")
+    assert game.wolf_battle["phase"] == "6"
+
+    # 7. Фаза 6: Победный удар в ядро
+    game.wolf_battle["wolf_hp"] = 15
+    t_win, kb_win = handle_location_5_slug_pit("l5_habits_hit_core", game, uid)
+    _assert_valid_screen(t_win, kb_win, "l5_scout_leave_to_camp")
+    assert game.wolf_battle is None
+    assert "Охотничье сланцевое копьё" not in game.inventory
+    assert "Охотничье сланцевое копьё" not in game.equipment.values()
+    assert game.equipment.get("hand_right") == "Крепкий посох"
+    assert "Крепкий посох" not in game.inventory
+    assert game.is_story_flag_set("trash_slime_defeated")
+    assert game.is_story_flag_set("boss_trash_slime_defeated")
+    assert game.is_story_flag_set("l5_ancient_defeated")
+    assert game.is_story_flag_set("l6_unlocked")
+    assert "Мохнатая пещера" in game.unlocked_locations
+    assert not any("яр" in l.lower() or "слайм" in l.lower() for l in game.unlocked_locations)
+
+    # 8. Выход в лагерь
+    t_camp, kb_camp = handle_location_5_slug_pit("l5_scout_leave_to_camp", game, uid)
+    _assert_valid_screen(t_camp, kb_camp)
+    assert game.current_location == "Стартовый лес"
+    assert game.active_story_callback is None
+    assert game.story_state is None
+    assert game.wolf_battle is None
+
+
+def test_l5_vector_3_hybrid_battle_e2e_happy_path():
+    """Сквозной интеграционный тест позиционного боя Вектора 3 (Гибрид) от старта до победы и выхода в лагерь."""
+    game = GameState()
+    uid = 7003
+    game.intro_seen = True
+    game.habits_count = 11
+    game.surroundings_count = 12
+    game.hp = 100
+    game.equipment["hand_right"] = "Охотничье сланцевое копьё"
+    game.inventory["Охотничье сланцевое копьё"] = 1
+    game.inventory["Костяной крюк на кожаной верёвке"] = 1
+    game.inventory["Светящийся гриб"] = 2
+    game.unlocked_locations = ["Стартовый лес", "Ручей со змеями", "Скромная лощина", "Просека охотников", "Яр Слаймов"]
+
+    # 1. Экран дебюта ловушки
+    t_intro, kb_intro = handle_location_5_slug_pit("l5_scout_final_attack_balanced", game, uid)
+    _assert_valid_screen(t_intro, kb_intro, "l5_hybrid_trigger_trap")
+    assert game.story_state == "l5_hybrid_intro_trap"
+
+    # 2. Обрушение уступа (старт боя с начальным уроном)
+    t1, kb1 = handle_location_5_slug_pit("l5_hybrid_trigger_trap", game, uid)
+    _assert_valid_screen(t1, kb1, "l5_hybrid_hook_large")
+    assert game.wolf_battle is not None
+    assert game.wolf_battle["enemy_id"] == "trash_slime_hybrid"
+    assert game.wolf_battle["phase"] == "1"
+    assert 1600 <= game.wolf_battle["wolf_hp"] <= 1650
+
+    # 3. Фаза 1: Бросить крюк в крупный мусор -> Фаза 2A
+    t2a, kb2a = handle_location_5_slug_pit("l5_hybrid_hook_large", game, uid)
+    _assert_valid_screen(t2a, kb2a, "l5_hybrid_pull_large")
+    assert game.wolf_battle["phase"] == "2A"
+
+    # 4. Фаза 2A: Выдрать крупный узел -> Фаза 3A
+    t3a, kb3a = handle_location_5_slug_pit("l5_hybrid_pull_large", game, uid)
+    _assert_valid_screen(t3a, kb3a, "l5_hybrid_shroom_hole")
+    assert game.wolf_battle["phase"] == "3A"
+    assert game.wolf_battle["stun_turns"] in (2, 3)
+
+    # 5. Фаза 3A: Бросить светящийся гриб в рану -> Фаза 3A_shroom (списание 1 гриба)
+    t_sh, kb_sh = handle_location_5_slug_pit("l5_hybrid_shroom_hole", game, uid)
+    _assert_valid_screen(t_sh, kb_sh, "l5_hybrid_crit_core")
+    assert game.wolf_battle["phase"] == "3A_shroom"
+    assert game.inventory.get("Светящийся гриб") == 1
+
+    # 6. Фаза 3A_shroom: Решающий удар по ядру -> Победа
+    game.wolf_battle["wolf_hp"] = 30
+    t_win, kb_win = handle_location_5_slug_pit("l5_hybrid_crit_core", game, uid)
+    _assert_valid_screen(t_win, kb_win, "l5_scout_leave_to_camp")
+    assert game.wolf_battle is None
+    assert "Охотничье сланцевое копьё" not in game.inventory
+    assert "Охотничье сланцевое копьё" not in game.equipment.values()
+    assert game.equipment.get("hand_right") == "Крепкий посох"
+    assert "Крепкий посох" not in game.inventory
+    assert game.is_story_flag_set("trash_slime_defeated")
+    assert game.is_story_flag_set("boss_trash_slime_defeated")
+    assert game.is_story_flag_set("l5_ancient_defeated")
+    assert game.is_story_flag_set("l6_unlocked")
+    assert "Мохнатая пещера" in game.unlocked_locations
+    assert not any("яр" in l.lower() or "слайм" in l.lower() for l in game.unlocked_locations)
+
+    # 7. Выход в лагерь
+    t_camp, kb_camp = handle_location_5_slug_pit("l5_scout_leave_to_camp", game, uid)
+    _assert_valid_screen(t_camp, kb_camp)
+    assert game.current_location == "Стартовый лес"
+    assert game.active_story_callback is None
+    assert game.story_state is None
+    assert game.wolf_battle is None
+
+
+def test_l5_scout_reconnaissance_e2e_happy_path():
+    """Сквозной тест разведки: прибытие, наблюдение повадок и окрестностей, лимиты дня и возврат в лагерь."""
+    game = GameState()
+    uid = 7004
+    assert not game.intro_seen
+
+    # 1. Прибытие в логово (Окно 0)
+    t0, kb0 = handle_location_5_slug_pit("l5_ancient_lair", game, uid)
+    _assert_valid_screen(t0, kb0, "l5_scout_start")
+
+    # 2. Начало наблюдений -> Окно 1 (Хаб разведки)
+    t1, kb1 = handle_location_5_slug_pit("l5_scout_start", game, uid)
+    _assert_valid_screen(t1, kb1, "l5_scout_habits_observe")
+    _assert_valid_screen(t1, kb1, "l5_scout_surroundings_observe")
+    assert game.intro_seen is True
+
+    # 3. Наблюдение повадок (Окно 2 -> Окно 3)
+    t_h_obs, kb_h_obs = handle_location_5_slug_pit("l5_scout_habits_observe", game, uid)
+    _assert_valid_screen(t_h_obs, kb_h_obs, "l5_scout_habits_think")
+
+    t_h_th, kb_h_th = handle_location_5_slug_pit("l5_scout_habits_think", game, uid)
+    _assert_valid_screen(t_h_th, kb_h_th, "l5_ancient_lair")
+    assert game.habits_count == 1
+    assert game.day_researches_done == 1
+
+    # 4. Наблюдение окрестностей (Окно 4 -> Окно 5)
+    t_s_obs, kb_s_obs = handle_location_5_slug_pit("l5_scout_surroundings_observe", game, uid)
+    _assert_valid_screen(t_s_obs, kb_s_obs, "l5_scout_surroundings_think")
+
+    t_s_th, kb_s_th = handle_location_5_slug_pit("l5_scout_surroundings_think", game, uid)
+    _assert_valid_screen(t_s_th, kb_s_th, "l5_ancient_lair")
+    assert game.surroundings_count == 1
+    assert game.day_researches_done == 2
+
+    # 5. Выход в лагерь посреди дня (лимит дня 1 равен 3, сделано 2)
+    # День не должен смениться, остаток сохраняется
+    t_camp, kb_camp = handle_location_5_slug_pit("l5_scout_leave_to_camp", game, uid)
+    _assert_valid_screen(t_camp, kb_camp)
+    assert game.current_location == "Стартовый лес"
+    assert game.recon_day == 1
+    assert game.day_researches_done == 2
+    assert game.active_story_callback is None
+    assert game.story_state is None
+    assert game.wolf_battle is None
+
 
 
 

@@ -236,7 +236,7 @@ def test_l3_unlocks_l4_navigation():
 
     # Игрок выходит на границу L3
     text, kb = handle_location_3_slate_hollow("l3_13_boundary", game, 101)
-    assert "Просека Охотников" in game.unlocked_locations
+    assert "Просека охотников" in game.unlocked_locations
 
     # Проверяем меню локаций
     loc_kb = get_locations_kb(game)
@@ -352,6 +352,7 @@ def test_location_4_sequential_chapters_flow_and_sleeps():
                 assert len(b.text) <= 30, f"Кнопка {b.text} на экране {scr} превышает 30 символов"
 
     assert game.is_story_flag_set("l4_ch1_cliff_completed")
+    assert "Яр Слаймов" not in getattr(game, "unlocked_locations", [])
 
     # 2. До 4 снов Глава 2 не срабатывает
     ch2_sleep_base = game.story_flags["l4_ch2_sleeps"]
@@ -418,7 +419,7 @@ def test_location_4_sequential_chapters_flow_and_sleeps():
 
     assert game.is_story_flag_set("l4_fully_completed")
     assert game.inventory.get("Схема кожаной брони", 0) >= 1
-    assert "Яр Слизней" in game.unlocked_locations
+    assert "Яр Слаймов" in game.unlocked_locations
 
 
 def test_leather_armor_schema_craft_and_equipment():
@@ -463,11 +464,11 @@ def test_location_5_entry_requirement():
     from story.location_stories import handle_location_5_slug_pit
 
     game = GameState()
-    game.current_location = "Яр Слизней"
+    game.current_location = "Яр Слаймов"
 
     # Вход в локацию 5
     text, kb = handle_location_5_slug_pit("slug_pit_start", game, 101)
-    assert "Яр Слизней" in text or "зеленоватая взвесь" in text or "туман" in text
+    assert "Яр Слаймов" in text or "зеленоватая взвесь" in text or "туман" in text
     assert game.story_state == "l5_1a"
     assert kb is not None
 
@@ -529,7 +530,8 @@ def test_l4_wolf_pack_battle_full_cycle():
     from story.location_stories import handle_location_4_hunters_glade
 
     game = GameState()
-    game.hp = 150
+    game.hp = 500
+    game.equipment["weapon"] = "Крепкий посох"
 
     # 1. Старт боя
     txt, kb = handle_location_4_hunters_glade("l4_wolves_battle_start", game, 101)
@@ -566,6 +568,165 @@ def test_l4_wolf_pack_battle_full_cycle():
     assert "[ 💀 💀 💀 ]" in txt
     assert "l4_ch2_4_lesson" in [b.callback_data for r in kb.inline_keyboard for b in r]
     assert game.hp > 0
+
+
+def test_l4_no_premature_l5_unlock_in_ch1():
+    """L5 («Яр Слаймов») не должна открываться в конце Главы 1 (l4_ch1_5_doubt), а только в Главе 3."""
+    game = GameState()
+    game.unlocked_locations = ["Стартовый лес", "Ручей со змеями", "Скромная лощина", "Просека охотников"]
+
+    # Проходим финал Главы 1
+    text, kb = handle_location_4_hunters_glade("l4_ch1_5_doubt", game, 101)
+    assert game.is_story_flag_set("l4_ch1_cliff_completed")
+    assert "Яр Слаймов" not in game.unlocked_locations
+
+    # Проходим финал Главы 3 (эпилог)
+    text_ep, kb_ep = handle_location_4_hunters_glade("l4_ch3_6_epilogue", game, 101)
+    assert game.is_story_flag_set("l4_fully_completed")
+    assert "Яр Слаймов" in game.unlocked_locations
+
+
+def test_l4_karma_abuse_protection():
+    """Повторные вызовы сюжетных экранов L4 не должны повторно начислять карму."""
+    game = GameState()
+    initial_karma = dict(game.narrative_karma)
+
+    # 1. l4_3b1_plates (+2 observation)
+    handle_location_4_hunters_glade("l4_3b1_plates", game, 101)
+    assert game.narrative_karma.get("observation", 0) == 2
+    handle_location_4_hunters_glade("l4_3b1_plates", game, 101)
+    assert game.narrative_karma.get("observation", 0) == 2
+
+    # 2. l4_3b2_shake (+1 pragmatism)
+    game2 = GameState()
+    handle_location_4_hunters_glade("l4_3b2_shake", game2, 101)
+    assert game2.narrative_karma.get("pragmatism", 0) == 1
+    handle_location_4_hunters_glade("l4_3b2_shake", game2, 101)
+    assert game2.narrative_karma.get("pragmatism", 0) == 1
+
+    # 3. l4_4_freed (+3 compassion)
+    game3 = GameState()
+    handle_location_4_hunters_glade("l4_4_freed", game3, 101)
+    assert game3.narrative_karma.get("compassion", 0) == 3
+    handle_location_4_hunters_glade("l4_4_freed", game3, 101)
+    assert game3.narrative_karma.get("compassion", 0) == 3
+
+    # 4. l4_3c_ignore (+2 pragmatism)
+    game4 = GameState()
+    handle_location_4_hunters_glade("l4_3c_ignore", game4, 101)
+    assert game4.narrative_karma.get("pragmatism", 0) == 2
+    handle_location_4_hunters_glade("l4_3c_ignore", game4, 101)
+    assert game4.narrative_karma.get("pragmatism", 0) == 2
+
+    # 5. l4_6b_warn (+2 compassion)
+    game5 = GameState()
+    handle_location_4_hunters_glade("l4_6b_warn", game5, 101)
+    assert game5.narrative_karma.get("compassion", 0) == 2
+    handle_location_4_hunters_glade("l4_6b_warn", game5, 101)
+    assert game5.narrative_karma.get("compassion", 0) == 2
+
+    # 6. l4_ch3_2a_lift (+2 intervention)
+    game6 = GameState()
+    game6.inventory["Ветка"] = 5
+    game6.inventory["Кожа"] = 5
+    handle_location_4_hunters_glade("l4_ch3_2a_lift", game6, 101)
+    assert game6.narrative_karma.get("intervention", 0) == 2
+    handle_location_4_hunters_glade("l4_ch3_2a_lift", game6, 101)
+    assert game6.narrative_karma.get("intervention", 0) == 2
+
+    # 7. l4_ch3_4_upgrade (+2 intervention)
+    game7 = GameState()
+    handle_location_4_hunters_glade("l4_ch3_4_upgrade", game7, 101)
+    assert game7.narrative_karma.get("intervention", 0) == 2
+    handle_location_4_hunters_glade("l4_ch3_4_upgrade", game7, 101)
+    assert game7.narrative_karma.get("intervention", 0) == 2
+
+    # 8. l4_ch3_5a_tree (+1 pragmatism)
+    game8 = GameState()
+    handle_location_4_hunters_glade("l4_ch3_5a_tree", game8, 101)
+    assert game8.narrative_karma.get("pragmatism", 0) == 1
+    handle_location_4_hunters_glade("l4_ch3_5a_tree", game8, 101)
+    assert game8.narrative_karma.get("pragmatism", 0) == 1
+
+
+def test_l4_mortality_and_death_screens():
+    """Смерть на L4: при падении HP <= 0 вызывается некролог и экран гибели."""
+    # 1. Ловушка (l4_2b_trap)
+    game_trap = GameState()
+    game_trap.hp = 3
+    txt, kb = handle_location_4_hunters_glade("l4_2b_trap", game_trap, 101)
+    assert game_trap.hp == 0
+    assert "НЕКРОЛОГ" in txt or "погиб" in txt.lower() or "смертоносной ловушки" in txt.lower()
+    cbs_trap = [b.callback_data for r in kb.inline_keyboard for b in r]
+    assert "start_new_game_confirmed" in cbs_trap
+
+    # 2. Удар оленя (l4_3a_approach)
+    game_deer = GameState()
+    game_deer.hp = 2
+    txt, kb = handle_location_4_hunters_glade("l4_3a_approach", game_deer, 101)
+    assert game_deer.hp == 0
+    assert "НЕКРОЛОГ" in txt or "погиб" in txt.lower() or "копыта" in txt.lower()
+
+    # 3. Бой со слизнем (l4_slug_strike)
+    game_slug = GameState()
+    game_slug.hp = 4
+    handle_location_4_hunters_glade("l4_slug_battle_start", game_slug, 101)
+    txt, kb = handle_location_4_hunters_glade("l4_slug_strike", game_slug, 101)
+    assert game_slug.hp == 0
+    assert game_slug.slug_battle is None
+    assert "НЕКРОЛОГ" in txt or "погиб" in txt.lower() or "слизь" in txt.lower()
+
+    # 4. Бой с волками (l4_pack_attack_grey)
+    game_wolf = GameState()
+    game_wolf.hp = 2
+    handle_location_4_hunters_glade("l4_wolves_battle_start", game_wolf, 101)
+    txt, kb = handle_location_4_hunters_glade("l4_pack_attack_grey", game_wolf, 101)
+    assert game_wolf.hp == 0
+    assert game_wolf.wolf_pack_battle is None
+    assert "НЕКРОЛОГ" in txt or "погиб" in txt.lower() or "волк" in txt.lower()
+
+
+def test_l4_ch3_shelter_resource_requirement_and_deduction():
+    """Подъём брони в укрытие требует 1 ветку и 1 кожу; без них действие блокируется."""
+    # 1. Без ресурсов: кнопка заблокирована
+    game = GameState()
+    game.inventory = {}
+    txt, kb = handle_location_4_hunters_glade("l4_ch3_2_fate", game, 101)
+    cbs = [b.callback_data for r in kb.inline_keyboard for b in r]
+    assert "l4_ch3_2_fate_no_res" in cbs
+    assert "l4_ch3_2a_lift" not in cbs
+
+    # Попытка прямого вызова l4_ch3_2a_lift без ресурсов
+    txt_lift, kb_lift = handle_location_4_hunters_glade("l4_ch3_2a_lift", game, 101)
+    assert not game.is_story_flag_set("l4_armor_lifted")
+    assert "Не хватает материалов" in txt_lift
+
+    # 2. С ресурсами: ветка и кожа списываются, броня поднимается
+    game.inventory = {"Ветка": 2, "Кожа": 1}
+    txt_fate_ok, kb_fate_ok = handle_location_4_hunters_glade("l4_ch3_2_fate", game, 101)
+    cbs_ok = [b.callback_data for r in kb_fate_ok.inline_keyboard for b in r]
+    assert "l4_ch3_2a_lift" in cbs_ok
+
+    txt_lift_ok, kb_lift_ok = handle_location_4_hunters_glade("l4_ch3_2a_lift", game, 101)
+    assert game.is_story_flag_set("l4_armor_lifted")
+    assert game.inventory.get("Ветка") == 1
+    assert "Кожа" not in game.inventory
+
+
+def test_l4_battle_cleanup_and_peaceful_camp():
+    """При завершении боёв и на мирной стоянке боевые контексты и FSM очищаются."""
+    game = GameState()
+    game.set_story_flag("l4_fully_completed", True)
+    game.slug_battle = {"slug_hp": 10}
+    game.wolf_pack_battle = {"grey_hp": 20}
+    game.active_story_callback = "l4_slug_battle"
+
+    text, kb = handle_location_4_hunters_glade("location_enter_4", game, 101)
+    assert game.active_story_callback is None
+    assert game.slug_battle is None
+    assert game.wolf_pack_battle is None
+    assert "Впереди ждёт спуск к Яру Слаймов" in text
+
 
 
 

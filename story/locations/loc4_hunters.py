@@ -27,6 +27,18 @@ def get_main_kb(*args, **kwargs):
     return keyboards.get_main_kb(*args, **kwargs)
 
 from modules.combat.engine import _calc_player_damage
+from game_state import get_death_text
+from keyboards import get_death_kb
+
+
+def _player_death(game, reason: str):
+    """Штатный обработчик гибели персонажа на L4 со сбросом боевой сессии и FSM."""
+    game.hp = 0
+    game.slug_battle = None
+    game.wolf_pack_battle = None
+    game.story_state = None
+    game.active_story_callback = None
+    return get_death_text(game, reason, "Просека охотников"), get_death_kb()
 
 
 SLUG_ACTIONS = [
@@ -170,10 +182,13 @@ def handle_location_4_hunters_glade(data, game, uid):
     # Вход на локацию через меню / переход с L3
     if data in ("hunters_glade_start", "location_enter_4"):
         game.reset_nav()
-        game.current_location = "Просека Охотников"
+        game.current_location = "Просека охотников"
+        game.location_index = 3
+        game.location = game.current_location
+        game.pre_story_location = game.current_location
         unlocked = getattr(game, "unlocked_locations", []) or []
-        if "Просека Охотников" not in unlocked:
-            unlocked.append("Просека Охотников")
+        if "Просека охотников" not in unlocked:
+            unlocked.append("Просека охотников")
             game.unlocked_locations = unlocked
 
         if "l4_entered_day" not in game.story_flags:
@@ -181,11 +196,14 @@ def handle_location_4_hunters_glade(data, game, uid):
 
         # Если вся локация 4 полностью завершена (все 3 главы пройдены): мирная стоянка
         if game.is_story_flag_set("l4_fully_completed"):
+            game.active_story_callback = None
+            game.slug_battle = None
+            game.wolf_pack_battle = None
             text = (
                 "Ты выходишь на широкую Просеку Охотников.\n\n"
                 "Просека теперь тиха и безопасна. Старые кострища укрыты опавшей хвоей, "
                 "а на дозорном помосте тихо колышется сосновый навес. "
-                "Впереди ждёт спуск к Яру Слизней."
+                "Впереди ждёт спуск к Яру Слаймов."
             )
             kb = get_main_kb(game)
             return text, kb
@@ -196,6 +214,9 @@ def handle_location_4_hunters_glade(data, game, uid):
 
         # Если сюжет оленя уже завершён: спокойная стоянка между главами
         if game.is_story_flag_set("l4_completed"):
+            game.active_story_callback = None
+            game.slug_battle = None
+            game.wolf_pack_battle = None
             text = (
                 "Ты выходишь на широкую Просеку Охотников.\n\n"
                 "Старые кострища укрыты опавшей хвоей. Костяные пластинки больше не трещат на ветру, "
@@ -206,6 +227,9 @@ def handle_location_4_hunters_glade(data, game, uid):
 
         # Если сюжет ещё не запущен (нужно пожить 2 ночи): спокойное обживание стоянки
         if not game.is_story_flag_set("l4_started"):
+            game.active_story_callback = None
+            game.slug_battle = None
+            game.wolf_pack_battle = None
             text = (
                 "Ты выходишь на широкую Просеку Охотников.\n\n"
                 "Между деревьями чернеют старые кострища, на стволах видны зарубки. "
@@ -277,8 +301,10 @@ def handle_location_4_hunters_glade(data, game, uid):
         if not game.is_story_flag_set("l4_trap_stepped"):
             game.set_story_flag("l4_trap_stepped", True)
             trap_dmg = 5
-            game.hp = max(1, getattr(game, "hp", 100) - trap_dmg)
+            game.hp = max(0, getattr(game, "hp", 100) - trap_dmg)
             game.add_log(f"⚠️ Ловушка на просеке: −{trap_dmg} HP.")
+            if game.hp <= 0:
+                return _player_death(game, "Неосторожный шаг привёл к срабатыванию смертоносной ловушки.")
             if getattr(game, "hp", 100) <= 20:
                 game.thirst = max(0, getattr(game, "thirst", 60) - 5)
         text = (
@@ -314,9 +340,11 @@ def handle_location_4_hunters_glade(data, game, uid):
         if not game.is_story_flag_set("l4_deer_kicked"):
             game.set_story_flag("l4_deer_kicked", True)
             deer_dmg = 3
-            game.hp = max(1, getattr(game, "hp", 100) - deer_dmg)
+            game.hp = max(0, getattr(game, "hp", 100) - deer_dmg)
             game.add_log(f"⚠️ Удар оленя: −{deer_dmg} HP.")
             game.adjust_narrative_karma("compassion", 1)
+            if game.hp <= 0:
+                return _player_death(game, "Отчаянный удар копыта раненого оленя оказался смертельным.")
         text = (
             "Ты мягко ступаешь по мху, протянув ладонь к раненой ноге. Но обезумевший от боли зверь вскидывает круп "
             "и со всей силы бьёт копытом!\n\n"
@@ -374,7 +402,9 @@ def handle_location_4_hunters_glade(data, game, uid):
     elif data == "l4_3b1_plates":
         game.story_state = "l4_3b1_plates"
         game.set_story_flag("signal_disabled", True)
-        game.adjust_narrative_karma("observation", 2)
+        if not game.is_story_flag_set("l4_3b1_plates_karma"):
+            game.set_story_flag("l4_3b1_plates_karma", True)
+            game.adjust_narrative_karma("observation", 2)
         text = (
             "Чуткими пальцами ты аккуратно распускаешь смоляной узел и перехватываешь связку. "
             "Костяные пластинки лишь глухо звякают в кулаке и мягко ложатся в траву под деревом.\n\n"
@@ -389,7 +419,9 @@ def handle_location_4_hunters_glade(data, game, uid):
     elif data == "l4_3b2_shake":
         game.story_state = "l4_3b2_shake"
         game.set_story_flag("signal_disabled", False)
-        game.adjust_narrative_karma("pragmatism", 1)
+        if not game.is_story_flag_set("l4_3b2_shake_karma"):
+            game.set_story_flag("l4_3b2_shake_karma", True)
+            game.adjust_narrative_karma("pragmatism", 1)
         text = (
             "Ты хватаешься обеими руками за дубовый колышек и изо всех сил раскачиваешь его во влажной земле. "
             "Натянутый шнур моментально передаёт яростную вибрацию вверх на гибкую ветку.\n\n"
@@ -405,9 +437,9 @@ def handle_location_4_hunters_glade(data, game, uid):
         game.story_state = "l4_4_freed"
         if not game.is_story_flag_set("deer_freed"):
             game.spared_souls = getattr(game, "spared_souls", 0) + 1
+            game.adjust_narrative_karma("compassion", 3)
         game.set_story_flag("deer_freed", True)
         game.set_story_flag("helped_deer", True)
-        game.adjust_narrative_karma("compassion", 3)
 
         sig_disabled = game.is_story_flag_set("signal_disabled")
         if not sig_disabled:
@@ -438,7 +470,9 @@ def handle_location_4_hunters_glade(data, game, uid):
     elif data == "l4_3c_ignore":
         game.story_state = "l4_3c_ignore"
         game.set_story_flag("deer_freed", False)
-        game.adjust_narrative_karma("pragmatism", 2)
+        if not game.is_story_flag_set("l4_3c_ignore_karma"):
+            game.set_story_flag("l4_3c_ignore_karma", True)
+            game.adjust_narrative_karma("pragmatism", 2)
         text = (
             "Ты медленно отступаешь на шаг назад, не решаясь вмешиваться. Испуганный зверь собирает последние "
             "силы и делает отчаянный рывок всем телом. Старый колышек трещит и поддаётся — петля соскальзывает!\n\n"
@@ -625,7 +659,9 @@ def handle_location_4_hunters_glade(data, game, uid):
     elif data == "l4_6b_warn":
         game.story_state = "l4_6b_warn"
         game.set_story_flag("left_warning", True)
-        game.adjust_narrative_karma("compassion", 2)
+        if not game.is_story_flag_set("l4_left_warning_karma"):
+            game.set_story_flag("l4_left_warning_karma", True)
+            game.adjust_narrative_karma("compassion", 2)
         text = (
             "Ты подбираешь две сухие сучковатые ветви и связываешь их крест-накрест посреди тропы, подвесив снятые пластинки.\n\n"
             "Теперь любой путник издалека различит тревожный силуэт охотничьего предупреждения и обойдёт гиблую траву стороной."
@@ -875,6 +911,7 @@ def handle_location_4_hunters_glade(data, game, uid):
         if coated or data == "l4_slug_battle_engine":
             b["slug_hp"] = max(0, b.get("slug_hp", 30) - 11)
             if b["slug_hp"] <= 0 or data == "l4_slug_battle_engine":
+                game.slug_battle = None
                 game.story_state = "l4_ch1_4_stone_mark"
                 game.set_story_flag("l4_slug_defeated", True)
                 if game.inventory.get("Светящийся гриб", 0) > 0:
@@ -890,11 +927,15 @@ def handle_location_4_hunters_glade(data, game, uid):
                 ])
                 return text, kb
             else:
-                game.hp = max(1, game.hp - 5)
+                game.hp = max(0, game.hp - 5)
+                if game.hp <= 0:
+                    return _player_death(game, "Едкая слизь прожгла одежду и растворила плоть.")
                 b["last_log"] = "💥 Удар посохом: −11 HP. Кислотный сок шипит и растворяет оболочку!\n⚠️ Слизень прыгает на тебя: −5 HP (игнор брони)."
         else:
             b["slug_hp"] = max(1, min(30, b.get("slug_hp", 30) - 1 + 1))
-            game.hp = max(1, game.hp - 5)
+            game.hp = max(0, game.hp - 5)
+            if game.hp <= 0:
+                return _player_death(game, "Едкая слизь прожгла одежду и растворила плоть.")
             b["attacks_count"] = b.get("attacks_count", 0) + 1
             log_str = "🦯 Удар посохом: −1 HP. Посох вязнет в слизи.\n⚠️ Слизень прыгает на тебя: −5 HP (игнор брони). Слизень восстановил +1 HP."
             if b["attacks_count"] >= 3 and not b.get("inspected", False):
@@ -907,7 +948,9 @@ def handle_location_4_hunters_glade(data, game, uid):
     elif data == "l4_slug_defend":
         b = getattr(game, "slug_battle", None) or {}
         coated = b.get("coated", False)
-        game.hp = max(1, game.hp - 5)
+        game.hp = max(0, game.hp - 5)
+        if game.hp <= 0:
+            return _player_death(game, "Едкая слизь прожгла оборону и растворила плоть.")
         if not coated:
             b["slug_hp"] = min(30, b.get("slug_hp", 30) + 1)
             b["last_log"] = "🛡️ Ты защищаешься, но слизь прожигает оборону: −5 HP (игнор брони). Слизень восстановил +1 HP."
@@ -919,7 +962,9 @@ def handle_location_4_hunters_glade(data, game, uid):
     elif data == "l4_slug_inspect":
         b = getattr(game, "slug_battle", None) or {}
         b["inspected"] = True
-        game.hp = max(1, game.hp - 5)
+        game.hp = max(0, game.hp - 5)
+        if game.hp <= 0:
+            return _player_death(game, "Слизень атаковал тебя, пока ты отвлёкся на осмотр гриба.")
         if not b.get("coated", False):
             b["slug_hp"] = min(30, b.get("slug_hp", 30) + 1)
         b["last_log"] = "🔍 Тебе показалось, что слизень отшатнулся.\n⚠️ Слизень прыгает на тебя: −5 HP (игнор брони). Слизень восстановил +1 HP."
@@ -947,7 +992,9 @@ def handle_location_4_hunters_glade(data, game, uid):
             "friend": ("«Мир, дружба, жвачка?» В ответ слизень смачно плюнул студнем.", 5),
         }
         desc, dmg = act_texts.get(act_key, ("Ты пробуешь применить гриб, но без толку.", 5))
-        game.hp = max(1, game.hp - dmg)
+        game.hp = max(0, game.hp - dmg)
+        if game.hp <= 0:
+            return _player_death(game, "Слизень атаковал тебя, пока ты экспериментировал с грибом.")
         if not b.get("coated", False):
             b["slug_hp"] = min(30, b.get("slug_hp", 30) + 1)
         b["last_log"] = f"{desc}\n⚠️ Слизень прыгает на тебя: −{dmg} HP (игнор брони). Слизень восстановил +1 HP."
@@ -963,13 +1010,16 @@ def handle_location_4_hunters_glade(data, game, uid):
             if game.inventory["Светящийся гриб"] <= 0:
                 del game.inventory["Светящийся гриб"]
 
-        game.hp = max(1, game.hp - 5)
+        game.hp = max(0, game.hp - 5)
+        if game.hp <= 0:
+            return _player_death(game, "Слизень атаковал тебя, пока ты покрывал древко соком гриба.")
         b["last_log"] = "🧪 Бирюзовый сок с шипением разъедает грязь и покрывает древко пенящейся коркой!\n⚠️ Слизень прыгает на тебя: −5 HP (игнор брони)."
         game.slug_battle = b
         return _render_slug_battle(game)
 
     # Экран 4: Чёрный след на камне
     elif data == "l4_ch1_4_stone_mark":
+        game.slug_battle = None
         game.story_state = "l4_ch1_4_stone_mark"
         text = (
             "Слизняк разбит в брызги, но дыхание сбито. Ты опускаешь взгляд на грудь: на сланцевой пластине остался "
@@ -983,21 +1033,18 @@ def handle_location_4_hunters_glade(data, game, uid):
 
     # Экран 5: Тяжёлое сомнение
     elif data == "l4_ch1_5_doubt":
+        game.slug_battle = None
         game.story_state = None
         game.set_story_flag("l4_ch1_cliff_completed", True)
         game.story_flags["l4_ch2_sleeps"] = game.story_flags.get("l4_sleep_count", 0)
         game.story_flags["l4_ch2_day"] = getattr(game, "day", 1)
-        unlocked = getattr(game, "unlocked_locations", []) or []
-        if "Яр Слизней" not in unlocked:
-            unlocked.append("Яр Слизней")
-            game.unlocked_locations = unlocked
         text = (
             "Ты отходишь от гиблой кромки. Сейчас скинуть броню ты не готов: в лесу полно волков, "
             "и доспех дарит чувство защиты и уверенность в завтрашнем дне.\n\n"
             "Но для спуска в этот овраг потребуется защита из прочной кожи, которая не боится кислоты и не тянет ко дну. "
             "С этими мыслями ты возвращаешься в лагерь.\n"
             "──────────\n"
-            "Яр Слизней (Опасно, прохода нет)"
+            "Яр Слаймов (Опасно, прохода нет)"
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🏕 Вернуться в лагерь", callback_data="back")]
@@ -1095,7 +1142,9 @@ def handle_location_4_hunters_glade(data, game, uid):
             total_wolf_dmg += l_dmg
             logs.append(f"🐺 Вожак сбил с ног: −{l_dmg} HP.")
 
-        game.hp = max(1, game.hp - total_wolf_dmg)
+        game.hp = max(0, game.hp - total_wolf_dmg)
+        if game.hp <= 0:
+            return _player_death(game, "Молодая стая волков растерзала тебя на просеке.")
         b["last_log"] = "\n".join(logs)
         game.wolf_pack_battle = b
 
@@ -1124,7 +1173,9 @@ def handle_location_4_hunters_glade(data, game, uid):
             total_wolf_dmg += l_dmg
             logs.append(f"🐺 Вожак клацнул по камню: −{l_dmg} HP.")
 
-        game.hp = max(1, game.hp - total_wolf_dmg)
+        game.hp = max(0, game.hp - total_wolf_dmg)
+        if game.hp <= 0:
+            return _player_death(game, "Молодая стая волков сломила твою оборону и растерзала тебя.")
         b["last_log"] = "\n".join(logs)
         game.wolf_pack_battle = b
         return _render_wolf_pack_battle(game)
@@ -1145,6 +1196,7 @@ def handle_location_4_hunters_glade(data, game, uid):
 
     # Экран 4: Урок просеки
     elif data == "l4_ch2_4_lesson":
+        game.wolf_pack_battle = None
         game.story_state = None
         game.set_story_flag("l4_ch2_pack_completed", True)
         game.story_flags["l4_ch3_sleeps"] = game.story_flags.get("l4_sleep_count", 0)
@@ -1187,24 +1239,54 @@ def handle_location_4_hunters_glade(data, game, uid):
             "в сухое укрытие. Либо не поднимать броню сейчас, осмотреть помост налегке, "
             "а судьбу доспеха решить уже внизу после спуска."
         )
+        has_branch = game.inventory.get("Ветка", 0) >= 1
+        has_leather = game.inventory.get("Кожа", 0) >= 1
+        buttons = []
+        if has_branch and has_leather:
+            buttons.append([InlineKeyboardButton(text="Поднять доспех сюда", callback_data="l4_ch3_2a_lift")])
+        else:
+            missing = []
+            if not has_branch:
+                missing.append("1 ветка")
+            if not has_leather:
+                missing.append("1 кожа")
+            buttons.append([InlineKeyboardButton(text=f"🔒 Поднять доспех (нет: {', '.join(missing)})", callback_data="l4_ch3_2_fate_no_res")])
+        buttons.append([InlineKeyboardButton(text="Не поднимать, осмотреться", callback_data="l4_ch3_3_table")])
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    # Предупреждение о нехватке ресурсов для люльки
+    elif data == "l4_ch3_2_fate_no_res":
+        missing = []
+        if game.inventory.get("Ветка", 0) < 1:
+            missing.append("1 ветка")
+        if game.inventory.get("Кожа", 0) < 1:
+            missing.append("1 кожа")
+        miss_str = ", ".join(missing) if missing else "материалы"
+        text = (
+            f"⚠️ Не хватает материалов для подъёма доспеха: необходимо {miss_str}.\n\n"
+            "Сланцевые пластины слишком тяжелы, чтобы поднимать их голыми руками по старому канату без люльки. "
+            "Придётся осмотреть помост налегке."
+        )
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Поднять доспех сюда", callback_data="l4_ch3_2a_lift")],
             [InlineKeyboardButton(text="Не поднимать, осмотреться", callback_data="l4_ch3_3_table")],
+            [InlineKeyboardButton(text="« Назад к выбору", callback_data="l4_ch3_2_fate")],
         ])
 
     # Экран 2а: Схрон на помосте (ветка люльки)
     elif data == "l4_ch3_2a_lift":
+        if game.inventory.get("Ветка", 0) < 1 or game.inventory.get("Кожа", 0) < 1:
+            return handle_location_4_hunters_glade("l4_ch3_2_fate_no_res", game, uid)
         game.story_state = "l4_ch3_2a_lift"
         game.set_story_flag("l4_armor_lifted", True)
-        game.adjust_narrative_karma("intervention", 2)
-        if game.inventory.get("Ветка", 0) > 0:
-            game.inventory["Ветка"] -= 1
-            if game.inventory["Ветка"] <= 0:
-                del game.inventory["Ветка"]
-        if game.inventory.get("Кожа", 0) > 0:
-            game.inventory["Кожа"] -= 1
-            if game.inventory["Кожа"] <= 0:
-                del game.inventory["Кожа"]
+        if not game.is_story_flag_set("l4_ch3_2a_lift_karma"):
+            game.set_story_flag("l4_ch3_2a_lift_karma", True)
+            game.adjust_narrative_karma("intervention", 2)
+        game.inventory["Ветка"] -= 1
+        if game.inventory["Ветка"] <= 0:
+            del game.inventory["Ветка"]
+        game.inventory["Кожа"] -= 1
+        if game.inventory["Кожа"] <= 0:
+            del game.inventory["Кожа"]
         text = (
             "Ты связываешь из ветки и кожи люльку, перекидываешь канат через сук и поднимаешь каменные пластины наверх.\n\n"
             "Сланцевый доспех аккуратно уложен под навес из коры — здесь ему не страшны сырость и дожди. "
@@ -1268,7 +1350,9 @@ def handle_location_4_hunters_glade(data, game, uid):
         game.ap = max(0, getattr(game, "ap", 3) - 2)
         game.hunger = max(0, getattr(game, "hunger", 60) - 20)
         game.thirst = max(0, getattr(game, "thirst", 60) - 35)
-        game.adjust_narrative_karma("intervention", 2)
+        if not game.is_story_flag_set("l4_ch3_4_upgrade_karma"):
+            game.set_story_flag("l4_ch3_4_upgrade_karma", True)
+            game.adjust_narrative_karma("intervention", 2)
         text = (
             "Ты подбираешь кору из-под ног и забиваешь её в щели, настилая лапник. "
             "На помосте становится глухо, сухо и тепло — сделано образцово.\n\n"
@@ -1298,7 +1382,9 @@ def handle_location_4_hunters_glade(data, game, uid):
     elif data == "l4_ch3_5a_tree":
         game.story_state = "l4_ch3_5a_tree"
         game.ap = max(0, getattr(game, "ap", 3) - 2)
-        game.adjust_narrative_karma("pragmatism", 1)
+        if not game.is_story_flag_set("l4_ch3_5a_tree_karma"):
+            game.set_story_flag("l4_ch3_5a_tree_karma", True)
+            game.adjust_narrative_karma("pragmatism", 1)
         text = (
             "Потратив добрый час, ты находишь упругую молодую лиственницу и надёжно подвешиваешь на неё сланцевые пластины. "
             "Камень оторван от сырой земли и не зарастёт мхом.\n\n"
@@ -1321,6 +1407,8 @@ def handle_location_4_hunters_glade(data, game, uid):
 
     # Экран 6: Размышления на рубеже (Финал локации 4)
     elif data == "l4_ch3_6_epilogue":
+        game.slug_battle = None
+        game.wolf_pack_battle = None
         game.story_state = None
         game.set_story_flag("l4_fully_completed", True)
         if not game.is_story_flag_set("l4_schema_received"):
@@ -1328,14 +1416,14 @@ def handle_location_4_hunters_glade(data, game, uid):
             game.inventory["Схема кожаной брони"] = game.inventory.get("Схема кожаной брони", 0) + 1
             game.add_log("В рюкзак добавлена схема кожаной брони.")
         unlocked = getattr(game, "unlocked_locations", []) or []
-        if "Яр Слизней" not in unlocked:
-            unlocked.append("Яр Слизней")
+        if "Яр Слаймов" not in unlocked:
+            unlocked.append("Яр Слаймов")
             game.unlocked_locations = unlocked
         text = (
             "Ты стоишь на опушке перед спуском в овраг, глядя на заходящее солнце. На душе смешались светлая грусть "
             "и тихая надежда наконец-то выбраться из этого заколдованного круга.\n\n"
             "Сланцевая броня осталась позади — верный страж, спасший тебя от волков. Тебя наполняет уверенность, "
-            "что только сшив новый кожаный доспех, ты сможешь спуститься к оврагу, к едкой бездне Яра Слизней. "
+            "что только сшив новый кожаный доспех, ты сможешь спуститься к оврагу, к едкой бездне Яра Слаймов. "
             "Просека Охотников пройдена. Твой путь лежит дальше."
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -1344,7 +1432,7 @@ def handle_location_4_hunters_glade(data, game, uid):
 
     # Управление active_story_callback
     terminators = ("l4_8_final", "l4_9_exit", "l4_ch1_5_doubt", "l4_ch2_4_lesson", "l4_ch3_6_epilogue", "back")
-    if kb == get_main_kb(game) or data in terminators or getattr(game, "hp", 100) <= 0:
+    if data in terminators or getattr(game, "hp", 100) <= 0:
         game.active_story_callback = None
     elif text is not None:
         game.active_story_callback = "l4_1_entry" if data in ("hunters_glade_start", "location_enter_4") else data

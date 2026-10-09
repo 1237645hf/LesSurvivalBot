@@ -40,12 +40,18 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
 
     if data in ("location_enter_boar",):
         game.reset_nav()
-        game.current_location = "Скромная Лощина"
+        game.current_location = "Скромная лощина"
+        game.location_index = 2
+        game.location = game.current_location
+        game.pre_story_location = game.current_location
         return handle_location_3_slate_hollow("l3_8_ridge", game, uid)
 
     if data in ("location_enter_3", "slate_hollow_start"):
         game.reset_nav()
-        game.current_location = "Скромная Лощина"
+        game.current_location = "Скромная лощина"
+        game.location_index = 2
+        game.location = game.current_location
+        game.pre_story_location = game.current_location
         if game.is_story_flag_set("l3_shelter_unlocked"):
             if not game.is_story_flag_set("l3_ridge_completed"):
                 text = (
@@ -493,10 +499,10 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
     elif data == "l3_13_boundary":
         game.set_story_flag("l3_ridge_completed", True)
         unlocked = getattr(game, "unlocked_locations", []) or []
-        if "Просека Охотников" not in unlocked:
-            unlocked.append("Просека Охотников")
+        if "Просека охотников" not in unlocked:
+            unlocked.append("Просека охотников")
             game.unlocked_locations = unlocked
-        game.add_log("🗺️ Открыта новая локация: Просека Охотников.")
+        game.add_log("🗺️ Открыта новая локация: Просека охотников.")
         text = (
             "По сланцевым выступам ты поднимаешься к краю лощины.\n"
             "Отсюда видна полоса более редкого леса. Между стволами что-то светлеет.\n\n"

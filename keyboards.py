@@ -245,7 +245,7 @@ def get_main_kb(game):
         kb_rows.append([
             InlineKeyboardButton(text="📜 Каменная плита", callback_data="tablet_notes_view")
         ])
-    if "Яр Слизней" in str(getattr(game, "current_location", "")):
+    if any(loc in str(getattr(game, "current_location", "")) for loc in ("Яр Слаймов", "Яр Слизней")) :
         if getattr(game, "slug_bait_active", False):
             kb_rows.append([
                 InlineKeyboardButton(text="🍯 Приманка для слизней (Активна)", callback_data="l5_bait_menu")
@@ -479,14 +479,14 @@ def get_locations_kb(game):
         keyboard.append([InlineKeyboardButton(text=f"{loc_idx}. 🏹 Просека охотников{pin}", callback_data=cb)])
         loc_idx += 1
 
-    # 5. Яр слизней (полностью скрывается после победы над Мусорным слаймом)
-    if not is_l5_defeated and is_loc_unlocked("яр", "слизн"):
-        is_cur = any(kw in cur_loc for kw in ("яр", "слизн"))
+    # 5. Яр Слаймов (полностью скрывается после победы над Мусорным слаймом)
+    if not is_l5_defeated and is_loc_unlocked("яр", "слизн", "слайм"):
+        is_cur = any(kw in cur_loc for kw in ("яр", "слизн", "слайм"))
         pin = " 📍" if is_cur else ""
         cb = "already_here" if is_cur else "location_enter_5"
-        keyboard.append([InlineKeyboardButton(text=f"{loc_idx}. 🐌 Яр слизней{pin}", callback_data=cb)])
+        keyboard.append([InlineKeyboardButton(text=f"{loc_idx}. 🐌 Яр Слаймов{pin}", callback_data=cb)])
         loc_idx += 1
-        # • Подлокации Яра Слизней
+        # • Подлокации Яра Слаймов
         if game.is_story_flag_set("l5_arena_unlocked") and not game.is_story_flag_set("l5_boss_defeated"):
             keyboard.append([InlineKeyboardButton(text="• ☣️ Заводь Исполина", callback_data="l5_arena_start")])
         if game.is_story_flag_set("l5_ancient_unlocked") and not game.is_story_flag_set("l5_ancient_defeated"):
@@ -605,7 +605,7 @@ def get_trap_buttons_kb(game):
         2: "Ручей со змеями",
         3: "Скромная лощина",
         4: "Просека охотников",
-        5: "Яр слизней",
+        5: "Яр Слаймов",
         6: "Мохнатая пещера",
         7: "Святилище",
     }
@@ -655,7 +655,7 @@ def get_trap_buttons_kb(game):
 
 
 def get_l5_bait_menu_kb():
-    """Меню управления приманкой в Яру Слизней."""
+    """Меню управления приманкой в Яру Слаймов."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⚔️ Устроить засаду!", callback_data="l5_slug_ambush")],
         [InlineKeyboardButton(text="🚫 Снять приманку", callback_data="l5_bait_remove")],

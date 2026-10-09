@@ -14,7 +14,7 @@ def test_canonical_location_names():
     # Открываем все локации
     game.unlocked_locations = [
         "Стартовый лес", "Ручей со змеями", "Скромная лощина",
-        "Просека охотников", "Яр слизней", "Мохнатая пещера", "Святилище",
+        "Просека охотников", "Яр Слаймов", "Мохнатая пещера", "Святилище",
     ]
 
     loc_kb = get_locations_kb(game)
@@ -26,7 +26,7 @@ def test_canonical_location_names():
         "2. 🏞️ Ручей со змеями",
         "3. ⛰️ Скромная лощина",
         "4. 🏹 Просека охотников",
-        "5. 🐌 Яр слизней",
+        "5. 🐌 Яр Слаймов",
         "6. 🦇 Мохнатая пещера",
         "7. 🏛️ Святилище",
         "↩️ Назад",
@@ -47,7 +47,7 @@ def test_canonical_location_names():
     assert any("Ручей со змеями" in t for t in trap_texts)
     assert any("Скромная лощина" in t for t in trap_texts)
     assert any("Просека охотников" in t for t in trap_texts)
-    assert any("Яр слизней" in t for t in trap_texts)
+    assert any("Яр Слаймов" in t for t in trap_texts)
     assert any("Мохнатая пещера" in t for t in trap_texts)
     assert any("Святилище" in t for t in trap_texts)
 

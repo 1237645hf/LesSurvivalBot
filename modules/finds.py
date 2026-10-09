@@ -246,18 +246,37 @@ def _apply_soft_cap(raw_drops: List[str], inventory: Optional[Dict[str, int]] = 
 
 
 def location_id_from_game(game) -> int:
-    idx = getattr(game, "location_index", None)
-    if isinstance(idx, int) and 0 <= idx <= 6:
-        return idx + 1
-    cur = str(getattr(game, "current_location", "") or "")
-    mapping = {
-        "Стартов": 1, "Лесной": 1, "Ручей": 2, "Лощин": 3, "Просека": 4, "Охотник": 4,
-        "Яр": 5, "Слизн": 5, "Пещер": 6, "Мохнат": 6, "Святилищ": 7, "Вершин": 7,
-    }
-    for key, lid in mapping.items():
-        if key in cur:
-            return lid
-    return 1
+    cur = str(getattr(game, "current_location", "") or "").strip().lower()
+    loc_id = None
+    if cur:
+        if "святилищ" in cur or "вершин" in cur:
+            loc_id = 7
+        elif "пещер" in cur or "мохнат" in cur:
+            loc_id = 6
+        elif "яр" in cur or "слайм" in cur or "слизн" in cur:
+            loc_id = 5
+        elif "просек" in cur or "охотник" in cur:
+            loc_id = 4
+        elif "лощин" in cur:
+            loc_id = 3
+        elif "руч" in cur or "зме" in cur:
+            loc_id = 2
+        elif "старт" in cur or "лес" in cur:
+            loc_id = 1
+
+    if loc_id is None:
+        idx = getattr(game, "location_index", None)
+        if isinstance(idx, int) and 0 <= idx <= 6:
+            loc_id = idx + 1
+        else:
+            loc_id = 1
+
+    if hasattr(game, "location_index"):
+        try:
+            game.location_index = loc_id - 1
+        except Exception:
+            pass
+    return loc_id
 
 
 def roll_find(location_id: int, inventory: Optional[Dict[str, int]] = None, extra_roll: bool = False) -> List[str]:

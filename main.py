@@ -1001,6 +1001,9 @@ async def process_callback(callback: types.CallbackQuery):
 
         elif data == "location_enter_1":
             game.current_location = "Стартовый лес"
+            game.location_index = 0
+            game.location = game.current_location
+            game.pre_story_location = game.current_location
             game.reset_nav()
             game.add_log("Ты вернулся в Стартовый лес.")
             text = game.get_ui()
@@ -1028,6 +1031,9 @@ async def process_callback(callback: types.CallbackQuery):
             text, kb = handle_back_navigation(game, uid)
 
         elif is_story_callback(data):
+            if not getattr(game, "active_story_callback", None) and not getattr(game, "story_state", None):
+                if not getattr(game, "pre_story_location", None):
+                    game.pre_story_location = getattr(game, "current_location", None)
             text, kb = handle_story(data, game, uid)
 
         elif data in ("action_sleep", "action_4"):

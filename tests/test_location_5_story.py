@@ -1,5 +1,5 @@
 """
-Unit-тесты для сюжета Локации 5 («Яр Слизней»), предметов, крафтов и механик фонаря / амулета.
+Unit-тесты для сюжета Локации 5 («Яр Слаймов»), предметов, крафтов и механик фонаря / амулета.
 """
 
 import pytest
@@ -14,7 +14,7 @@ from keyboards import get_main_kb, get_item_card_actions_kb
 def test_location_5_story_full_flow_wait_branch():
     """Прохождение сюжета Локации 5 через выжидание и использование гриба."""
     game = GameState()
-    game.current_location = "Яр Слизней"
+    game.current_location = "Яр Слаймов"
 
     # Окно 1: Вход
     text, kb = handle_location_5_slug_pit("slug_pit_start", game, 101)
@@ -72,7 +72,9 @@ def test_location_5_story_full_flow_wait_branch():
 
     # Окно 11: Финал истории
     text, kb = handle_location_5_slug_pit("l5_5_lantern", game, 101)
-    assert game.story_flags.get("l5_completed") is True
+    assert game.story_flags.get("l5_ch1_completed") is True
+    assert not game.is_story_flag_set("l5_completed")
+    assert "Мохнатая пещера" not in getattr(game, "unlocked_locations", [])
     assert "Зарядить фонарь" in game.unlocked_crafts
     assert "Пузырёк" in game.unlocked_crafts
     assert "Янтарное зелье" in game.unlocked_crafts
@@ -99,14 +101,15 @@ def test_location_5_story_leave_without_lantern():
 
     # 1. Уход через l5_5_left (после l5_3c_leave)
     game = GameState()
-    game.current_location = "Яр Слизней"
+    game.current_location = "Яр Слаймов"
     text, kb = handle_location_5_slug_pit("l5_5_left", game, 101)
-    assert game.story_flags.get("l5_completed") is True
+    assert game.story_flags.get("l5_ch1_completed") is True
+    assert not game.is_story_flag_set("l5_completed")
     assert "Зарядить фонарь" not in game.unlocked_crafts
     assert "Пузырёк" in game.unlocked_crafts
     assert "Янтарное зелье" in game.unlocked_crafts
     assert "Приманка для слизней" in game.unlocked_crafts
-    assert "Мохнатая пещера" in game.unlocked_locations
+    assert "Мохнатая пещера" not in getattr(game, "unlocked_locations", [])
 
     craft_text = get_craft_menu_text(game)
     assert "Зарядить фонарь" not in craft_text
@@ -115,14 +118,16 @@ def test_location_5_story_leave_without_lantern():
 
     # 2. Ранний уход через l5_leave_early
     game2 = GameState()
-    game2.current_location = "Яр Слизней"
+    game2.current_location = "Яр Слаймов"
     text2, kb2 = handle_location_5_slug_pit("l5_leave_early", game2, 101)
-    assert game2.story_flags.get("l5_completed") is True
+    assert not game2.is_story_flag_set("l5_completed")
     assert "Зарядить фонарь" not in game2.unlocked_crafts
     assert "Пузырёк" in game2.unlocked_crafts
     assert "Янтарное зелье" in game2.unlocked_crafts
     assert "Приманка для слизней" in game2.unlocked_crafts
-    assert "Мохнатая пещера" in game2.unlocked_locations
+    assert "Мохнатая пещера" not in game2.unlocked_locations
+    assert game2.story_state is None
+    assert game2.active_story_callback is None
 
     # 3. Даже если "Зарядить фонарь" принудительно добавить в unlocked_crafts, без фонаря он скрыт в меню
     game2.unlocked_crafts.append("Зарядить фонарь")
@@ -215,10 +220,10 @@ def test_slug_bait_mechanics():
     assert not can_craft(game, "Приманка для слизней")
     ok, err = do_craft(game, "Приманка для слизней")
     assert ok is False
-    assert "Яру Слизней" in err
+    assert "Яру Слаймов" in err
 
-    # 2. Перемещаемся в Яр Слизней -> теперь можно
-    game.current_location = "Яр Слизней"
+    # 2. Перемещаемся в Яр Слаймов -> теперь можно
+    game.current_location = "Яр Слаймов"
     assert can_craft(game, "Приманка для слизней")
     ok, msg = do_craft(game, "Приманка для слизней")
     assert ok is True
@@ -226,7 +231,7 @@ def test_slug_bait_mechanics():
     assert game.inventory.get("Лесная ягода", 0) == 0
     assert game.inventory.get("Красная ягода", 0) == 0
 
-    # 3. Установка приманки в Яру Слизней
+    # 3. Установка приманки в Яру Слаймов
     handle_craft("use_item_Приманка для слизней", game, 101)
     assert game.slug_bait_active is True
     assert game.inventory.get("Приманка для слизней", 0) == 0
@@ -346,3 +351,88 @@ def test_vial_and_amber_potion_card_metadata():
     assert "выплавленный из сланцевого слитка" in ITEMS["Пузырёк"]["description"]
     assert "+70 HP" not in ITEMS["Янтарное зелье"]["description"]
     assert "+70 HP" in ITEMS["Янтарное зелье"]["note"]
+
+
+def test_l5_leave_early_karma_exploit_prevention():
+    """Многократный вызов l5_leave_early начисляет карму строго один раз."""
+    game = GameState()
+    initial_pragmatism = game.narrative_karma.get("pragmatism", 0)
+    initial_compassion = game.narrative_karma.get("compassion", 0)
+    initial_intervention = game.narrative_karma.get("intervention", 0)
+    initial_observation = game.narrative_karma.get("observation", 0)
+
+    # 1-й выход
+    handle_location_5_slug_pit("l5_leave_early", game, 101)
+    assert game.narrative_karma.get("pragmatism", 0) == initial_pragmatism + 2
+    assert game.narrative_karma.get("compassion", 0) == initial_compassion + 1
+    assert game.narrative_karma.get("intervention", 0) == initial_intervention - 2
+    assert game.narrative_karma.get("observation", 0) == initial_observation + 1
+    assert game.is_story_flag_set("l5_leave_early_karma_applied")
+
+    # 2-й и 3-й выходы (повторные)
+    handle_location_5_slug_pit("l5_leave_early", game, 101)
+    handle_location_5_slug_pit("l5_leave_early", game, 101)
+    assert game.narrative_karma.get("pragmatism", 0) == initial_pragmatism + 2
+    assert game.narrative_karma.get("compassion", 0) == initial_compassion + 1
+    assert game.narrative_karma.get("intervention", 0) == initial_intervention - 2
+    assert game.narrative_karma.get("observation", 0) == initial_observation + 1
+
+
+def test_l5_reentry_after_chapter1():
+    """После финала Главы 1 игрок не видит заглушку 'Яр спокоен' и не начинает Главу 1 заново."""
+    game = GameState()
+    game.set_story_flag("l5_ch1_completed", True)
+
+    text, kb = handle_location_5_slug_pit("slug_pit_start", game, 101)
+    assert "Ты спускаешься на дно Яра Слаймов" in text
+    assert "Яр теперь спокоен" not in text
+    buttons = [b.callback_data for r in kb.inline_keyboard for b in r]
+    assert "l5_2_1" in buttons
+    assert "back" in buttons
+
+
+def test_l5_sturdy_staff_no_duplication_on_boss_win():
+    """Проверка отсутствия дюпа Крепкого посоха во всех 3 векторах финала босса."""
+    # 1. Вектор 3 (Гибрид)
+    g3 = GameState()
+    g3.equipment["hand_right"] = "Охотничье сланцевое копьё"
+    g3.inventory["Охотничье сланцевое копьё"] = 1
+    g3.wolf_battle = {"enemy_id": "trash_slime_hybrid"}
+    from story.locations.loc5_slug_pit import _render_hybrid_win
+    text3, kb3 = _render_hybrid_win(g3)
+    assert g3.equipment.get("hand_right") == "Крепкий посох"
+    assert g3.inventory.get("Крепкий посох", 0) == 0  # Не дублируется в инвентаре!
+    assert "Охотничье сланцевое копьё" not in g3.inventory
+    assert g3.is_story_flag_set("l5_completed")
+
+    # 2. Вектор 1 (Повадки)
+    g1 = GameState()
+    g1.equipment["hand_right"] = "Охотничье сланцевое копьё"
+    g1.inventory["Охотничье сланцевое копьё"] = 1
+    g1.wolf_battle = {"enemy_id": "trash_slime_habits"}
+    from story.locations.loc5_slug_pit import _render_habits_win
+    text1, kb1 = _render_habits_win(g1)
+    assert g1.equipment.get("hand_right") == "Крепкий посох"
+    assert g1.inventory.get("Крепкий посох", 0) == 0  # Не дублируется в инвентаре!
+    assert "Охотничье сланцевое копьё" not in g1.inventory
+    assert g1.is_story_flag_set("l5_completed")
+
+    # 3. Вектор 2 (Спецоперация)
+    g2 = GameState()
+    g2.equipment["hand_right"] = "Охотничье сланцевое копьё"
+    g2.inventory["Охотничье сланцевое копьё"] = 1
+    text2, kb2 = handle_location_5_slug_pit("l5_trap_op_step9", g2, 101)
+    assert g2.equipment.get("hand_right") == "Крепкий посох"
+    assert g2.inventory.get("Крепкий посох", 0) == 0  # Не дублируется в инвентаре!
+    assert "Охотничье сланцевое копьё" not in g2.inventory
+    assert g2.is_story_flag_set("l5_completed")
+
+
+def test_l5_scout_leave_to_camp_clears_wolf_battle():
+    """Возврат в лагерь через l5_scout_leave_to_camp зануляет wolf_battle."""
+    game = GameState()
+    game.wolf_battle = {"phase": "scout", "hp": 100}
+    handle_location_5_slug_pit("l5_scout_leave_to_camp", game, 101)
+    assert game.wolf_battle is None
+    assert game.story_state is None
+    assert game.active_story_callback is None

@@ -3,7 +3,7 @@
 test_location_5_ch2_story.py — Комплексные тесты Главы 2 Локации 5 («Заводь Исполина»).
 
 Проверяет:
-1. Триггер запуска на 3-й день на 3-е исследование Яра Слизней.
+1. Триггер запуска на 3-й день на 3-е исследование Яра Слаймов.
 2. Возможность заходить в костер/лагерь между исследованиями.
 3. Полный нарративный переход l5_2_1 -> l5_2_6.
 4. Разблокировку подлокации [☣️ Заводь Исполина] в get_locations_kb.
@@ -123,7 +123,7 @@ def test_l5_ch2_scouting_story_flow():
 def test_l5_arena_menu_unlock_and_start():
     """Тест отображения подлокации в меню локаций и экрана входа."""
     game = GameState()
-    game.unlocked_locations = ["Яр Слизней"]
+    game.unlocked_locations = ["Яр Слаймов"]
     
     # До l5_2_6 арены нет в меню
     locs_kb = get_locations_kb(game)
@@ -303,7 +303,7 @@ def test_l5_boss_pocket_item_mechanic():
 def test_l5_ch2_aftermath_and_ancient_lair_unlock():
     """Тест экранов l5_2_8 -> l5_2_9 -> l5_2_10 и открытия Логова Древнего."""
     game = GameState()
-    game.unlocked_locations = ["Яр слизней"]
+    game.unlocked_locations = ["Яр Слаймов"]
     uid = 555
 
     # Экран 8: l5_2_8

@@ -722,12 +722,12 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
         game.wolf_lair_defeated = True
         game.locations_unlocked = True
         game.wolf_battle = None
-        game.unlocked_locations = ["Лесной старт", "Ручей"]
+        game.unlocked_locations = ["Стартовый лес", "Ручей со змеями"]
         game.set_story_flag("l1_7_completed")
         text = (
             "🌲 Глава завершена: Тайны густого леса\n\n"
             "Вы преодолели опасности чащи и вышли к шумящей воде.\n"
-            "В меню «Локации» теперь доступен Ручей."
+            "В меню «Локации» теперь доступен Ручей со змеями."
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🏕 Осмотреться на новом месте", callback_data="l1_7_inspect")]
@@ -735,8 +735,10 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
 
     elif data == "l1_7_inspect":
         game.reset_nav()
-        game.current_location = "Ручей"
+        game.current_location = "Ручей со змеями"
+        game.location_index = 1
         game.location = game.current_location
+        game.pre_story_location = game.current_location
         game.story_state = None
         from story.location_stories import handle_location_2_ruchey
         text, kb = handle_location_2_ruchey("location_enter_2", game, uid)
@@ -745,15 +747,20 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
 
     elif data == "location_enter_1":
         game.reset_nav()
-        game.current_location = "Лесной старт"
+        game.current_location = "Стартовый лес"
+        game.location_index = 0
+        game.location = game.current_location
+        game.pre_story_location = game.current_location
         game.add_log("Ты вернулся в Стартовый лес.")
         text = game.get_ui()
         kb = get_main_kb(game)
 
     elif data == "location_enter_2":
         game.reset_nav()
-        game.current_location = "Ручей"
+        game.current_location = "Ручей со змеями"
+        game.location_index = 1
         game.location = game.current_location
+        game.pre_story_location = game.current_location
         from story.location_stories import handle_location_2_ruchey
         text, kb = handle_location_2_ruchey("location_enter_2", game, uid)
         if not game.is_story_flag_set("l2_prologue_completed"):

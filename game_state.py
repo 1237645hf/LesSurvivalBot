@@ -125,8 +125,9 @@ class GameState:
     compact_route: List[str] = field(default_factory=list)
     nav_stack: List[str] = field(default_factory=lambda: ["main"])
     
-    current_location: str = "Лесной старт"
+    current_location: str = "Стартовый лес"
     location_index: int = 0
+    pre_story_location: Optional[str] = None
     
     # Дополнительные поля для совместимости с Game
     ap: int = 5  # Действия в день
@@ -397,6 +398,22 @@ class GameState:
             old_loc = self.__dict__.get("current_location")
             if old_loc and old_loc != value:
                 self.switch_location_hearth(old_loc, value)
+            if isinstance(value, str):
+                v_low = value.lower()
+                if "святилищ" in v_low or "вершин" in v_low:
+                    self.__dict__["location_index"] = 6
+                elif "пещер" in v_low or "мохнат" in v_low:
+                    self.__dict__["location_index"] = 5
+                elif "яр" in v_low or "слайм" in v_low or "слизн" in v_low:
+                    self.__dict__["location_index"] = 4
+                elif "просек" in v_low or "охотник" in v_low:
+                    self.__dict__["location_index"] = 3
+                elif "лощин" in v_low:
+                    self.__dict__["location_index"] = 2
+                elif "ручей" in v_low or "зме" in v_low:
+                    self.__dict__["location_index"] = 1
+                elif "старт" in v_low or "лес" in v_low:
+                    self.__dict__["location_index"] = 0
         super().__setattr__(name, value)
 
     def unequip_flask_to_inventory(self):
@@ -621,7 +638,7 @@ class GameState:
         # 9. Уничтожение приманки для слизней за ночь
         if getattr(self, "slug_bait_active", False):
             self.slug_bait_active = False
-            self.add_log("За ночь лесные слизни без остатка сожрали приманку в Яру Слизней.", "sleep")
+            self.add_log("За ночь лесные слизни без остатка сожрали приманку в Яру Слаймов.", "sleep")
 
         return self.ap
 
@@ -702,6 +719,7 @@ class GameState:
             "story_state": self.story_state,
             "current_location": self.current_location,
             "location_index": self.location_index,
+            "pre_story_location": getattr(self, "pre_story_location", None),
             "day": self.day,
             "ap": self.ap,
             "hp": self.hp,
@@ -822,10 +840,11 @@ class GameState:
         game.nav_stack = list(game.nav_stack or ["main"])
         if hasattr(game, "event_log"):
             game.event_log = list(game.event_log)
+        game.pre_story_location = data.get("pre_story_location")
         if hasattr(game, "location"):
             game.location = game.current_location
         if hasattr(game, "unlocked_locations") and not game.unlocked_locations:
-            game.unlocked_locations = ["Лесной старт"]
+            game.unlocked_locations = ["Стартовый лес"]
         # Миграция костра и рецептов
         if not getattr(game, "unlocked_crafts", None):
             game.unlocked_crafts = ["Костёр", "Факел"]
@@ -1508,6 +1527,17 @@ def handle_back_navigation(game: Any, uid: int) -> Tuple[Optional[str], Optional
     game.nav_stack = list(CANONICAL_STACKS.get(target, ["main"]))
 
     if target == "main":
+        target_loc = getattr(game, "pre_story_location", None) or getattr(game, "current_location", None) or "Стартовый лес"
+        unlocked = getattr(game, "unlocked_locations", None) or []
+        if unlocked:
+            matching = [u for u in unlocked if u.strip().lower() == target_loc.strip().lower()]
+            if matching:
+                target_loc = matching[0]
+            else:
+                target_loc = "Стартовый лес"
+        game.current_location = target_loc
+        game.location = game.current_location
+        game.pre_story_location = None
         game.active_story_callback = None
         if getattr(game, "story_state", None) not in ("WAITING_FOR_CHARACTER_NAME", "WAITING_FOR_PET_NAME"):
             game.story_state = None

@@ -135,7 +135,7 @@ def can_craft(game, recipe_name: str) -> bool:
     if recipe_name == "Костёр" and has_campfire(game):
         return False
     if recipe_name == "Приманка для слизней":
-        if getattr(game, "current_location", None) != "Яр Слизней":
+        if getattr(game, "current_location", None) not in ("Яр Слаймов", "Яр Слизней"):
             return False
     if recipe_name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
         has_spear = (
@@ -167,8 +167,8 @@ def craft_mark(game, recipe_name: str) -> str:
         return "❌ (уже есть)"
     if recipe_name == "Костёр" and has_campfire(game):
         return "❌ (уже есть)"
-    if recipe_name == "Приманка для слизней" and getattr(game, "current_location", None) != "Яр Слизней":
-        return "❌ (только в Яру Слизней)"
+    if recipe_name == "Приманка для слизней" and getattr(game, "current_location", None) not in ("Яр Слаймов", "Яр Слизней"):
+        return "❌ (только в Яру Слаймов)"
     if recipe_name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
         has_spear = (
             game.inventory.get("Охотничье сланцевое копьё", 0) > 0
@@ -227,8 +227,8 @@ def do_craft(game, recipe_name: str):
         game.lantern_durability = 20
         return True, "Заправлен янтарным маслом."
     if recipe_name == "Приманка для слизней":
-        if getattr(game, "current_location", None) != "Яр Слизней":
-            return False, "Приманку для слизней можно изготовить только находясь в Яру Слизней!"
+        if getattr(game, "current_location", None) not in ("Яр Слаймов", "Яр Слизней"):
+            return False, "Приманку для слизней можно изготовить только находясь в Яру Слаймов!"
     if recipe_name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
         has_spear = (
             game.inventory.get("Охотничье сланцевое копьё", 0) > 0
@@ -889,12 +889,12 @@ def handle_craft(data, game, uid):
             game.add_log("В инвентаре нет приманки для слизней.")
             text = game.get_ui()
             kb = get_main_kb(game)
-        elif getattr(game, "current_location", None) != "Яр Слизней":
-            game.add_log("Приманку для слизней можно установить только в Яру Слизней.")
+        elif getattr(game, "current_location", None) not in ("Яр Слаймов", "Яр Слизней"):
+            game.add_log("Приманку для слизней можно установить только в Яру Слаймов.")
             text = game.get_ui()
             kb = get_main_kb(game)
         elif getattr(game, "slug_bait_active", False):
-            game.add_log("В Яру Слизней уже установлена активная приманка.")
+            game.add_log("В Яру Слаймов уже установлена активная приманка.")
             text = game.get_ui()
             kb = get_main_kb(game)
         else:
@@ -902,7 +902,7 @@ def handle_craft(data, game, uid):
             if game.inventory["Приманка для слизней"] <= 0:
                 del game.inventory["Приманка для слизней"]
             game.slug_bait_active = True
-            game.add_log("Вы установили приманку для слизней в Яру Слизней. Сладкий ягодный дух растекается по лощине.")
+            game.add_log("Вы установили приманку для слизней в Яру Слаймов. Сладкий ягодный дух растекается по лощине.")
             text = game.get_ui()
     if text is None:
         from keyboards import inventory_inline_kb
