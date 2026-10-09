@@ -318,17 +318,17 @@ def test_puzzle_success_bridge_activation_and_note_removal():
     text_bridge, kb_bridge = handle_location_2_ruchey(f"l2_p_ans:0:3:{correct_idx_3}", game, 101)
 
     assert "Записка с наброском местности" not in game.inventory
-    assert "Скромная Лощина" in game.unlocked_locations
+    assert "Скромная лощина" in game.unlocked_locations
     assert game.is_story_flag_set("l2_completed") is True
     assert kb_bridge.inline_keyboard[0][0].callback_data == "location_enter_3"
-    assert kb_bridge.inline_keyboard[0][0].text == "⛰️ Шагнуть в Скромную Лощину"
+    assert kb_bridge.inline_keyboard[0][0].text == "⛰️ Шагнуть в Скромную лощину"
 
 
 def test_return_to_location_2_after_completion():
     """Тест 10: Повторный вход на Ручей после завершения сюжета показывает опущенный мост."""
     game = GameState()
     game.set_story_flag("l2_completed", True)
-    game.unlocked_locations = ["Лесной старт", "Ручей", "Скромная Лощина"]
+    game.unlocked_locations = ["Стартовый лес", "Ручей со змеями", "Скромная лощина"]
 
     text, kb = handle_location_2_ruchey("location_enter_2", game, 101)
     assert "Массивный мост надёжно опущен" in text
@@ -362,3 +362,72 @@ def test_thorns_break_idempotent_on_resume():
     assert game.equipment.get("boots") == "Отремонтированные ботинки"
     assert "тропинка через колючки свободна" in text2.lower()
     assert kb2.inline_keyboard[0][0].callback_data == "l2_dam_entrance"
+
+
+def test_l2_location_sync_and_hearth_limit():
+    """Тест 11: Синхронизация текущей локации и лимит очага 20 HP на Ручье."""
+    game = GameState()
+    game.current_location = "Стартовый лес"
+    game.location_index = 0
+
+    # Вход на Ручей со змеями
+    handle_location_2_ruchey("location_enter_2", game, 101)
+    assert game.current_location == "Ручей со змеями"
+    assert game.location_index == 1
+    assert game.pre_story_location == "Ручей со змеями"
+
+    # Проверка прочности очага (20 HP)
+    game.campfire_durability = 10
+    game.switch_location_hearth("Ручей со змеями")
+    assert game.campfire_max_durability == 20
+
+
+def test_l2_item_dupes_and_karma_abuse_prevention():
+    """Тест 12: Защита от дублирования предметов (рюкзак, коробка) и накрутки кармы."""
+    game = GameState()
+
+    # Срезаем рюкзак: первый раз
+    handle_location_2_ruchey("l2_5a", game, 101)
+    assert game.inventory.get("Рюкзак с красной заплаткой") == 1
+    k_prag = game.narrative_karma.get("pragmatism", 0)
+    k_int = game.narrative_karma.get("intervention", 0)
+
+    # Повторный вызов не должен дублировать предмет и карму
+    handle_location_2_ruchey("l2_5a", game, 101)
+    assert game.inventory.get("Рюкзак с красной заплаткой") == 1
+    assert game.narrative_karma.get("pragmatism", 0) == k_prag
+    assert game.narrative_karma.get("intervention", 0) == k_int
+
+    # Осмотр рюкзака: коробочка и записка
+    handle_location_2_ruchey("l2_7", game, 101)
+    assert game.inventory.get("Плоская металлическая коробочка") == 1
+    assert game.inventory.get("Записка с наброском местности") == 1
+    k_obs = game.narrative_karma.get("observation", 0)
+
+    # Повторный вызов l2_7
+    handle_location_2_ruchey("l2_7", game, 101)
+    assert game.inventory.get("Плоская металлическая коробочка") == 1
+    assert game.inventory.get("Записка с наброском местности") == 1
+    assert game.narrative_karma.get("observation", 0) == k_obs
+
+
+def test_l2_fatal_damage_and_terminal_cleanup():
+    """Тест 13: Честная гибель от травм и очистка FSM на терминальных экранах."""
+    # 1. Смертельное падение в l2_3b
+    game = GameState()
+    game.hp = 3
+    text, kb = handle_location_2_ruchey("l2_3b", game, 101)
+    assert game.hp == 0
+    assert game.active_story_callback is None
+    assert game.story_state is None
+    assert "ВЫ ПОГИБЛИ" in text
+    assert "Ручей со змеями" in text
+    assert kb.inline_keyboard[0][0].callback_data == "start_new_game_confirmed"
+
+    # 2. Терминальный выход в лагерь сбрасывает FSM
+    game_camp = GameState()
+    game_camp.story_state = "ruchey_exploring"
+    game_camp.active_story_callback = "l2_dam_entrance"
+    handle_location_2_ruchey("l2_camp", game_camp, 101)
+    assert game_camp.active_story_callback is None
+    assert game_camp.story_state is None

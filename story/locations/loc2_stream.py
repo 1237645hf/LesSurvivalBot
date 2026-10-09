@@ -36,6 +36,16 @@ def _l2_thorns_trigger_is_ready(game):
 from keyboards import get_main_kb, get_death_kb
 from game_state import get_death_text
 
+
+def _player_death(game, reason: str):
+    """Штатный обработчик гибели персонажа на L2 со сбросом FSM."""
+    game.hp = 0
+    game.wolf_battle = None
+    game.story_state = None
+    game.active_story_callback = None
+    return get_death_text(game, reason, "Ручей со змеями"), get_death_kb()
+
+
 L2_PUZZLE_BANK = [
     # Заход 0: Гидрологический запуск
     [
@@ -370,15 +380,23 @@ def handle_location_2_ruchey(data: str, game, uid: int):
 
     # 0. Пролог берега ручья (рюкзак, коробочка, записка)
     if data in ("location_enter_2", "l2_stream_start"):
+        game.reset_nav()
+        game.current_location = "Ручей со змеями"
+        game.location_index = 1
+        game.location = game.current_location
+        game.pre_story_location = game.current_location
+
         # Если мост уже активирован — спокойный вид переправы
         if game.is_story_flag_set("l2_completed"):
+            game.active_story_callback = None
+            game.story_state = None
             text = (
                 "Ты стоишь у бетонной плотины. Массивный мост надёжно опущен через бурлящий ручей "
                 "и заблокирован в ригельных замках.\n\n"
-                "Шум чистой горной воды эхом отдаётся в ущелье. Путь в Скромную Лощину открыт."
+                "Шум чистой горной воды эхом отдаётся в ущелье. Путь в Скромную лощину открыт."
             )
             kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="⛰️ Шагнуть в Скромную Лощину", callback_data="location_enter_3")],
+                [InlineKeyboardButton(text="⛰️ Шагнуть в Скромную лощину", callback_data="location_enter_3")],
                 [InlineKeyboardButton(text="🌲 В Стартовый лес", callback_data="location_enter_1")],
                 [InlineKeyboardButton(text="↩️ В лагерь", callback_data="back")],
             ])
@@ -407,6 +425,8 @@ def handle_location_2_ruchey(data: str, game, uid: int):
             game.story_flags.pop("l2_thorns_seen", None)
 
         # Иначе — берег ручья (мирное нахождение на локации до срабатывания триггера терновника)
+        game.active_story_callback = None
+        game.story_state = None
         text = (
             "🏞️ БЕРЕГ РУЧЬЯ\n\n"
             "Холодные струи ручья шумно перекатываются через гальку и гладкие сланцевые плиты. "
@@ -447,7 +467,9 @@ def handle_location_2_ruchey(data: str, game, uid: int):
 
     elif data == "l2_1a":
         game.set_story_flag("noticed_snakes_leaving", True)
-        game.adjust_narrative_karma("observation", 1)
+        if not game.is_story_flag_set("l2_1a_karma"):
+            game.set_story_flag("l2_1a_karma", True)
+            game.adjust_narrative_karma("observation", 1)
         text = (
             "👂 ПРИСЛУШАТЬСЯ\n\n"
             "Ты остаёшься на месте.\n"
@@ -469,7 +491,9 @@ def handle_location_2_ruchey(data: str, game, uid: int):
         # Уйти выше по течению (ранний финал)
         game.thirst = 100
         _complete_l2_prologue(game)
-        game.adjust_narrative_karma("pragmatism", 2)
+        if not game.is_story_flag_set("l2_1b_karma"):
+            game.set_story_flag("l2_1b_karma", True)
+            game.adjust_narrative_karma("pragmatism", 2)
         text = (
             "💧 УЙТИ ВЫШЕ ПО ТЕЧЕНИЮ\n\n"
             "Ты решаешь не искать источник стука.\n"
@@ -534,7 +558,9 @@ def handle_location_2_ruchey(data: str, game, uid: int):
             return handle_location_2_ruchey("l2_3b", game, uid)
 
     elif data == "l2_3a":
-        game.adjust_narrative_karma("observation", 1)
+        if not game.is_story_flag_set("l2_3a_karma"):
+            game.set_story_flag("l2_3a_karma", True)
+            game.adjust_narrative_karma("observation", 1)
         text = (
             "🔍 ОСМОТР ПОД ВОДОЙ\n\n"
             "Ты находишь у берега длинную ветку и осторожно приподнимаешь ремень.\n"
@@ -550,12 +576,12 @@ def handle_location_2_ruchey(data: str, game, uid: int):
         ])
 
     elif data == "l2_3b":
-        game.adjust_narrative_karma("intervention", 1)
+        if not game.is_story_flag_set("l2_3b_karma"):
+            game.set_story_flag("l2_3b_karma", True)
+            game.adjust_narrative_karma("intervention", 1)
         game.hp = max(0, game.hp - 5)
         if game.hp <= 0:
-            game.hp = 0
-            game.active_story_callback = None
-            return get_death_text(game, "💀 Неудачное падение на острые камни ручья оборвало твою жизнь."), get_death_kb()
+            return _player_death(game, "Неудачное падение на острые камни ручья оборвало твою жизнь.")
 
         text = (
             "⚠️ РЕЗКИЙ РЫВОК\n\n"
@@ -591,10 +617,11 @@ def handle_location_2_ruchey(data: str, game, uid: int):
         ])
 
     elif data == "l2_5a":
-        game.inventory["Рюкзак с красной заплаткой"] = game.inventory.get("Рюкзак с красной заплаткой", 0) + 1
-        game.set_story_flag("bag_obtained", True)
-        game.adjust_narrative_karma("pragmatism", 2)
-        game.adjust_narrative_karma("intervention", 1)
+        if not game.is_story_flag_set("bag_obtained"):
+            game.inventory["Рюкзак с красной заплаткой"] = game.inventory.get("Рюкзак с красной заплаткой", 0) + 1
+            game.set_story_flag("bag_obtained", True)
+            game.adjust_narrative_karma("pragmatism", 2)
+            game.adjust_narrative_karma("intervention", 1)
         text = (
             "🔪 СРЕЗАТЬ РЕМЕНЬ\n\n"
             "Ты подбираешь острый осколок сланца.\n"
@@ -644,14 +671,13 @@ def handle_location_2_ruchey(data: str, game, uid: int):
         dmg = 3 if data == "l2_5b_1_pet" else 8
         game.hp = max(0, game.hp - dmg)
         if game.hp <= 0:
-            game.hp = 0
-            game.active_story_callback = None
-            return get_death_text(game, "💀 Бурный поток ручья утянул тебя на дно под упавшие стволы."), get_death_kb()
+            return _player_death(game, "Бурный поток ручья утянул тебя на дно под упавшие стволы.")
 
-        game.inventory["Рюкзак с красной заплаткой"] = game.inventory.get("Рюкзак с красной заплаткой", 0) + 1
-        game.set_story_flag("bag_obtained", True)
-        game.adjust_narrative_karma("compassion", 3)
-        game.adjust_narrative_karma("intervention", 2)
+        if not game.is_story_flag_set("bag_obtained"):
+            game.inventory["Рюкзак с красной заплаткой"] = game.inventory.get("Рюкзак с красной заплаткой", 0) + 1
+            game.set_story_flag("bag_obtained", True)
+            game.adjust_narrative_karma("compassion", 3)
+            game.adjust_narrative_karma("intervention", 2)
 
         harm_txt = "Ты выбрался с лёгким ушибом (−3 HP)." if dmg == 3 else "Ты сильно ушиб плечо о камни (−8 HP)."
         text = (
@@ -666,7 +692,9 @@ def handle_location_2_ruchey(data: str, game, uid: int):
         ])
 
     elif data == "l2_5b_2":
-        game.adjust_narrative_karma("pragmatism", 1)
+        if not game.is_story_flag_set("l2_5b_2_karma"):
+            game.set_story_flag("l2_5b_2_karma", True)
+            game.adjust_narrative_karma("pragmatism", 1)
         text = (
             "🏃‍♂️ ОТПУСТИТЬ ТЕЛО\n\n"
             "Пальцы разжимаются не сразу. Тебе приходится заставить себя отпустить мокрую куртку.\n\n"
@@ -678,7 +706,9 @@ def handle_location_2_ruchey(data: str, game, uid: int):
         ])
 
     elif data == "l2_5c":
-        game.adjust_narrative_karma("pragmatism", 2)
+        if not game.is_story_flag_set("l2_5c_karma"):
+            game.set_story_flag("l2_5c_karma", True)
+            game.adjust_narrative_karma("pragmatism", 2)
         text = (
             "🏃‍♂️ ОТСТУПИТЬ\n\n"
             "Ты отпускаешь ветки и осторожно выпрямляешься. Ручей уже захлёстывает камни у ног.\n"
@@ -709,9 +739,11 @@ def handle_location_2_ruchey(data: str, game, uid: int):
             ])
 
     elif data == "l2_7":
-        game.inventory["Плоская металлическая коробочка"] = game.inventory.get("Плоская металлическая коробочка", 0) + 1
-        game.inventory["Записка с наброском местности"] = game.inventory.get("Записка с наброском местности", 0) + 1
-        game.adjust_narrative_karma("observation", 2)
+        if not game.is_story_flag_set("l2_box_obtained"):
+            game.inventory["Плоская металлическая коробочка"] = game.inventory.get("Плоская металлическая коробочка", 0) + 1
+            game.inventory["Записка с наброском местности"] = game.inventory.get("Записка с наброском местности", 0) + 1
+            game.set_story_flag("l2_box_obtained", True)
+            game.adjust_narrative_karma("observation", 2)
         text = (
             "🗃️ ОСМОТР РЮКЗАКА\n\n"
             "Ты отходишь от воды и опускаешь находку на землю. Из ткани ещё капает.\n\n"
@@ -845,7 +877,9 @@ def handle_location_2_ruchey(data: str, game, uid: int):
             boots_broke = True
 
         game.set_story_flag("l2_thorns_cleared", True)
-        game.adjust_narrative_karma("intervention", 3)
+        if not game.is_story_flag_set("l2_thorns_karma"):
+            game.set_story_flag("l2_thorns_karma", True)
+            game.adjust_narrative_karma("intervention", 3)
 
         break_lines = [
             "Стиснув зубы, ты с разбегу бросаешься в колючую стену!",
@@ -898,9 +932,7 @@ def handle_location_2_ruchey(data: str, game, uid: int):
         if has_pet:
             game.hp = max(0, game.hp - 2)
             if game.hp <= 0:
-                game.hp = 0
-                game.active_story_callback = None
-                return get_death_text(game, "🐾 В панике перепуганный котёнок нанёс смертельные раны."), get_death_kb()
+                return _player_death(game, "В панике перепуганный котёнок нанёс смертельные раны.")
             pet_txt = "\n\n🐾 Перепуганный котёнок в панике царапает твои рёбра (−2 HP), истошно шипит и растворяется в темноте зала!"
 
         text = (
@@ -950,19 +982,21 @@ def handle_location_2_ruchey(data: str, game, uid: int):
         game.set_story_flag("l2_fuse_inserted", True)
 
         if data == "l2_fuse_shock":
-            game.adjust_narrative_karma("intervention", 1)
+            if not game.is_story_flag_set("l2_fuse_karma"):
+                game.set_story_flag("l2_fuse_karma", True)
+                game.adjust_narrative_karma("intervention", 1)
             game.hp = max(0, game.hp - 10)
             if game.hp <= 0:
-                game.hp = 0
-                game.active_story_callback = None
-                return get_death_text(game, "⚡ Мощный электрический разряд пробил сердце."), get_death_kb()
+                return _player_death(game, "Мощный электрический разряд пробил сердце.")
             shock_text = (
                 "Ты берёшь коробочку пальцами и с силой вжимаешь её в искрящий разъём!\n\n"
                 "Яркая дуга с треском бьёт в пальцы! Мощный разряд тока прошибает всё тело (−10 HP)!\n"
                 "Тебя отшвыривает назад, в воздухе пахнет палёной кожей, но коробочка с шипением намертво приварилась к клеммам."
             )
         else:
-            game.adjust_narrative_karma("observation", 1)
+            if not game.is_story_flag_set("l2_fuse_karma"):
+                game.set_story_flag("l2_fuse_karma", True)
+                game.adjust_narrative_karma("observation", 1)
             shock_text = (
                 "Натянув толстую резиновую перчатку, ты аккуратно вставляешь металлическую коробочку в силовой слот.\n\n"
                 "Вспыхивает дуговой разряд! Перчатка обугливается, спасая тебя от удара током.\n"
@@ -1030,9 +1064,7 @@ def handle_location_2_ruchey(data: str, game, uid: int):
             game.l2_puzzle_step = 1
 
             if game.hp <= 0:
-                game.hp = 0
-                game.active_story_callback = None
-                return get_death_text(game, "🌊 Ледяной гидравлический удар сбил тебя с ног и унёс жизнь."), get_death_kb()
+                return _player_death(game, "Ледяной гидравлический удар сбил тебя с ног и унёс жизнь.")
 
             text = (
                 "⚠️ ОШИБКА АВТОМАТИКИ!\n\n"
@@ -1050,14 +1082,14 @@ def handle_location_2_ruchey(data: str, game, uid: int):
     elif data == "l2_bridge_activated":
         game.inventory.pop("Записка с наброском местности", None)
         unlocked = getattr(game, "unlocked_locations", []) or []
-        if "Скромная Лощина" not in unlocked:
-            unlocked.append("Скромная Лощина")
+        if "Скромная лощина" not in unlocked:
+            unlocked.append("Скромная лощина")
             game.unlocked_locations = unlocked
         game.set_story_flag("l2_completed", True)
 
         # Карма за решение логических задач терминала плотины
         if not game.is_story_flag_set("l2_bridge_karma_awarded"):
-            game.set_story_flag("l2_bridge_karma_awarded")
+            game.set_story_flag("l2_bridge_karma_awarded", True)
             if getattr(game, "l2_puzzle_attempt", 0) <= 1:
                 game.adjust_narrative_karma("observation", 2)
 
@@ -1066,14 +1098,30 @@ def handle_location_2_ruchey(data: str, game, uid: int):
             "Многолетняя ржавчина осыпается бурыми хлопьями, когда тяжёлые шестерни приходят в движение.\n\n"
             "Массивная плита технологического моста водосброса со скрипом опускается через бурлящий ручей, "
             "намертво блокируясь в противоположных замках.\n\n"
-            "Переправа готова. Бурные потоки ручья пенятся глубоко внизу, а впереди открывается проход к Скромной Лощине."
+            "Переправа готова. Бурные потоки ручья пенятся глубоко внизу, а впереди открывается проход к Скромной лощине."
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⛰️ Шагнуть в Скромную Лощину", callback_data="location_enter_3")]
+            [InlineKeyboardButton(text="⛰️ Шагнуть в Скромную лощину", callback_data="location_enter_3")]
         ])
 
-    if kb == get_main_kb(game) or data in ("ruchey_leave", "l2_camp", "back") or getattr(game, "hp", 100) <= 0:
+    terminal_callbacks = {
+        "l2_1b",
+        "l2_2a",
+        "l2_7a",
+        "l2_8",
+        "l2_camp",
+        "ruchey_leave",
+        "back",
+    }
+    is_main_menu = (
+        kb == get_main_kb(game)
+        or data in terminal_callbacks
+        or getattr(game, "hp", 100) <= 0
+    )
+    if is_main_menu:
         game.active_story_callback = None
+        if getattr(game, "hp", 100) <= 0 or data in terminal_callbacks:
+            game.story_state = None
     elif text is not None:
         game.active_story_callback = data
 

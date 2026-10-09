@@ -383,21 +383,68 @@ def test_dome_staff_progression_and_loot():
 
 
 def test_dome_cat_solve():
-    """С котёнком на следующий ясный день ранец сбивается сразу."""
+    """С котёнком на следующий ясный день доступна кнопка и ранец сбивается сразу."""
     game = GameState()
     game.day = 3
     game.weather = "clear"
-    game.set_story_flag("saved_kitten", True)
+    game.set_story_flag("has_pet", True)
     game.set_story_flag("l1_dome_discovered", True)
     game.story_flags["l1_dome_visited_once"] = True
 
-    # Сюжет о котёнке сохранён, но кнопка взаимодействия убрана из меню купола.
+    # Кнопка взаимодействия с котёнком присутствует в меню купола
     t_menu, kb_menu = handle_story("l1_dome_enter", game, 123)
-    assert not any("котёнка" in btn.text for row in kb_menu.inline_keyboard for btn in row)
+    cat_btn = [btn for row in kb_menu.inline_keyboard for btn in row if "котёнка" in btn.text]
+    assert len(cat_btn) == 1
+    assert cat_btn[0].callback_data == "l1_dome_cat_solve"
 
-    # Существующий сюжетный callback и его текст оставлены в коде для будущего.
+    # При отсутствии питомца кнопки нет
+    game_no_pet = GameState()
+    game_no_pet.day = 3
+    game_no_pet.weather = "clear"
+    game_no_pet.set_story_flag("l1_dome_discovered", True)
+    game_no_pet.story_flags["l1_dome_visited_once"] = True
+    _, kb_no_pet = handle_story("l1_dome_enter", game_no_pet, 123)
+    assert not any("котёнка" in btn.text for row in kb_no_pet.inline_keyboard for btn in row)
+
+    # Использование котёнка мгновенно сбивает ранец
     t_cat, kb_cat = handle_story("l1_dome_cat_solve", game, 123)
     assert "Котёнок с интересом смотрит" in t_cat
     assert "стропа лопается" in t_cat
     assert game.is_story_flag_set("l1_dome_backpack_fallen") is True
     assert "Осмотреть завал у корней" in kb_cat.inline_keyboard[0][0].text
+
+
+def test_dome_climb_fatal_fall():
+    """Падение с дуба при HP <= 5 приводит к честной гибели персонажа."""
+    game = GameState()
+    game.hp = 3
+    game.ap = 2
+    text, kb = handle_story("l1_dome_climb_v1", game, 123)
+    assert game.hp == 0
+    assert "Срыв с дуба и падение на острые корни оказались фатальными" in text
+    assert "Стартовый лес" in text
+    assert kb.inline_keyboard[0][0].callback_data == "start_new_game_confirmed"
+
+
+def test_dome_stone_throw_and_staff_ap_guards():
+    """При 0 AP бросок камней и попытка с посохом не списывают жажду/попытки и отправляют в лагерь."""
+    game = GameState()
+    game.day = 3
+    game.weather = "clear"
+    game.ap = 0
+    game.thirst = 50
+    game.set_story_flag("l1_dome_discovered", True)
+    game.story_flags["l1_dome_visited_once"] = True
+
+    # Бросок камней без AP
+    t_stone, kb_stone = handle_story("l1_dome_stone_throw", game, 123)
+    assert "У тебя нет сил бросать камни" in t_stone
+    assert game.thirst == 50
+    assert kb_stone.inline_keyboard[0][0].callback_data == "menu_main"
+
+    # Попытка с шестом без AP
+    t_staff, kb_staff = handle_story("l1_dome_staff_solve", game, 123)
+    assert "У тебя нет сил держать тяжелый шест" in t_staff
+    assert game.story_flags.get("l1_dome_staff_tries") is None
+    assert kb_staff.inline_keyboard[0][0].callback_data == "menu_main"
+

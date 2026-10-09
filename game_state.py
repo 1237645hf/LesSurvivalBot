@@ -348,7 +348,7 @@ class GameState:
         loc = str(loc_name if loc_name is not None else getattr(self, "current_location", "") or "").lower()
         if "лощин" in loc:
             return "loc_3"
-        elif "ручей" in loc:
+        elif "ручей" in loc or "руч" in loc:
             return "loc_2"
         elif "просек" in loc:
             return "loc_4"
@@ -365,8 +365,11 @@ class GameState:
         cur_loc = str(getattr(self, "current_location", "") or "").lower()
         return "лощин" in cur_loc
 
-    def switch_location_hearth(self, old_loc: str, new_loc: str):
+    def switch_location_hearth(self, old_loc: str, new_loc: Optional[str] = None):
         """Синхронизирует состояние очагов при смене локации."""
+        if new_loc is None:
+            new_loc = old_loc
+            old_loc = getattr(self, "current_location", "Стартовый лес")
         if not hasattr(self, "campfires") or self.campfires is None:
             self.campfires = {}
         old_key = self.get_current_hearth_key(old_loc)
@@ -377,7 +380,13 @@ class GameState:
         }
         new_key = self.get_current_hearth_key(new_loc)
         new_is_stove = "лощин" in new_loc.lower()
-        def_max = 30 if new_is_stove else 10
+        new_is_stream = "руч" in new_loc.lower()
+        if new_is_stove:
+            def_max = 30
+        elif new_is_stream:
+            def_max = 20
+        else:
+            def_max = 10
         new_hearth = self.campfires.get(new_key)
         if new_hearth is not None:
             self.campfire_active = bool(new_hearth.get("active", False))

@@ -598,3 +598,54 @@ def test_restored_l1_kitten_full_chain():
     assert kb3 is None
     assert game.story_state == "WAITING_FOR_PET_NAME"
     assert game.active_story_callback == "waiting_pet_name"
+
+
+def test_wolf_feed_and_spare_idempotency():
+    """Повторные вызовы пощады и кормления волка не абузят карму и не списывают еду повторно."""
+    game = GameState()
+    game.inventory = {"Сырое мясо": 2}
+    compassion_before = game.narrative_karma.get("compassion", 0)
+
+    # Первое кормление
+    handle_story("l1_5_feed:Сырое мясо", game, 101)
+    assert game.inventory.get("Сырое мясо") == 1
+    assert game.narrative_karma.get("compassion", 0) == compassion_before + 5
+    assert getattr(game, "spared_souls", 0) == 1
+
+    # Повторный вызов того же callback (например, при повторном клике/загрузке)
+    handle_story("l1_5_feed:Сырое мясо", game, 101)
+    assert game.inventory.get("Сырое мясо") == 1
+    assert game.narrative_karma.get("compassion", 0) == compassion_before + 5
+    assert getattr(game, "spared_souls", 0) == 1
+
+    # Повторный вызов пощады без еды на том же состоянии
+    handle_story("l1_5_spare", game, 101)
+    assert game.narrative_karma.get("compassion", 0) == compassion_before + 5
+    assert getattr(game, "spared_souls", 0) == 1
+
+
+def test_wolf_battle_screen_fatal_player_death():
+    """При падении HP <= 0 в wolf_battle_screen выводится стандартизированный экран гибели."""
+    game = GameState()
+    game.hp = 0
+    game.wolf_battle = {"enemy_id": "old_wolf", "wolf_hp": 30}
+    text, kb = handle_story("wolf_battle_screen", game, 101)
+
+    assert "Полученные в схватке раны оказались смертельными" in text
+    assert "Стартовый лес" in text
+    assert kb.inline_keyboard[0][0].callback_data == "start_new_game_confirmed"
+    assert game.wolf_battle is None
+    assert game.active_story_callback is None
+
+
+def test_l1_7_finish_idempotent_locations_unlock():
+    """l1_7_finish сохраняет уже имеющиеся локации и добавляет L1 и L2 без дубликатов."""
+    game = GameState()
+    game.unlocked_locations = ["Стартовый лес", "Секретная поляна"]
+    handle_story("l1_7_finish", game, 101)
+
+    assert "Стартовый лес" in game.unlocked_locations
+    assert "Ручей со змеями" in game.unlocked_locations
+    assert "Секретная поляна" in game.unlocked_locations
+    assert len(game.unlocked_locations) == 3
+

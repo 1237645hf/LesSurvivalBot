@@ -361,3 +361,141 @@ def test_boar_combat_tactics_and_victory_loot(monkeypatch):
     assert game.inventory["Мясо"] == 4
     assert game.inventory["Кожа"] == 2
     assert game.inventory["Кость"] == 2
+
+
+def test_l3_honest_damage_and_mortality():
+    """Тест честного урона и гибели персонажа (README §1.8) во всех опасных сценах L3."""
+    # 1. Смерть от тарана секача без брони (l3_9a_charge, урон 30)
+    g1 = GameState()
+    g1.hp = 25
+    text, kb = handle_location_3_slate_hollow("l3_9a_charge", g1, 101)
+    assert g1.hp == 0
+    assert "ВЫ ПОГИБЛИ" in text
+    assert "Секач" in text
+
+    # 2. Смерть от срыва с узкого хребта (l3_9b_ridge, урон 25)
+    g2 = GameState()
+    g2.hp = 20
+    text, kb = handle_location_3_slate_hollow("l3_9b_ridge", g2, 101)
+    assert g2.hp == 0
+    assert "ВЫ ПОГИБЛИ" in text
+    assert "Срыв с узкой тропы" in text
+
+    # 3. Смерть от сланцевой крошки на обрыве (l3_11b_cliff, урон 5)
+    g3 = GameState()
+    g3.hp = 5
+    text, kb = handle_location_3_slate_hollow("l3_11b_cliff", g3, 101)
+    assert g3.hp == 0
+    assert "ВЫ ПОГИБЛИ" in text
+    assert "Острые сланцевые осколки" in text
+
+    # 4. Смерть от обвала скального уступа (l3_12_cache, урон 5)
+    g4 = GameState()
+    g4.hp = 4
+    text, kb = handle_location_3_slate_hollow("l3_12_cache", g4, 101)
+    assert g4.hp == 0
+    assert "ВЫ ПОГИБЛИ" in text
+    assert "Обвал скального уступа" in text
+
+    # 5. Смерть от внезапного тарана кабана на 0-м ходу боя (урон 44)
+    g5 = GameState()
+    g5.hp = 30
+    handle_location_3_slate_hollow("l3_start_boar_battle", g5, 101)
+    text, kb = handle_location_3_slate_hollow("boar_battle_dodge", g5, 101)
+    assert g5.hp == 0
+    assert "ВЫ ПОГИБЛИ" in text
+    assert "Секач насмерть сбил тебя внезапным тараном" in text
+
+
+def test_l3_anti_dupe_and_karma_guards():
+    """Тест защиты от дюпов предметов, расхода бутылки воды и абуза кармы."""
+    game = GameState()
+
+    # 1. l3_4_writings: карма observation начисляется только 1 раз
+    handle_location_3_slate_hollow("l3_4_writings", game, 101)
+    assert game.narrative_karma.get("observation", 0) == 1
+    handle_location_3_slate_hollow("l3_4_writings", game, 101)
+    assert game.narrative_karma.get("observation", 0) == 1
+
+    # 2. l3_5_finish_bake: сланцевый слиток и +2 pragmatism выдаются только 1 раз
+    handle_location_3_slate_hollow("l3_5_finish_bake", game, 101)
+    assert game.inventory.get("Сланцевый слиток", 0) == 1
+    assert game.narrative_karma.get("pragmatism", 0) == 2
+    handle_location_3_slate_hollow("l3_5_finish_bake", game, 101)
+    assert game.inventory.get("Сланцевый слиток", 0) == 1
+    assert game.narrative_karma.get("pragmatism", 0) == 2
+
+    # 3. l3_5_take_clay: расход "Бутылка воды" возвращает "Пустая бутылка"
+    game_clay = GameState()
+    game_clay.flask_water = 0
+    game_clay.inventory = {"Бутылка воды": 1}
+    handle_location_3_slate_hollow("l3_5_take_clay", game_clay, 101)
+    assert game_clay.inventory.get("Глина", 0) == 1
+    assert game_clay.inventory.get("Бутылка воды", 0) == 0
+    assert game_clay.inventory.get("Пустая бутылка", 0) == 1
+    assert game_clay.narrative_karma.get("compassion", 0) == 1
+    # Повторный вызов не дюпает глину и карму
+    handle_location_3_slate_hollow("l3_5_take_clay", game_clay, 101)
+    assert game_clay.inventory.get("Глина", 0) == 1
+    assert game_clay.narrative_karma.get("compassion", 0) == 1
+
+    # 4. l3_6_leave_clay и l3_6_warning однократность кармы
+    game_clay.inventory["Глина"] = 5
+    handle_location_3_slate_hollow("l3_6_leave_clay", game_clay, 101)
+    assert game_clay.inventory.get("Глина", 0) == 4
+    assert game_clay.narrative_karma.get("compassion", 0) == 3
+    handle_location_3_slate_hollow("l3_6_leave_clay", game_clay, 101)
+    assert game_clay.inventory.get("Глина", 0) == 4  # глина не списывается повторно
+    assert game_clay.narrative_karma.get("compassion", 0) == 3  # карма не начисляется повторно
+
+    handle_location_3_slate_hollow("l3_6_warning", game_clay, 101)
+    assert game_clay.narrative_karma.get("compassion", 0) == 4
+    handle_location_3_slate_hollow("l3_6_warning", game_clay, 101)
+    assert game_clay.narrative_karma.get("compassion", 0) == 4
+
+    # 5. l3_12a_loot: повторный вызов не дублирует ресурсы
+    game_loot = GameState()
+    handle_location_3_slate_hollow("l3_12a_loot", game_loot, 101)
+    assert game_loot.inventory.get("Мясо") == 4
+    assert game_loot.inventory.get("Кожа") == 2
+    assert game_loot.inventory.get("Кость") == 2
+    handle_location_3_slate_hollow("l3_12a_loot", game_loot, 101)
+    assert game_loot.inventory.get("Мясо") == 4
+    assert game_loot.inventory.get("Кожа") == 2
+    assert game_loot.inventory.get("Кость") == 2
+
+    # 6. l3_12_taken: повторный вызов не дублирует схрон
+    game_cache = GameState()
+    handle_location_3_slate_hollow("l3_12_taken", game_cache, 101)
+    assert game_cache.inventory.get("Мясо") == 4
+    assert game_cache.inventory.get("Кожа") == 2
+    assert game_cache.inventory.get("Кость") == 2
+    handle_location_3_slate_hollow("l3_12_taken", game_cache, 101)
+    assert game_cache.inventory.get("Мясо") == 4
+    assert game_cache.inventory.get("Кожа") == 2
+    assert game_cache.inventory.get("Кость") == 2
+
+
+def test_l3_fsm_stabilization_and_stove_sync():
+    """Тест сброса active_story_callback в лагере и синхронизации печи на 30 HP."""
+    game = GameState()
+    game.campfire_max_durability = 10
+    game.campfire_durability = 5
+
+    # 1. Финализация убежища l3_6_finalize
+    handle_location_3_slate_hollow("l3_6_finalize", game, 101)
+    assert game.is_story_flag_set("l3_shelter_unlocked") is True
+    assert game.campfire_max_durability == 30
+    assert game.campfire_durability >= 15
+    assert game.campfires.get("loc_3", {}).get("max_durability") == 30
+    assert game.active_story_callback is None
+    assert game.story_state is None
+
+    # 2. Вход в локацию при открытом убежище и завершённом сюжете
+    game.set_story_flag("l3_ridge_completed", True)
+    handle_location_3_slate_hollow("location_enter_3", game, 101)
+    assert game.active_story_callback is None
+    assert game.story_state is None
+    assert game.current_location == "Скромная лощина"
+    assert game.location_index == 2
+    assert game.campfire_max_durability == 30

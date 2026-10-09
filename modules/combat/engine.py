@@ -236,6 +236,15 @@ def apply_action(action: str, game, enemy_id: str = "old_wolf") -> Tuple[str, In
             battle["is_charging"] = False
             battle["is_enraged"] = True
             battle["boar_status"] = "💢 В ярости"
+            if game.hp <= 0:
+                game.hp = 0
+                game.wolf_battle = None
+                game.story_state = None
+                game.active_story_callback = None
+                from keyboards import get_death_kb
+                from game_state import get_death_text
+                text = get_death_text(game, f"🐗 Секач насмерть сбил тебя внезапным тараном (−{ram_dmg} HP).", "Солонец (Секач)")
+                return text, get_death_kb()
             log_lines = [
                 f"⚠️ Внезапный таран сбивает с ног: Секач сносит −{ram_dmg} HP (Твоё HP: {game.hp}/{getattr(game, 'max_hp', 100)})!",
                 f"🦯 На встречном движении ты бьёшь посохом: −{strike_dmg} HP! Зверь разворачивается в ярости."

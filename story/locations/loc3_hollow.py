@@ -31,6 +31,17 @@ from modules.combat import (
     get_battle_text,
     get_battle_kb,
 )
+from game_state import get_death_text
+from keyboards import get_death_kb
+
+
+def _player_death(game, reason: str):
+    """Штатный обработчик гибели персонажа на L3 со сбросом боя и сюжетного FSM."""
+    game.hp = 0
+    game.wolf_battle = None
+    game.story_state = None
+    game.active_story_callback = None
+    return get_death_text(game, reason, "Скромная лощина"), get_death_kb()
 
 
 def handle_location_3_slate_hollow(data: str, game, uid: int):
@@ -53,6 +64,13 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
         game.location = game.current_location
         game.pre_story_location = game.current_location
         if game.is_story_flag_set("l3_shelter_unlocked"):
+            game.campfire_max_durability = 30
+            if hasattr(game, "campfires") and isinstance(game.campfires, dict):
+                cur_d = getattr(game, "campfire_durability", 0)
+                game.campfires["loc_3"] = {
+                    "durability": cur_d,
+                    "max_durability": 30,
+                }
             if not game.is_story_flag_set("l3_ridge_completed"):
                 text = (
                     "Ты стоишь под сланцевым навесом у печи. Впереди крутой подъём на гребень — "
@@ -130,7 +148,9 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
 
     elif data == "l3_4_writings":
         game.story_state = "l3_4"
-        game.adjust_narrative_karma("observation", 1)
+        if not game.is_story_flag_set("l3_writings_read"):
+            game.set_story_flag("l3_writings_read", True)
+            game.adjust_narrative_karma("observation", 1)
         text = (
             "Большую часть надписей трудно разобрать. Одни процарапаны острым камнем, другие проведены пальцем по ещё мягкой глине.\n\n"
             "«Не пей из лужи у выхода».\n"
@@ -171,8 +191,10 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
         kb = InlineKeyboardMarkup(inline_keyboard=buttons)
 
     elif data == "l3_5_finish_bake":
-        game.inventory["Сланцевый слиток"] = game.inventory.get("Сланцевый слиток", 0) + 1
-        game.adjust_narrative_karma("pragmatism", 2)
+        if not game.is_story_flag_set("l3_slate_ingot_taken"):
+            game.set_story_flag("l3_slate_ingot_taken", True)
+            game.inventory["Сланцевый слиток"] = game.inventory.get("Сланцевый слиток", 0) + 1
+            game.adjust_narrative_karma("pragmatism", 2)
         text = (
             "Ты подкладываешь сухих щепок под заготовку. Огонь разгорается ярче, жар охватывает форму со всех сторон.\n\n"
             "Спустя время раскалённый брусок остывает, превращаясь в крепкий, закалённый Сланцевый слиток!\n\n"
@@ -183,13 +205,22 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
         ])
 
     elif data == "l3_5_take_clay":
-        flask = int(getattr(game, "flask_water", 0) or 0)
-        if flask >= 2:
-            game.flask_water = max(0, flask - 2)
-        elif game.inventory.get("Вода", 0) >= 2:
-            game.inventory["Вода"] -= 2
-        game.inventory["Глина"] = game.inventory.get("Глина", 0) + 1
-        game.adjust_narrative_karma("compassion", 1)
+        if not game.is_story_flag_set("l3_clay_taken"):
+            game.set_story_flag("l3_clay_taken", True)
+            flask = int(getattr(game, "flask_water", 0) or 0)
+            if flask >= 2:
+                game.flask_water = max(0, flask - 2)
+            elif game.inventory.get("Вода", 0) >= 2:
+                game.inventory["Вода"] -= 2
+                if game.inventory["Вода"] <= 0:
+                    del game.inventory["Вода"]
+            elif game.inventory.get("Бутылка воды", 0) >= 1:
+                game.inventory["Бутылка воды"] -= 1
+                if game.inventory["Бутылка воды"] <= 0:
+                    del game.inventory["Бутылка воды"]
+                game.inventory["Пустая бутылка"] = game.inventory.get("Пустая бутылка", 0) + 1
+            game.inventory["Глина"] = game.inventory.get("Глина", 0) + 1
+            game.adjust_narrative_karma("compassion", 1)
         text = (
             "Ты аккуратно плещешь водой на угли. С шипением поднимается пар, остужая заготовку.\n\n"
             "Ты вынимаешь сырую глину из формы, скатывая её в плотный комок.\n\n"
@@ -217,12 +248,13 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
         kb = InlineKeyboardMarkup(inline_keyboard=buttons)
 
     elif data == "l3_6_leave_clay":
-        if game.inventory.get("Глина", 0) >= 1:
-            game.inventory["Глина"] -= 1
-            if game.inventory["Глина"] <= 0:
-                del game.inventory["Глина"]
-        game.adjust_narrative_karma("compassion", 2)
-        game.set_story_flag("left_clay_for_next", True)
+        if not game.is_story_flag_set("left_clay_for_next"):
+            if game.inventory.get("Глина", 0) >= 1:
+                game.inventory["Глина"] -= 1
+                if game.inventory["Глина"] <= 0:
+                    del game.inventory["Глина"]
+            game.adjust_narrative_karma("compassion", 2)
+            game.set_story_flag("left_clay_for_next", True)
         text = (
             "Ты кладёшь кусок чистой глины в пустую каменную форму у печи.\n"
             "Пусть следующий путник тоже найдёт здесь то, что согреет его и поможет выжить.\n\n"
@@ -233,12 +265,14 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
         ])
 
     elif data == "l3_6_warning":
-        game.adjust_narrative_karma("compassion", 1)
-        try:
-            from services.database import save_tablet_note
-            save_tablet_note(uid, "Путник", "Не закрывай заднюю щель печи. За каменным выступом сухо, здесь можно спать.")
-        except Exception:
-            pass
+        if not game.is_story_flag_set("l3_warning_left"):
+            game.set_story_flag("l3_warning_left", True)
+            game.adjust_narrative_karma("compassion", 1)
+            try:
+                from services.database import save_tablet_note
+                save_tablet_note(uid, "Путник", "Не закрывай заднюю щель печи. За каменным выступом сухо, здесь можно спать.")
+            except Exception:
+                pass
         text = (
             "Ты подбираешь острый камень и высекаешь на плите слова:\n\n"
             "«Не закрывай заднюю щель печи. За каменным выступом сухо, здесь можно спать».\n\n"
@@ -252,7 +286,14 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
         game.set_story_flag("l3_shelter_unlocked", True)
         game.set_story_flag("has_stove", True)
         game.campfire_active = True
+        game.campfire_max_durability = 30
         game.campfire_durability = max(int(getattr(game, "campfire_durability", 0) or 0), 15)
+        if not hasattr(game, "campfires") or not isinstance(game.campfires, dict):
+            game.campfires = {}
+        game.campfires["loc_3"] = {
+            "durability": game.campfire_durability,
+            "max_durability": 30,
+        }
         game.story_state = None
         game.reset_nav()
         game.add_log("🧱 Ты вернулся в лагерь у каменной печи.")
@@ -264,7 +305,14 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
         game.set_story_flag("l3_shelter_unlocked", True)
         game.set_story_flag("has_stove", True)
         game.campfire_active = True
+        game.campfire_max_durability = 30
         game.campfire_durability = max(int(getattr(game, "campfire_durability", 0) or 0), 15)
+        if not hasattr(game, "campfires") or not isinstance(game.campfires, dict):
+            game.campfires = {}
+        game.campfires["loc_3"] = {
+            "durability": game.campfire_durability,
+            "max_durability": 30,
+        }
         text = (
             "Перед подъёмом ты позволяешь себе немного посидеть под навесом.\n"
             "Камень за спиной ещё хранит тепло. Ты смотришь на чужие надписи, на почерневшие лопатки, на аккуратно заделанную щель в крыше.\n\n"
@@ -293,8 +341,10 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
     elif data == "l3_9a_charge":
         game.story_state = "l3_9a"
         damage = 30
-        game.hp = max(1, getattr(game, "hp", 100) - damage)
+        game.hp = getattr(game, "hp", 100) - damage
         game.add_log(f"💥 Секач сбил тебя тараном! −{damage} HP.")
+        if game.hp <= 0:
+            return _player_death(game, f"Матёрый Секач сбил тебя мощным тараном и растоптал на каменных плитах (−{damage} HP).")
         text = (
             "Ты делаешь шаг вперёд, но Секач мгновенно срывается с места и сносит тебя бешеным ударом!\n\n"
             "Потасканная одежда не защищает от клыков — туша впечатывает тебя в каменные плиты (−30 HP). "
@@ -307,8 +357,10 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
     elif data == "l3_9b_ridge":
         game.story_state = "l3_9b"
         damage = 25
-        game.hp = max(1, getattr(game, "hp", 100) - damage)
+        game.hp = getattr(game, "hp", 100) - damage
         game.add_log(f"⚠️ Срыв с узкой тропы! −{damage} HP.")
+        if game.hp <= 0:
+            return _player_death(game, f"Срыв с узкой тропы над ущельем Скромной Лощины оказался смертельным (−{damage} HP).")
         text = (
             "Ты пробуешь карабкаться по узкой тропе над обрывом. Острые сланцевые грани безжалостно режут ладони и распарывают штанины. "
             "Камень крошится под ногой, и ты срываешься вниз на острый щебень (−25 HP)!\n\n"
@@ -385,10 +437,10 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
         game.story_state = "l3_11a"
         if not game.is_story_flag_set("boar_killed"):
             game.kills_count = getattr(game, "kills_count", 0) + 1
-        game.set_story_flag("boar_killed", True)
-        game.adjust_narrative_karma("compassion", -1)
-        game.adjust_narrative_karma("pragmatism", 3)
-        game.adjust_narrative_karma("intervention", 3)
+            game.adjust_narrative_karma("compassion", -1)
+            game.adjust_narrative_karma("pragmatism", 3)
+            game.adjust_narrative_karma("intervention", 3)
+            game.set_story_flag("boar_killed", True)
         text = (
             "Секач повержен. Громадная туша рухнула на серые плиты у солонца, взметнув сухую пыль, и затихла.\n\n"
             "Подъём наверх свободен. Впереди, на границе ущелья, уже видны светлые стволы осиновой рощи."
@@ -400,9 +452,11 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
     elif data == "l3_12a_loot":
         game.story_state = "l3_12a"
         game.set_story_flag("l3_ridge_completed", True)
-        game.inventory["Мясо"] = game.inventory.get("Мясо", 0) + 4
-        game.inventory["Кожа"] = game.inventory.get("Кожа", 0) + 2
-        game.inventory["Кость"] = game.inventory.get("Кость", 0) + 2
+        if not game.is_story_flag_set("l3_boar_looted"):
+            game.set_story_flag("l3_boar_looted", True)
+            game.inventory["Мясо"] = game.inventory.get("Мясо", 0) + 4
+            game.inventory["Кожа"] = game.inventory.get("Кожа", 0) + 2
+            game.inventory["Кость"] = game.inventory.get("Кость", 0) + 2
 
         text = (
             "Секач повержен. Острым сколом ты быстро разделываешь тушу и забираешь ценную добычу:\n\n"
@@ -419,12 +473,14 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
         game.story_state = "l3_11b"
         if not game.is_story_flag_set("boar_bypassed"):
             game.spared_souls = getattr(game, "spared_souls", 0) + 1
-        game.set_story_flag("boar_bypassed", True)
-        game.adjust_narrative_karma("observation", 2)
-        game.adjust_narrative_karma("pragmatism", 2)
+            game.set_story_flag("boar_bypassed", True)
+            game.adjust_narrative_karma("observation", 2)
+            game.adjust_narrative_karma("pragmatism", 2)
         cliff_dmg = 5
-        game.hp = max(1, getattr(game, "hp", 100) - cliff_dmg)
+        game.hp = getattr(game, "hp", 100) - cliff_dmg
         game.add_log(f"⚠️ Острые щепки тропы: −{cliff_dmg} HP.")
+        if game.hp <= 0:
+            return _player_death(game, f"Острые сланцевые осколки на тропе над солонцом нанесли смертельные раны (−{cliff_dmg} HP).")
         text = (
             "Ты осторожно ступаешь на узкую тропу над солонцом. Кабан кормится внизу и тебя не замечает.\n\n"
             "Острые сланцевые щепки летят из-под ног, секут руки и сочленения доспеха (−5 HP)."
@@ -436,8 +492,10 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
     elif data == "l3_12_cache":
         game.story_state = "l3_12"
         slip_dmg = 5
-        game.hp = max(1, getattr(game, "hp", 100) - slip_dmg)
+        game.hp = getattr(game, "hp", 100) - slip_dmg
         game.add_log(f"⚠️ Срыв на узкой тропе: −{slip_dmg} HP.")
+        if game.hp <= 0:
+            return _player_death(game, f"Обвал скального уступа над ущельем Скромной Лощины стал роковым (−{slip_dmg} HP).")
         text = (
             "Внезапно под ногой на узкой тропе обламывается пласт породы! Ты срываешься вниз, чудом успев ухватиться за выступ одной рукой. "
             "Ноги повисают в пустоте, острый камень обдирает пальцы (−5 HP)!\n\n"
@@ -450,9 +508,11 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
         ])
 
     elif data == "l3_12_taken":
-        game.inventory["Мясо"] = game.inventory.get("Мясо", 0) + 4
-        game.inventory["Кожа"] = game.inventory.get("Кожа", 0) + 2
-        game.inventory["Кость"] = game.inventory.get("Кость", 0) + 2
+        if not game.is_story_flag_set("l3_cache_taken"):
+            game.set_story_flag("l3_cache_taken", True)
+            game.inventory["Мясо"] = game.inventory.get("Мясо", 0) + 4
+            game.inventory["Кожа"] = game.inventory.get("Кожа", 0) + 2
+            game.inventory["Кость"] = game.inventory.get("Кость", 0) + 2
         text = (
             "Ты перекладываешь припасы в мешок (+4 Мясо, +2 Кожа, +2 Кость).\n\n"
             "На плоском камне в глубине ниши выбиты слова:\n"
@@ -468,13 +528,15 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
     elif data == "l3_13_kind":
         game.story_state = "l3_13"
         game.set_story_flag("l3_ridge_completed", True)
-        game.adjust_narrative_karma("compassion", 2)
-        if game.inventory.get("Ягоды", 0) > 0:
-            game.inventory["Ягоды"] -= 1
-            if game.inventory["Ягоды"] <= 0:
-                del game.inventory["Ягоды"]
-        elif game.inventory.get("Мясо", 0) > 0:
-            game.inventory["Мясо"] -= 1
+        if not game.is_story_flag_set("l3_13_kind_done"):
+            game.set_story_flag("l3_13_kind_done", True)
+            game.adjust_narrative_karma("compassion", 2)
+            if game.inventory.get("Ягоды", 0) > 0:
+                game.inventory["Ягоды"] -= 1
+                if game.inventory["Ягоды"] <= 0:
+                    del game.inventory["Ягоды"]
+            elif game.inventory.get("Мясо", 0) > 0:
+                game.inventory["Мясо"] -= 1
 
         text = (
             "Ты аккуратно складываешь в нишу часть своих припасов и закрываешь отверстие каменным диском.\n\n"
@@ -487,7 +549,9 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
     elif data == "l3_13_greed":
         game.story_state = "l3_13"
         game.set_story_flag("l3_ridge_completed", True)
-        game.adjust_narrative_karma("pragmatism", 2)
+        if not game.is_story_flag_set("l3_13_greed_done"):
+            game.set_story_flag("l3_13_greed_done", True)
+            game.adjust_narrative_karma("pragmatism", 2)
         text = (
             "В глуши выживает тот, кто берёт всё и не оглядывается (+2 Прагматизм).\n\n"
             "Ты оставляешь каменную нишу пустой и даже не закрываешь вход камнем."
@@ -526,26 +590,51 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
 
     # Старые коллбэки для обратной совместимости
     elif data == "slate_examine":
-        game.adjust_narrative_karma("observation", 3)
+        if not game.is_story_flag_set("slate_examine_karma"):
+            game.set_story_flag("slate_examine_karma", True)
+            game.adjust_narrative_karma("observation", 3)
         text = (
             "Ты осматриваешь стены — сланец холодный на ощупь, с тонкими прожилками.\n"
             "Сланцевая Лощина — место, где камень живёт своей жизнью."
         )
         kb = get_main_kb(game)
     elif data == "slate_climb":
-        game.adjust_narrative_karma("intervention", 2)
+        if not game.is_story_flag_set("slate_climb_karma"):
+            game.set_story_flag("slate_climb_karma", True)
+            game.adjust_narrative_karma("intervention", 2)
         text = "Ты взбираешься по ступеням, ведущим к верхней палате."
         kb = get_main_kb(game)
     elif data == "slate_rest":
-        game.adjust_narrative_karma("compassion", 1)
+        if not game.is_story_flag_set("slate_rest_karma"):
+            game.set_story_flag("slate_rest_karma", True)
+            game.adjust_narrative_karma("compassion", 1)
         text = "Ты отдыхаешь на прохладном сланце."
         kb = get_main_kb(game)
     elif data == "slate_end":
         game.story_state = None
         kb = get_main_kb(game)
 
-    if kb == get_main_kb(game) or data in ("l3_6_finalize", "l3_11a_win", "l3_13_kind", "l3_13_greed", "l3_flee_to_camp", "slate_end", "back") or getattr(game, "hp", 100) <= 0:
+    terminal_callbacks = {
+        "l3_6_finalize",
+        "l3_11a_win",
+        "l3_13_kind",
+        "l3_13_greed",
+        "l3_flee_to_camp",
+        "slate_examine",
+        "slate_climb",
+        "slate_rest",
+        "slate_end",
+        "back",
+    }
+    is_main_menu = (
+        kb == get_main_kb(game)
+        or data in terminal_callbacks
+        or getattr(game, "hp", 100) <= 0
+    )
+    if is_main_menu:
         game.active_story_callback = None
+        if getattr(game, "hp", 100) <= 0 or data in ("l3_6_finalize", "slate_end", "back", "slate_examine", "slate_climb", "slate_rest") or (data in ("location_enter_3", "slate_hollow_start") and game.is_story_flag_set("l3_ridge_completed")):
+            game.story_state = None
     elif text is not None:
         game.active_story_callback = data
 

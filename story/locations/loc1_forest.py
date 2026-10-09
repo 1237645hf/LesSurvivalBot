@@ -1,5 +1,5 @@
 # =============================================================================
-# ЛОКАЦИЯ 1: Лесной старт (Лес)
+# ЛОКАЦИЯ 1: Стартовый лес
 # =============================================================================
 #
 # ПРАВИЛА ЭТОГО ФАЙЛА:
@@ -36,8 +36,17 @@ from modules.combat import (
 )
 
 
+def _player_death(game, reason: str):
+    """Штатный обработчик гибели персонажа на L1 со сбросом FSM."""
+    game.hp = 0
+    game.wolf_battle = None
+    game.story_state = None
+    game.active_story_callback = None
+    return get_death_text(game, reason, "Стартовый лес"), get_death_kb()
+
+
 def handle_location_1_forest_start(data: str, game, uid: int):
-    """Сюжетные разветвления для Локации 1: Лесной старт (котёнок, купол, волчье логово)."""
+    """Сюжетные разветвления для Локации 1: Стартовый лес (котёнок, купол, волчье логово)."""
     if data.startswith("l1_dome"):
         return handle_l1_dome(data, game, uid)
 
@@ -47,7 +56,7 @@ def handle_location_1_forest_start(data: str, game, uid: int):
         or data.startswith("l1_7")
         or data.startswith("wolf_lair")
         or data.startswith("wolf_battle")
-        or data in ("location_enter_1", "location_enter_2")
+        or data in ("location_enter_1",)
     ):
         return handle_l1_wolf_lair(data, game, uid)
 
@@ -55,6 +64,10 @@ def handle_location_1_forest_start(data: str, game, uid: int):
     kb = None
 
     if data in ("forest_start", "story_start", "wolf_start", "action_1"):
+        game.current_location = "Стартовый лес"
+        game.location_index = 0
+        game.location = game.current_location
+        game.pre_story_location = game.current_location
         game.story_state = "wolf_encounter"
         game.set_story_flag("l1_started")
         text = (
@@ -74,7 +87,9 @@ def handle_location_1_forest_start(data: str, game, uid: int):
         game.set_story_flag("l1_completed")
         game.story_flags["l1_completed_day"] = getattr(game, "day", 1)
         game.set_story_flag("left_wolf")
-        game.adjust_narrative_karma("pragmatism", 3)
+        if not game.is_story_flag_set("l1_left_wolf_karma"):
+            game.set_story_flag("l1_left_wolf_karma", True)
+            game.adjust_narrative_karma("pragmatism", 3)
         game.add_log("Ты тихо отступил, не связываясь с волком.")
         text = (
             "Ты медленно пятишься назад, стараясь не хрустнуть ни одной веткой.\n"
@@ -99,9 +114,11 @@ def handle_location_1_forest_start(data: str, game, uid: int):
             return text, kb
 
         if game.story_state != "after_fight":
-            game.adjust_narrative_karma("intervention", 3)
-            game.adjust_narrative_karma("compassion", -2)
-            game.adjust_narrative_karma("pragmatism", 3)
+            if not game.is_story_flag_set("l1_wolf_torch_karma"):
+                game.set_story_flag("l1_wolf_torch_karma", True)
+                game.adjust_narrative_karma("intervention", 3)
+                game.adjust_narrative_karma("compassion", -2)
+                game.adjust_narrative_karma("pragmatism", 3)
             game.story_state = "after_fight"
             if game.equipment.get("hand_left") == "Факел":
                 game.equipment["hand_left"] = None
@@ -168,7 +185,9 @@ def handle_location_1_forest_start(data: str, game, uid: int):
         ])
 
     elif data in ("l1_2a_leave", "pet_leave"):
-        game.adjust_narrative_karma("compassion", -3)
+        if not game.is_story_flag_set("l1_left_kitten_karma"):
+            game.set_story_flag("l1_left_kitten_karma", True)
+            game.adjust_narrative_karma("compassion", -3)
         game.story_state = None
         game.reset_nav()
         game.set_story_flag("l1_completed")
@@ -209,7 +228,9 @@ def handle_location_1_forest_start(data: str, game, uid: int):
         ])
 
     elif data in ("l1_2c_leave", "kitten_to_main"):
-        game.adjust_narrative_karma("compassion", -3)
+        if not game.is_story_flag_set("l1_left_kitten_karma"):
+            game.set_story_flag("l1_left_kitten_karma", True)
+            game.adjust_narrative_karma("compassion", -3)
         game.story_state = None
         game.reset_nav()
         game.set_story_flag("l1_completed")
@@ -249,8 +270,23 @@ def handle_location_1_forest_start(data: str, game, uid: int):
         text = game.get_ui()
         kb = get_main_kb(game)
 
-    if kb == get_main_kb(game) or data in ("wolf_leave", "pet_leave", "l1_2a_leave", "l1_2c_leave", "kitten_to_main", "story_next", "back") or getattr(game, "hp", 100) <= 0:
+    terminal_callbacks = {
+        "wolf_leave",
+        "pet_leave",
+        "l1_2a_leave",
+        "l1_2c_leave",
+        "kitten_to_main",
+        "story_next",
+        "back",
+    }
+    is_main_menu = (
+        data in terminal_callbacks
+        or getattr(game, "hp", 100) <= 0
+    )
+    if is_main_menu:
         game.active_story_callback = None
+        if getattr(game, "hp", 100) <= 0 or data in terminal_callbacks:
+            game.story_state = None
     elif text is not None:
         if data in ("l1_3", "pet_take", "waiting_pet_name"):
             game.active_story_callback = "waiting_pet_name"
@@ -288,11 +324,9 @@ def handle_l1_dome(data: str, game, uid: int):
                     kb = InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text="❌ Нет сил расчищать", callback_data="menu_main")],
                     ])
-                return text, kb
 
             # Б. Проверка: уже была попытка сегодня?
-            last_attempt_day = game.story_flags.get("l1_dome_day_attempt")
-            if last_attempt_day == cur_day:
+            elif game.story_flags.get("l1_dome_day_attempt") == cur_day:
                 text = (
                     "Тело всё еще ноет от недавнего падения и усталости.\n\n"
                     "Лезть на дуб или суетиться прямо сейчас бессмысленно. "
@@ -301,10 +335,9 @@ def handle_l1_dome(data: str, game, uid: int):
                 kb = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")]
                 ])
-                return text, kb
 
             # В. Проверка погоды: плохая погода (дождь, гроза, пасмурно)
-            if game.weather in {"rain", "storm", "cloudy"}:
+            elif game.weather in {"rain", "storm", "cloudy"}:
                 text = (
                     "Непогода окутала поляну сыростью. С ветвей дуба стекают струи воды, а намокший купол тяжело обвис между сучьями.\n\n"
                     "В такой серый полумрак и скользкую сырость разглядеть крепление ранца и сбить его невозможно. Стоит прийти в ясную погоду."
@@ -312,43 +345,48 @@ def handle_l1_dome(data: str, game, uid: int):
                 kb = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")]
                 ])
-                return text, kb
 
             # Г. Ясная солнечная погода (clear): выбор вариантов
-            has_staff = (
-                game.equipment.get("hand_right") in ("Крепкий посох", "Палка")
-                or game.equipment.get("hand_left") in ("Крепкий посох", "Палка")
-                or game.inventory.get("Крепкий посох", 0) > 0
-                or game.inventory.get("Палка", 0) > 0
-            )
+            else:
+                has_staff = (
+                    game.equipment.get("hand_right") in ("Крепкий посох", "Палка")
+                    or game.equipment.get("hand_left") in ("Крепкий посох", "Палка")
+                    or game.inventory.get("Крепкий посох", 0) > 0
+                    or game.inventory.get("Палка", 0) > 0
+                )
+                has_pet = bool(game.equipment.get("pet")) or game.is_story_flag_set("has_pet")
 
+                text = (
+                    "Солнечные лучи пробиваются сквозь крону. На сухом дубе хорошо виден застрявший ранец и переплетенные стропы.\n\n"
+                    "Лезть на дерево нельзя. Как попытаться достать ранец?"
+                )
+                buttons = []
+                if has_pet:
+                    buttons.append([InlineKeyboardButton(text="🐱 Попросить котёнка залезть", callback_data="l1_dome_cat_solve")])
+                if has_staff:
+                    buttons.append([InlineKeyboardButton(text="🥢 Сбить посохом (1 ⚡)", callback_data="l1_dome_staff_solve")])
+                buttons.append([InlineKeyboardButton(text="🪨 Бросать камни (1 ⚡)", callback_data="l1_dome_stone_throw")])
+                buttons.append([InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")])
+                kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+        else:
+            # ПЕРВЫЙ ВИЗИТ (погода игнорируется): Окно 1.1
             text = (
-                "Солнечные лучи пробиваются сквозь крону. На сухом дубе хорошо виден застрявший ранец и переплетенные стропы.\n\n"
-                "Лезть на дерево нельзя. Как попытаться достать ранец?"
+                "В глубине леса ветви расступаются перед поляной. Посреди неё возвышается древний расколотый дуб.\n\n"
+                "Высоко на черных сучьях висит выцветший парашютный купол. В истлевших стропах белеют кости и виден армейский брезентовый ранец."
             )
-            buttons = []
-            if has_staff:
-                buttons.append([InlineKeyboardButton(text="🥢 Сбить посохом (1 ⚡)", callback_data="l1_dome_staff_solve")])
-            buttons.append([InlineKeyboardButton(text="🪨 Бросать камни (1 ⚡)", callback_data="l1_dome_stone_throw")])
-            buttons.append([InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")])
-            kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-            return text, kb
-
-        # ПЕРВЫЙ ВИЗИТ (погода игнорируется): Окно 1.1
-        text = (
-            "В глубине леса ветви расступаются перед поляной. Посреди неё возвышается древний расколотый дуб.\n\n"
-            "Высоко на черных сучьях висит выцветший парашютный купол. В истлевших стропах белеют кости и виден армейский брезентовый ранец."
-        )
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🧗 Вскарабкаться на дуб", callback_data="l1_dome_climb_v1")],
-            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")],
-        ])
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🧗 Вскарабкаться на дуб", callback_data="l1_dome_climb_v1")],
+                [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")],
+            ])
 
     elif data == "l1_dome_climb_v1":
         # Окно 1.2: Срыв ветви и падение
         damage = 5
-        game.hp = max(1, game.hp - damage)
+        game.hp = max(0, game.hp - damage)
         game.consume_action(1)
+        if game.hp <= 0:
+            return _player_death(game, "Срыв с дуба и падение на острые корни оказались фатальными.")
         text = (
             "Ты хватаешься за толстый сук и подтягиваешься. Но мертвая древесина с глухим сухим треском обламывается под твоим весом!\n\n"
             "Ты летишь вниз и со всего маху ударяешься о корни дуба. Дыхание перехватывает от резкой боли.\n\n"
@@ -373,60 +411,78 @@ def handle_l1_dome(data: str, game, uid: int):
 
     elif data == "l1_dome_stone_throw":
         # Броски камнями: тратит 1 AP и 15 жажды, не получается
-        game.consume_action(1)
-        game.thirst = max(0, game.thirst - 15)
-        text = (
-            "Ты собираешь увесистые камни и изо всех сил швыряешь их вверх. Камни звонко бьют по коре и веткам, "
-            "но стропы слишком тонкие и гибкие — сбить их не удается.\n\n"
-            "От бесконечных бросков пересохло в горле, а плечо мучительно ломит. Кажется, камнями здесь ничего не добиться.\n\n"
-            "*(Эффекты: -1 AP, -15 к жажде)*"
-        )
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="↩️ Перевести дух", callback_data="l1_dome_enter")],
-        ])
-
-    elif data == "l1_dome_staff_solve":
-        # Попытка с посохом: 3 попытки
-        game.consume_action(1)
-        game.story_flags["l1_dome_day_attempt"] = cur_day
-        staff_tries = game.story_flags.get("l1_dome_staff_tries", 0) + 1
-        game.story_flags["l1_dome_staff_tries"] = staff_tries
-
-        if staff_tries == 1:
-            # Попытка 1
+        if getattr(game, "ap", 0) < 1:
             text = (
-                "Ты привязываешь длинную крепкую ветвь к своему посоху и с трудом поднимаешь конструкцию вверх. "
-                "Долго ловишь баланс, целясь в спутанные стропы.\n\n"
-                "Конец ветви лишь вскользь задевает узел. От долгого напряжения шея и руки затекли и дрожат. "
-                "Сбить с наскока не вышло, придется отложить до завтра.\n\n"
-                "*(Эффекты: -1 AP)*"
-            )
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")],
-            ])
-        elif staff_tries == 2:
-            # Попытка 2
-            text = (
-                "Ты вновь поднимаешь удлиненный посох и методично бьешь по стропе. Снова долгая ловля баланса, "
-                "руки немеют от тяжести, а ветвь вибрирует от ударов.\n\n"
-                "Узел строп заметно разболтался и надорвался, но ранец всё еще держится. Силы на исходе, мышцы гудят. "
-                "На сегодня хватит, завтра узел точно поддастся.\n\n"
-                "*(Эффекты: -1 AP)*"
+                "У тебя нет сил бросать камни! Руки дрожат от усталости.\n\n"
+                "Нужно передохнуть в лагере."
             )
             kb = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")],
             ])
         else:
-            # Попытка 3 — решающая (успех)
-            game.set_story_flag("l1_dome_backpack_fallen", True)
+            game.consume_action(1)
+            game.thirst = max(0, game.thirst - 15)
             text = (
-                "Натренированным движением ты поддеваешь разболтанный узел раздвоенным концом посоха и с силой проворачиваешь его.\n\n"
-                "Сухой треск! Перетертые стропы лопаются, и тяжелый ранец с шумом летит вниз, врезаясь в густой валежник у корней дуба!\n\n"
-                "*(Эффекты: -1 AP)*"
+                "Ты собираешь увесистые камни и изо всех сил швыряешь их вверх. Камни звонко бьют по коре и веткам, "
+                "но стропы слишком тонкие и гибкие — сбить их не удается.\n\n"
+                "От бесконечных бросков пересохло в горле, а плечо мучительно ломит. Кажется, камнями здесь ничего не добиться.\n\n"
+                "*(Эффекты: -1 AP, -15 к жажде)*"
             )
             kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🌿 Осмотреть завал у корней", callback_data="l1_dome_fall")],
+                [InlineKeyboardButton(text="↩️ Перевести дух", callback_data="l1_dome_enter")],
             ])
+
+    elif data == "l1_dome_staff_solve":
+        # Попытка с посохом: 3 попытки
+        if getattr(game, "ap", 0) < 1:
+            text = (
+                "У тебя нет сил держать тяжелый шест и сбивать стропы!\n\n"
+                "Нужно передохнуть в лагере."
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")],
+            ])
+        else:
+            game.consume_action(1)
+            game.story_flags["l1_dome_day_attempt"] = cur_day
+            staff_tries = game.story_flags.get("l1_dome_staff_tries", 0) + 1
+            game.story_flags["l1_dome_staff_tries"] = staff_tries
+
+            if staff_tries == 1:
+                # Попытка 1
+                text = (
+                    "Ты привязываешь длинную крепкую ветвь к своему посоху и с трудом поднимаешь конструкцию вверх. "
+                    "Долго ловишь баланс, целясь в спутанные стропы.\n\n"
+                    "Конец ветви лишь вскользь задевает узел. От долгого напряжения шея и руки затекли и дрожат. "
+                    "Сбить с наскока не вышло, придется отложить до завтра.\n\n"
+                    "*(Эффекты: -1 AP)*"
+                )
+                kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")],
+                ])
+            elif staff_tries == 2:
+                # Попытка 2
+                text = (
+                    "Ты вновь поднимаешь удлиненный посох и методично бьешь по стропе. Снова долгая ловля баланса, "
+                    "руки немеют от тяжести, а ветвь вибрирует от ударов.\n\n"
+                    "Узел строп заметно разболтался и надорвался, но ранец всё еще держится. Силы на исходе, мышцы гудят. "
+                    "На сегодня хватит, завтра узел точно поддастся.\n\n"
+                    "*(Эффекты: -1 AP)*"
+                )
+                kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")],
+                ])
+            else:
+                # Попытка 3 — решающая (успех)
+                game.set_story_flag("l1_dome_backpack_fallen", True)
+                text = (
+                    "Натренированным движением ты поддеваешь разболтанный узел раздвоенным концом посоха и с силой проворачиваешь его.\n\n"
+                    "Сухой треск! Перетертые стропы лопаются, и тяжелый ранец с шумом летит вниз, врезаясь в густой валежник у корней дуба!\n\n"
+                    "*(Эффекты: -1 AP)*"
+                )
+                kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🌿 Осмотреть завал у корней", callback_data="l1_dome_fall")],
+                ])
 
     elif data == "l1_dome_cat_solve":
         # Вариант с котёнком — мгновенный успех
@@ -466,27 +522,41 @@ def handle_l1_dome(data: str, game, uid: int):
             kb = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="❌ Нет сил расчищать", callback_data="menu_main")],
             ])
-            return text, kb
+        else:
+            if not already_completed:
+                game.consume_action(1)
+                # Армейская фляга падает в инвентарь сухой: 0/20, без автоэкипировки
+                game.inventory["Армейская фляга"] = game.inventory.get("Армейская фляга", 0) + 1
+                game.army_flask_water = 0
+                game.adjust_narrative_karma("pragmatism", 3)
+                game.set_story_flag("l1_dome_completed", True)
+            game.story_state = None
+            game.active_story_callback = None
+            game.reset_nav()
+            text = (
+                "Разбросав ветви валежника, ты открываешь тяжелые пряжки ранца. Внутри — надежная металлическая **Армейская фляга** (пустая, 0/20)!\n\n"
+                "Ты бережно укладываешь упавшие останки парашютиста под сенью дуба и присыпаешь их землей и камнями, воздав последние почести. "
+                "На душе становится спокойнее.\n\n"
+                "*(Эффекты: -1 AP, получена Армейская фляга 0/20, +3 кармы)*"
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")],
+            ])
 
-        if not already_completed:
-            game.consume_action(1)
-            # Армейская фляга падает в инвентарь сухой: 0/20, без автоэкипировки
-            game.inventory["Армейская фляга"] = game.inventory.get("Армейская фляга", 0) + 1
-            game.army_flask_water = 0
-            game.adjust_narrative_karma("pragmatism", 3)
-            game.set_story_flag("l1_dome_completed", True)
-        game.story_state = None
+    terminal_callbacks = {"menu_main", "back"}
+    if game.is_story_flag_set("l1_dome_completed"):
+        terminal_callbacks.add("l1_dome_loot")
+
+    is_terminal = (
+        data in terminal_callbacks
+        or getattr(game, "hp", 100) <= 0
+    )
+    if is_terminal:
         game.active_story_callback = None
+        game.story_state = None
         game.reset_nav()
-        text = (
-            "Разбросав ветви валежника, ты открываешь тяжелые пряжки ранца. Внутри — надежная металлическая **Армейская фляга** (пустая, 0/20)!\n\n"
-            "Ты бережно укладываешь упавшие останки парашютиста под сенью дуба и присыпаешь их землей и камнями, воздав последние почести. "
-            "На душе становится спокойнее.\n\n"
-            "*(Эффекты: -1 AP, получена Армейская фляга 0/20, +3 кармы)*"
-        )
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🏕️ Вернуться в лагерь", callback_data="menu_main")],
-        ])
+    elif text is not None:
+        game.active_story_callback = data
 
     return text, kb
 
@@ -581,6 +651,8 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
         return apply_action(data, game, "old_wolf")
 
     elif data == "wolf_battle_screen":
+        if getattr(game, "hp", 100) <= 0:
+            return _player_death(game, "Полученные в схватке раны оказались смертельными.")
         battle = getattr(game, "wolf_battle", None)
         if battle and battle.get("wolf_hp", 0) > 0 and getattr(game, "hp", 100) > 0:
             cur_enemy = battle.get("enemy_id", "old_wolf")
@@ -630,8 +702,8 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
         if not consumables:
             if not game.is_story_flag_set("spared_wolf"):
                 game.spared_souls = getattr(game, "spared_souls", 0) + 1
+                game.adjust_narrative_karma("compassion", 5)
             game.set_story_flag("spared_wolf")
-            game.adjust_narrative_karma("compassion", 5)
             text = (
                 "Ты опускаешь посох, делаешь предупреждающий жест и не приближаешься, давая волку пространство.\n"
                 "У тебя нет с собой еды, но зверь видит, что ты не станешь его добивать.\n"
@@ -660,15 +732,15 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
 
     elif data.startswith("l1_5_feed:"):
         food_item = data.removeprefix("l1_5_feed:")
-        if game.inventory.get(food_item, 0) > 0:
-            game.inventory[food_item] -= 1
-            if game.inventory[food_item] <= 0:
-                del game.inventory[food_item]
         if not game.is_story_flag_set("spared_wolf"):
+            if game.inventory.get(food_item, 0) > 0:
+                game.inventory[food_item] -= 1
+                if game.inventory[food_item] <= 0:
+                    del game.inventory[food_item]
             game.spared_souls = getattr(game, "spared_souls", 0) + 1
-        game.story_flags["spared_wolf_food"] = food_item
-        game.set_story_flag("spared_wolf")
-        game.adjust_narrative_karma("compassion", 5)
+            game.adjust_narrative_karma("compassion", 5)
+            game.story_flags["spared_wolf_food"] = food_item
+            game.set_story_flag("spared_wolf")
         text = (
             "Ты опускаешь посох, делаешь предупреждающий жест и не приближаешься, давая волку пространство.\n"
             f"Свободной рукой ты достаёшь из рюкзака {food_item} и бросаешь к его лапам.\n"
@@ -722,7 +794,11 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
         game.wolf_lair_defeated = True
         game.locations_unlocked = True
         game.wolf_battle = None
-        game.unlocked_locations = ["Стартовый лес", "Ручей со змеями"]
+        unlocked = list(getattr(game, "unlocked_locations", []))
+        for loc in ("Стартовый лес", "Ручей со змеями"):
+            if loc not in unlocked:
+                unlocked.append(loc)
+        game.unlocked_locations = unlocked
         game.set_story_flag("l1_7_completed")
         text = (
             "🌲 Глава завершена: Тайны густого леса\n\n"
@@ -751,29 +827,27 @@ def handle_l1_wolf_lair(data: str, game, uid: int):
         game.location_index = 0
         game.location = game.current_location
         game.pre_story_location = game.current_location
+        game.story_state = None
+        game.wolf_battle = None
+        game.active_story_callback = None
         game.add_log("Ты вернулся в Стартовый лес.")
         text = game.get_ui()
         kb = get_main_kb(game)
 
-    elif data == "location_enter_2":
-        game.reset_nav()
-        game.current_location = "Ручей со змеями"
-        game.location_index = 1
-        game.location = game.current_location
-        game.pre_story_location = game.current_location
-        from story.location_stories import handle_location_2_ruchey
-        text, kb = handle_location_2_ruchey("location_enter_2", game, uid)
-        if not game.is_story_flag_set("l2_prologue_completed"):
-            game.active_story_callback = "l2_1"
-
-    if kb == get_main_kb(game) or data in ("l1_5_leave", "l1_7_finish", "location_enter_1", "back") or getattr(game, "hp", 100) <= 0:
+    terminal_callbacks = {"l1_5_leave", "l1_7_finish", "location_enter_1", "back"}
+    if (
+        data in terminal_callbacks
+        or getattr(game, "hp", 100) <= 0
+        or kb == get_main_kb(game)
+    ):
         game.active_story_callback = None
+        game.story_state = None
     elif text is not None:
         battle = getattr(game, "wolf_battle", None)
         if battle and getattr(game, "hp", 100) > 0 and battle.get("wolf_hp", 0) > 0:
             cur_enemy = battle.get("enemy_id", "old_wolf")
             game.active_story_callback = "boar_battle_screen" if cur_enemy == "ancient_boar" else "wolf_battle_screen"
-        elif data in ("l1_7_inspect", "location_enter_2") and not game.is_story_flag_set("l2_prologue_completed"):
+        elif data == "l1_7_inspect" and not game.is_story_flag_set("l2_prologue_completed"):
             game.active_story_callback = "l2_1"
         else:
             game.active_story_callback = data
