@@ -475,6 +475,18 @@ def get_locations_kb(game):
         cb = "already_here" if is_cur else "location_enter_2"
         keyboard.append([InlineKeyboardButton(text=f"{loc_idx}. 🏞️ Ручей со змеями{pin}", callback_data=cb)])
         loc_idx += 1
+        # • Подлокация: Стена терновника / Бетонная плотина
+        if not game.is_story_flag_set("l2_completed"):
+            if not game.is_story_flag_set("l2_thorns_cleared"):
+                if game.is_story_flag_set("l2_thorns_discovered") or game.is_story_flag_set("l2_thorns_seen"):
+                    keyboard.append([InlineKeyboardButton(text="• 🌿 Стена терновника", callback_data="l2_thorns_approach")])
+            else:
+                if game.is_story_flag_set("l2_fuse_inserted"):
+                    keyboard.append([InlineKeyboardButton(text="• 🏗️ Щит управления плотиной", callback_data="l2_puzzle_start")])
+                elif game.is_story_flag_set("l2_panel_blown"):
+                    keyboard.append([InlineKeyboardButton(text="• 🏗️ Осмотреть электрощиток", callback_data="l2_fusebox_inspect")])
+                else:
+                    keyboard.append([InlineKeyboardButton(text="• 🏗️ Бетонная плотина", callback_data="l2_dam_entrance")])
 
     # 3. Скромная лощина
     if is_loc_unlocked("лощин"):

@@ -145,7 +145,13 @@ def test_thorns_gate_blocks_deadly_entry():
     text, kb = handle_location_2_ruchey("location_enter_2", game, 101)
     btn_cbs = [b.callback_data for row in kb.inline_keyboard for b in row]
     assert "l2_thorns_break" not in btn_cbs
-    assert "Попытка проломиться сейчас будет смертельной" in text
+    assert "l2_thorns_approach" in btn_cbs
+
+    # На экране подлокации терновника смертельный прорыв блокируется
+    text_thorns, kb_thorns = handle_location_2_ruchey("l2_thorns_approach", game, 101)
+    thorns_cbs = [b.callback_data for row in kb_thorns.inline_keyboard for b in row]
+    assert "l2_thorns_break" not in thorns_cbs
+    assert "Попытка проломиться сейчас будет смертельной" in text_thorns
 
 
 def test_death_text_and_kb_format():

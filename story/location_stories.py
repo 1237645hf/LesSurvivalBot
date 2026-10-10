@@ -100,6 +100,10 @@ def handle_story(data: str, game, uid: int):
         res = handle_l1_dome(data, game, uid)
     elif data.startswith("l2_") or data.startswith("ruchey_") or data.startswith("river_") or data.startswith("snake_") or data.startswith("story_") or data == "location_enter_2":
         if data == "location_enter_2":
+            unlocked = getattr(game, "unlocked_locations", []) or []
+            if "Ручей со змеями" not in unlocked:
+                unlocked.append("Ручей со змеями")
+                game.unlocked_locations = unlocked
             game.current_location = "Ручей со змеями"
             game.location_index = 1
             game.location = game.current_location
