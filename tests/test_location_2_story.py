@@ -434,22 +434,21 @@ def test_l2_fatal_damage_and_terminal_cleanup():
 
 
 def test_l2_shore_hub_and_thorns_sublocation():
-    """Тест 14: Игрок остаётся на Берегу ручья (L2), а Стена терновника доступна как подлокация."""
-    from keyboards import get_locations_kb
+    """Тест 14: Игрок находится в основном лагере Ручья (L2), а Стена терновника доступна как подлокация."""
+    from keyboards import get_locations_kb, get_main_kb
 
     game = GameState()
     game.unlocked_locations = ["Стартовый лес", "Ручей со змеями"]
     game.set_story_flag("l2_prologue_completed", True)
     game.set_story_flag("l2_thorns_discovered", True)
 
-    # 1. Вход на локацию 2 открывает именно Берег ручья, а не зацикливает на терновнике
+    # 1. Вход на локацию 2 открывает полноценный главный экран лагеря L2, а не зацикливает на терновнике
     text, kb = handle_location_2_ruchey("location_enter_2", game, 101)
-    assert "БЕРЕГ РУЧЬЯ" in text
     assert game.current_location == "Ручей со змеями"
     assert game.pre_story_location == "Ручей со змеями"
+    assert kb == get_main_kb(game)
     cb_datas = [b.callback_data for row in kb.inline_keyboard for b in row]
-    assert "action_1" in cb_datas  # Исследовать берег доступно!
-    assert "l2_thorns_approach" in cb_datas  # Подлокация Стены терновника доступна!
+    assert "action_1" in cb_datas  # Исследовать доступно с главного экрана!
 
     # 2. В меню «Локации» под Ручьём видна подлокация «Стена терновника»
     loc_kb = get_locations_kb(game)
@@ -462,17 +461,19 @@ def test_l2_shore_hub_and_thorns_sublocation():
     text_thorns, kb_thorns = handle_location_2_ruchey("l2_thorns_approach", game, 101)
     assert "СТЕНА ТЕРНОВНИКА" in text_thorns
     thorns_cbs = [b.callback_data for row in kb_thorns.inline_keyboard for b in row]
-    assert "location_enter_2" in thorns_cbs  # Возврат на берег ручья
+    thorns_texts = [b.text for row in kb_thorns.inline_keyboard for b in row]
+    assert "location_enter_2" in thorns_cbs  # Кнопка возврата в лагерь
+    assert any("В лагерь" in t for t in thorns_texts)
 
-    # 4. Нажатие «↩️ На берег ручья» возвращает на Берег ручья (а не в Стартовый лес!)
+    # 4. Нажатие «🏕️ В лагерь» возвращает в лагерь на Ручье (а не в Стартовый лес!)
     text_back, kb_back = handle_location_2_ruchey("location_enter_2", game, 101)
-    assert "БЕРЕГ РУЧЬЯ" in text_back
     assert game.current_location == "Ручей со змеями"
+    assert kb_back == get_main_kb(game)
 
     # 5. После пролома терновника подлокация переключается на Плотину
     game.set_story_flag("l2_thorns_cleared", True)
-    text_cleared, kb_cleared = handle_location_2_ruchey("location_enter_2", game, 101)
-    cb_cleared = [b.callback_data for row in kb_cleared.inline_keyboard for b in row]
-    assert "l2_dam_entrance" in cb_cleared
-    assert "l2_thorns_approach" not in cb_cleared
+    loc_kb_cleared = get_locations_kb(game)
+    cleared_cbs = [b.callback_data for row in loc_kb_cleared.inline_keyboard for b in row]
+    assert "l2_dam_entrance" in cleared_cbs
+    assert "l2_thorns_approach" not in cleared_cbs
 

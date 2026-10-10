@@ -411,34 +411,10 @@ def handle_location_2_ruchey(data: str, game, uid: int):
             game.active_story_callback = "l2_1"
             return handle_location_2_ruchey("l2_1", game, uid)
 
-        # Берег ручья (основная база локации 2)
+        # Обычное нахождение на локации 2 (лагерь / главный экран)
         game.active_story_callback = None
         game.story_state = None
-        text = (
-            "🏞️ БЕРЕГ РУЧЬЯ\n\n"
-            "Холодные струи ручья шумно перекатываются через гальку и гладкие сланцевые плиты. "
-            "Воздух чистый и влажный, вокруг тихо шелестят прибрежные заросли.\n\n"
-            "Ты можешь исследовать окрестности в поисках ресурсов или подготовиться к преодолению преграды."
-        )
-        buttons = [
-            [InlineKeyboardButton(text="🔍 Исследовать берег", callback_data="action_1")],
-        ]
-
-        # Подлокация / сюжетное препятствие на Ручье
-        if game.is_story_flag_set("l2_thorns_cleared"):
-            if game.is_story_flag_set("l2_fuse_inserted"):
-                buttons.append([InlineKeyboardButton(text="• 🏗️ Щит управления плотиной", callback_data="l2_puzzle_start")])
-            elif game.is_story_flag_set("l2_panel_blown"):
-                buttons.append([InlineKeyboardButton(text="• 🏗️ Осмотреть электрощиток", callback_data="l2_fusebox_inspect")])
-            else:
-                buttons.append([InlineKeyboardButton(text="• 🏗️ Бетонная плотина", callback_data="l2_dam_entrance")])
-        elif game.is_story_flag_set("l2_thorns_discovered") or game.is_story_flag_set("l2_thorns_seen"):
-            buttons.append([InlineKeyboardButton(text="• 🌿 Стена терновника", callback_data="l2_thorns_approach")])
-
-        buttons.append([InlineKeyboardButton(text="🌲 В Стартовый лес", callback_data="location_enter_1")])
-        buttons.append([InlineKeyboardButton(text="↩️ В лагерь", callback_data="back")])
-        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-        return text, kb
+        return game.get_ui(), get_main_kb(game)
 
     # ─────────────────────────────────────────────────────────────────────────
     # СЮЖЕТНАЯ ВЕТКА: «ПО ЭТУ СТОРОНУ ВОДЫ» (ПРОЛОГ РУЧЬЯ)
@@ -503,7 +479,7 @@ def handle_location_2_ruchey(data: str, game, uid: int):
             "Когда ты выпрямляешься, стука уже не слышно. Возможно, его просто заглушает расстояние."
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🏞️ На берег ручья", callback_data="location_enter_2")],
+            [InlineKeyboardButton(text="🏕️ В лагерь", callback_data="location_enter_2")],
         ])
 
     elif data == "l2_2":
@@ -532,7 +508,7 @@ def handle_location_2_ruchey(data: str, game, uid: int):
             "Ты не оборачиваешься."
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🏞️ На берег ручья", callback_data="location_enter_2")],
+            [InlineKeyboardButton(text="🏕️ В лагерь", callback_data="location_enter_2")],
         ])
 
     elif data == "l2_3":
@@ -771,7 +747,7 @@ def handle_location_2_ruchey(data: str, game, uid: int):
             "До этой минуты хотелось найти хоть какой-нибудь человеческий след. Теперь хочется, чтобы следующий оказался живым."
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🏞️ На берег ручья", callback_data="location_enter_2")],
+            [InlineKeyboardButton(text="🏕️ В лагерь", callback_data="location_enter_2")],
         ])
 
     elif data == "l2_8":
@@ -782,7 +758,7 @@ def handle_location_2_ruchey(data: str, game, uid: int):
             "Ты останавливаешься, чтобы перевести дыхание. Теперь ты знаешь, что здесь был кто-то ещё. Только спросить его уже ни о чём не получится."
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🏞️ На берег ручья", callback_data="location_enter_2")],
+            [InlineKeyboardButton(text="🏕️ В лагерь", callback_data="location_enter_2")],
         ])
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -830,7 +806,7 @@ def handle_location_2_ruchey(data: str, game, uid: int):
             )
 
         buttons.append([InlineKeyboardButton(text="ℹ️ О зарослях", callback_data="l2_thorns_info")])
-        buttons.append([InlineKeyboardButton(text="↩️ На берег ручья", callback_data="location_enter_2")])
+        buttons.append([InlineKeyboardButton(text="🏕️ В лагерь", callback_data="location_enter_2")])
 
         text = desc
         kb = InlineKeyboardMarkup(inline_keyboard=buttons)
