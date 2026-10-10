@@ -394,7 +394,7 @@ def get_fuel_quantity_kb(fuel_type: str, game=None):
 
 
 def get_campfire_recipes_kb(game):
-    """Меню рецептов костра: показывает ТОЛЬКО блюда, на которые хватает ингредиентов прямо сейчас."""
+    """Меню рецептов костра: показывает ТОЛЬКО доступные блюда, на которые прямо сейчас хватает ресурсов."""
     from modules.cooking import COOKING_RECIPES, can_cook
     from modules.items import get_item_rank_marker
 

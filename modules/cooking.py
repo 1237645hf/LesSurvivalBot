@@ -181,9 +181,10 @@ def can_cook(game: Any, recipe_id: str) -> bool:
         return False
 
     inv = getattr(game, "inventory", {}) or {}
-    bark = "Кусок коры"
     if recipe.get("needs_bark", True):
-        if inv.get(bark, 0) < 1:
+        bark_avail = inv.get("Кусок коры", 0) + inv.get("Кора", 0)
+        plate_avail = inv.get("Сланцевая тарелка", 0)
+        if (bark_avail + plate_avail) < 1:
             return False
 
     if recipe.get("needs_meat"):
@@ -272,18 +273,56 @@ def format_recipe_card(recipe_id: str, game: Any = None) -> str:
         lines.append("")
 
     # Ингредиенты в едином формате
+    inv = getattr(game, "inventory", {}) or {} if game is not None else {}
+    bark_have = inv.get("Кусок коры", 0) + inv.get("Кора", 0)
+    plate_have = inv.get("Сланцевая тарелка", 0)
+    dish_have = bark_have + plate_have
+
+    meat_have = inv.get("Сырое мясо", 0)
+    berries_have = _count_tagged_items(inv, "berry") if game is not None else 0
+    mushrooms_have = _count_tagged_items(inv, "mushroom") if game is not None else 0
+
+    flask = int(getattr(game, "flask_water", 0) or 0)
+    has_flask_item = bool(getattr(game, "equipment", {}).get("flask")) if game is not None else False
+    flask_water_available = flask if has_flask_item else 0
+    bottles_in_inv = inv.get("Бутылка воды", 0)
+    plain_water = inv.get("Вода", 0)
+    water_have = flask_water_available + bottles_in_inv * 20 + plain_water
+
     ing_parts = []
     if recipe.get("needs_bark"):
-        ing_parts.append("Посуда: Кусок коры или Сланцевая тарелка: 1")
+        if game is not None:
+            status = "✅" if dish_have >= 1 else "❌"
+            ing_parts.append(f"{status} Посуда (Кусок коры или Сланцевая тарелка): 1 (в наличии: {dish_have})")
+        else:
+            ing_parts.append("Посуда: Кусок коры или Сланцевая тарелка: 1")
     if recipe.get("needs_meat"):
-        ing_parts.append("Сырое мясо: 1")
+        if game is not None:
+            status = "✅" if meat_have >= 1 else "❌"
+            ing_parts.append(f"{status} Сырое мясо: 1 (в наличии: {meat_have})")
+        else:
+            ing_parts.append("Сырое мясо: 1")
     if recipe.get("berries_needed"):
-        ing_parts.append(f"Любые [Ягоды]: {recipe['berries_needed']}")
+        b_need = recipe["berries_needed"]
+        if game is not None:
+            status = "✅" if berries_have >= b_need else "❌"
+            ing_parts.append(f"{status} Любые [Ягоды]: {b_need} (в наличии: {berries_have})")
+        else:
+            ing_parts.append(f"Любые [Ягоды]: {b_need}")
     if recipe.get("mushrooms_needed"):
-        ing_parts.append(f"Любые [Грибы]: {recipe['mushrooms_needed']}")
+        m_need = recipe["mushrooms_needed"]
+        if game is not None:
+            status = "✅" if mushrooms_have >= m_need else "❌"
+            ing_parts.append(f"{status} Любые [Грибы]: {m_need} (в наличии: {mushrooms_have})")
+        else:
+            ing_parts.append(f"Любые [Грибы]: {m_need}")
     water = recipe.get("water_from_flask", 0)
     if water > 0:
-        ing_parts.append(f"Вода: {water}")
+        if game is not None:
+            status = "✅" if water_have >= water else "❌"
+            ing_parts.append(f"{status} Вода: {water} (в наличии: {water_have})")
+        else:
+            ing_parts.append(f"Вода: {water}")
 
     lines.append("Ингредиенты:")
     for ing in ing_parts:
@@ -1012,7 +1051,13 @@ async def handle_campfire_callback(
         if available_count > 0:
             text = "📜 Рецепты костра\n\nВыберите блюдо, чтобы узнать ингредиенты и приготовить:"
         else:
-            text = "📜 Рецепты костра\n\nСейчас у вас недостаточно ингредиентов ни для одного блюда.\nНайдите ягоды, грибы, мясо, воду или кусок коры."
+            text = (
+                "📜 Рецепты костра\n\n"
+                "Сейчас у вас недостаточно ингредиентов ни для одного блюда.\n\n"
+                "💡 Для готовки на костре требуется:\n"
+                "• Посуда для жарки: Кусок коры или Сланцевая тарелка\n"
+                "• Свежие лесные припасы: ягоды (от 5 шт.), грибы (от 5 шт.) или сырое мясо"
+            )
         kb = get_campfire_recipes_kb(game)
         return text, kb
 

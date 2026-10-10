@@ -195,7 +195,10 @@ class GameState:
         self.nav_stack = ["main"]
 
     def push_screen(self, screen: str):
-        self.nav_stack.append(screen)
+        if screen in CANONICAL_STACKS:
+            self.nav_stack = list(CANONICAL_STACKS[screen])
+        else:
+            self.nav_stack.append(screen)
 
     def pop_screen(self):
         if len(self.nav_stack) > 1:
@@ -828,6 +831,10 @@ class GameState:
         game.thirst = max(0, int(game.thirst))
         game.inventory = dict(game.inventory or {})
         game.inventory.pop("Вилка", None)
+        if "Кора" in game.inventory:
+            kora_qty = game.inventory.pop("Кора", 0)
+            if kora_qty > 0:
+                game.inventory["Кусок коры"] = game.inventory.get("Кусок коры", 0) + kora_qty
         if "Вода" in game.inventory:
             water_count = game.inventory.pop("Вода")
             bottles = max(1, water_count // 5) if water_count >= 5 else 1
@@ -1656,7 +1663,13 @@ def handle_back_navigation(game: Any, uid: int) -> Tuple[Optional[str], Optional
         if available_count > 0:
             text = "📜 Рецепты костра\n\nВыберите блюдо, чтобы узнать ингредиенты и приготовить:"
         else:
-            text = "📜 Рецепты костра\n\nСейчас у вас недостаточно ингредиентов ни для одного блюда.\nНайдите ягоды, грибы, мясо, воду или кусок коры."
+            text = (
+                "📜 Рецепты костра\n\n"
+                "Сейчас у вас недостаточно ингредиентов ни для одного блюда.\n\n"
+                "💡 Для готовки на костре требуется:\n"
+                "• Посуда для жарки: Кусок коры или Сланцевая тарелка\n"
+                "• Свежие лесные припасы: ягоды (от 5 шт.), грибы (от 5 шт.) или сырое мясо"
+            )
         kb = get_campfire_recipes_kb(game)
     elif target == "campfire_fuel":
         cur_d = getattr(game, "campfire_durability", 0)

@@ -1098,5 +1098,67 @@ def test_narrative_karma_and_endings():
     assert resolve_ending(game) == "guardian"
 
 
+def test_campfire_recipes_visibility_and_bark_variants():
+    """Тест: в меню костра отображаются ТОЛЬКО доступные рецепты, кора/тарелка учитываются, Кора мигрирует."""
+    from modules.cooking import can_cook, COOKING_RECIPES, format_recipe_card
+    from keyboards import get_campfire_recipes_kb, get_campfire_recipe_view_kb
+
+    game = GameState()
+    game.inventory = {"Красная ягода": 5, "Дикий гриб": 3}
+    # 0 коры и 0 тарелок -> нельзя готовить, рецептов в меню нет
+    assert can_cook(game, "cook_roast_berries") is False
+
+    kb_empty = get_campfire_recipes_kb(game)
+    btn_cbs_empty = [b.callback_data for row in kb_empty.inline_keyboard for b in row]
+    # Недоступные рецепты не отображаются, только кнопка "Назад"
+    assert "cook_recipe_view_cook_roast_berries" not in btn_cbs_empty
+    assert "back" in btn_cbs_empty
+
+    # Карточка рецепта по-прежнему информативна и показывает нехватку
+    card = format_recipe_card("cook_roast_berries", game)
+    assert "❌ Посуда (Кусок коры или Сланцевая тарелка): 1 (в наличии: 0)" in card
+    assert "✅ Любые [Ягоды]: 5 (в наличии: 5)" in card
+    assert "Доступно для готовки: 0 шт." in card
+
+    # Добавляем альтернативную кору ("Кора") -> рецепт становится доступным и появляется в клавиатуре
+    game.inventory["Кора"] = 1
+    assert can_cook(game, "cook_roast_berries") is True
+    kb_with_bark = get_campfire_recipes_kb(game)
+    cbs_bark = [b.callback_data for row in kb_with_bark.inline_keyboard for b in row]
+    assert "cook_recipe_view_cook_roast_berries" in cbs_bark
+    # Грибы по-прежнему недоступны (3/5), поэтому их в меню нет
+    assert "cook_recipe_view_cook_roast_mushrooms" not in cbs_bark
+
+    # Проверяем сланцевую тарелку вместо коры
+    del game.inventory["Кора"]
+    assert can_cook(game, "cook_roast_berries") is False
+    game.inventory["Сланцевая тарелка"] = 1
+    assert can_cook(game, "cook_roast_berries") is True
+    kb_plate = get_campfire_recipes_kb(game)
+    cbs_plate = [b.callback_data for row in kb_plate.inline_keyboard for b in row]
+    assert "cook_recipe_view_cook_roast_berries" in cbs_plate
+
+    # Проверяем авто-миграцию старого сейва с "Кора" -> "Кусок коры"
+    doc = game.to_document()
+    doc["inventory"]["Кора"] = 7
+    doc["inventory"]["Кусок коры"] = 2
+    restored = GameState.from_document(doc)
+    assert "Кора" not in restored.inventory
+    assert restored.inventory["Кусок коры"] == 9
+
+
+def test_push_screen_canonical_resets():
+    """Тест: push_screen нормализует стек навигации по CANONICAL_STACKS без мусорных экранов."""
+    from game_state import CANONICAL_STACKS
+    game = GameState()
+    # Имитируем зависший стек из подменю топлива
+    game.nav_stack = ["main", "campfire", "campfire_fuel", "fuel_qty"]
+
+    # Переход в меню рецептов костра сбрасывает стек до канонического
+    game.push_screen("campfire_recipes")
+    assert game.nav_stack == CANONICAL_STACKS["campfire_recipes"]
+    assert game.nav_stack == ["main", "campfire", "campfire_recipes"]
+
+
 
 
