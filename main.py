@@ -954,7 +954,7 @@ def handle_sleep_action(game: Any) -> tuple[str, Any]:
     if game.hp <= 0:
         game.hp = 0
         game.active_story_callback = None
-        return get_death_text(game, "Критическое истощение от голода и жажды во сне (−10 HP).", getattr(game, "current_location", None)), get_death_kb()
+        return get_death_text(game, "Критическое истощение от голода и жажды во сне.", getattr(game, "current_location", None)), get_death_kb()
     trap_msgs = []
     # Утро: 40% пуста, 20% ломается, 40% добыча по таблице локации
     for event in process_trap_rollover(game):

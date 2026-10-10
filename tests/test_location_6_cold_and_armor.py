@@ -141,8 +141,8 @@ async def test_l6_exploration_cold_damage_and_full_set_immunity():
     game.location_index = 5
     game.ap = 10
     game.hp = 100
-    game.hunger = 100
-    game.thirst = 100
+    game.hunger = 60
+    game.thirst = 60
 
     # 1) Исследование без мехового сета (0% защиты, урон 10..15 HP)
     await handle_explore_callback("action_1", game, 1001)
@@ -198,8 +198,8 @@ def test_l6_sleep_guard_and_sleep_damage():
     game.location_index = 5
     game.equipment.clear()
     game.day = 1
-    game.hunger = 100
-    game.thirst = 100
+    game.hunger = 60
+    game.thirst = 60
 
     # 1) Базовый холод без брони (0% защиты, незащищённость 1.0)
     # Без костра: actual_sleep_dmg = 50. Гвард при HP <= 50

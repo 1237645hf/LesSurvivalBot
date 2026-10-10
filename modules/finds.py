@@ -399,7 +399,12 @@ async def handle_explore_callback(
             kb = get_main_kb(game)
             return text, kb
 
-        deltas = game.consume_action(action_type="search", base_hunger=2, base_thirst=4)
+        deltas = game.consume_action(
+            action_type="search",
+            base_hunger=2,
+            base_thirst=4,
+            apply_survival_hp=True,
+        )
         loc_id = location_id_from_game(game)
         loc_emoji = LOCATION_EMOJIS.get(loc_id, "🌲")
 
@@ -415,8 +420,13 @@ async def handle_explore_callback(
                 hp_reasons.append("голодание")
             if deltas.get("thirst_damage_to_hp"):
                 hp_reasons.append("обезвоживание")
+            if deltas.get("regen_hp"):
+                hp_reasons.append("сытость")
             reason = f" ({', '.join(hp_reasons)})" if hp_reasons else ""
-            parts.append(f"❤️ {hp_delta}{reason}")
+            if hp_delta > 0:
+                parts.append(f"❤️ +{hp_delta}{reason}")
+            else:
+                parts.append(f"❤️ {hp_delta}{reason}")
 
         res_str = ", ".join(parts) if parts else "без изменений"
         game.add_log(f"{loc_emoji} Исследование: {res_str}")

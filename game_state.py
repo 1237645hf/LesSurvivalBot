@@ -12,6 +12,9 @@ from datetime import datetime
 from game_math import (
     get_base_resource_cost,
     get_thirst_base_cost,
+    get_starvation_damage,
+    get_dehydration_damage,
+    calculate_passive_regen,
 )
 
 from modules.hints import get_active_hints
@@ -269,21 +272,44 @@ class GameState:
             total_ap = max(1, total_ap - 1)
         return total_ap
 
-    def consume_action(self, action_type: str = "default", base_hunger: int = 2, base_thirst: int = 1, ap_cost: int = 1):
+    def is_in_battle(self) -> bool:
+        """Проверяет, находится ли персонаж в активном боевом состоянии."""
+        if getattr(self, "wolf_battle", None):
+            return True
+        if getattr(self, "slug_pack_battle", None):
+            return True
+        if getattr(self, "slug_battle", None):
+            return True
+        if getattr(self, "wolf_pack_battle", None):
+            return True
+        if getattr(self, "in_battle", False):
+            return True
+        story_state = str(getattr(self, "story_state", "") or "").lower()
+        if "battle" in story_state:
+            return True
+        return False
+
+    def consume_action(
+        self,
+        action_type: str = "default",
+        base_hunger: int = 2,
+        base_thirst: int = 1,
+        ap_cost: int = 1,
+        apply_survival_hp: bool = False,
+    ):
         """Списание AP и ресурсов с возвратом ФАКТИЧЕСКИХ дельт.
 
-        Если голод или жажда доходят до 0, остаток уходит в урон HP
-        (голодание / обезвоживание). HP гарантированно не ниже 1.
+        При apply_survival_hp=True (только «Исследовать» и «Сон»):
+        - Старый overflow-урон в HP отключён.
+        - Шкалы зажимаются в [0, 100], без ухода в минус.
+        - Урон по таблице B (если не в бою):
+            Сытость: >=40 -> 0, 20-39 -> -2, 1-19 -> -4, 0 -> -6
+            Жажда:   >=40 -> 0, 20-39 -> -2, 1-19 -> -4, 0 -> -6
+        - Реген по таблице A (+2 explore, +4 sleep), если жив, не в бою и hunger>=70 и thirst>=70.
+        - Итог HP clamp [0, max_hp].
 
-        Возвращает:
-            dict с ключами:
-                success (bool) — было ли действие выполнено (AP > 0)
-                delta_ap (int) — фактическое изменение AP
-                delta_hunger (int) — фактическое изменение hunger (отриц. = списано)
-                delta_thirst (int) — фактическое изменение thirst (отриц. = списано)
-                delta_hp (int) — фактическое изменение HP (отриц. = урон)
-                hunger_damage_to_hp (int) — сколько HP снялось из-за голодания
-                thirst_damage_to_hp (int) — сколько HP снялось из-за обезвоживания
+        При apply_survival_hp=False (по умолчанию):
+        - Сохраняется исходная логика overflow для остальных вызовов.
         """
         result = {
             "success": False,
@@ -293,40 +319,66 @@ class GameState:
             "delta_hp": 0,
             "hunger_damage_to_hp": 0,
             "thirst_damage_to_hp": 0,
+            "regen_hp": 0,
         }
-        if self.ap <= 0:
-            return result
+        cost = max(0, int(ap_cost))
+        if cost > 0:
+            if self.ap <= 0 or self.ap < cost:
+                return result
 
         old_ap = self.ap
         old_hunger = self.hunger
         old_thirst = self.thirst
         old_hp = self.hp
 
-        cost = max(0, int(ap_cost))
-        if cost <= 0:
-            return result
-        if self.ap < cost:
-            return result
-        self.ap = max(0, self.ap - cost)
+        if cost > 0:
+            self.ap = max(0, self.ap - cost)
 
         hunger_cost = get_base_resource_cost(self, base_cost=base_hunger)
         thirst_cost = get_thirst_base_cost(self, base_cost=base_thirst)
 
-        new_hunger = old_hunger - hunger_cost
-        if new_hunger < 0:
-            result["hunger_damage_to_hp"] = -new_hunger
-            new_hunger = 0
-        self.hunger = new_hunger
+        if apply_survival_hp:
+            # 2. Списание ресурсов (шкалы не уводить ниже 0)
+            self.hunger = max(0, min(100, old_hunger - hunger_cost))
+            self.thirst = max(0, min(100, old_thirst - thirst_cost))
 
-        new_thirst = old_thirst - thirst_cost
-        if new_thirst < 0:
-            result["thirst_damage_to_hp"] = -new_thirst
-            new_thirst = 0
-        self.thirst = new_thirst
+            in_combat = self.is_in_battle()
+            # 3. Расчёт урона по таблице B (если не в бою)
+            if not in_combat:
+                h_dmg = get_starvation_damage(self.hunger)
+                t_dmg = get_dehydration_damage(self.thirst)
+                total_table_dmg = h_dmg + t_dmg
+                result["hunger_damage_to_hp"] = h_dmg
+                result["thirst_damage_to_hp"] = t_dmg
+                # 4. Применение урона к HP
+                if total_table_dmg > 0:
+                    self.hp = max(0, self.hp - total_table_dmg)
 
-        overflow_hp_damage = result["hunger_damage_to_hp"] + result["thirst_damage_to_hp"]
-        if overflow_hp_damage > 0:
-            self.hp = max(0, old_hp - overflow_hp_damage)
+                # 5. Если ещё жив и не в бою и hunger>=70 и thirst>=70 — реген A (+2 или +4)
+                if self.hp > 0 and self.hunger >= 70 and self.thirst >= 70:
+                    regen_amt = calculate_passive_regen(self.hunger, self.thirst, action_type=action_type)
+                    if regen_amt > 0:
+                        self.hp = min(self.max_hp, self.hp + regen_amt)
+                        result["regen_hp"] = regen_amt
+
+            # 6. Итог HP clamp 0..max_hp
+            self.hp = max(0, min(self.max_hp, self.hp))
+        else:
+            new_hunger = old_hunger - hunger_cost
+            if new_hunger < 0:
+                result["hunger_damage_to_hp"] = -new_hunger
+                new_hunger = 0
+            self.hunger = max(0, min(100, new_hunger))
+
+            new_thirst = old_thirst - thirst_cost
+            if new_thirst < 0:
+                result["thirst_damage_to_hp"] = -new_thirst
+                new_thirst = 0
+            self.thirst = max(0, min(100, new_thirst))
+
+            overflow_hp_damage = result["hunger_damage_to_hp"] + result["thirst_damage_to_hp"]
+            if overflow_hp_damage > 0:
+                self.hp = max(0, old_hp - overflow_hp_damage)
 
         result["success"] = True
         result["delta_ap"] = self.ap - old_ap
@@ -335,7 +387,7 @@ class GameState:
         result["delta_hp"] = self.hp - old_hp
 
         # −1 прочность костра за действие С ТРАТОЙ AP (success), кроме сна
-        if self.campfire_active and action_type != "sleep" and ap_cost > 0:
+        if self.campfire_active and action_type != "sleep" and cost > 0:
             self.campfire_durability -= 1
             if self.campfire_durability <= 0:
                 self.campfire_durability = 0
@@ -605,9 +657,18 @@ class GameState:
         5. reset_daily_ap() (факел уже сгорел → бонуса нет; холод ограничивает AP).
         6. day += 1 — день наступил.
         """
-        # 1. Ночные расходы ресурсов
-        if self.ap > 0:
-            self.consume_action(action_type="sleep", base_hunger=1, base_thirst=1)
+        # 1. Ночные расходы ресурсов и выживание (урон / реген)
+        sleep_deltas = self.consume_action(
+            action_type="sleep",
+            base_hunger=1,
+            base_thirst=1,
+            ap_cost=0,
+            apply_survival_hp=True,
+        )
+        if sleep_deltas.get("delta_hp", 0) < 0:
+            self.add_log(f"💀 За ночь от истощения потеряно ❤️ {abs(sleep_deltas['delta_hp'])} HP.", "sleep")
+        elif sleep_deltas.get("regen_hp", 0) > 0:
+            self.add_log(f"🌿 Сытость и отдых восстановили силы во сне (+{sleep_deltas['regen_hp']} ❤️ HP).", "sleep")
 
         # 2. Костёр / Печь за ночь: −3 прочности
         if self.campfire_active:

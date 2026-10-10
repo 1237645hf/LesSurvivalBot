@@ -143,3 +143,64 @@ def calculate_ap_by_hp(game_state: object) -> int:
         return 2
     else:
         return 1
+
+
+def get_starvation_damage(hunger: int) -> int:
+    """Урон HP от уровня сытости за действие (таблица B).
+
+    Шкала:
+    - >= 40 → 0
+    - 20–39 → -2 (2 урона)
+    - 1–19  → -4 (4 урона)
+    - 0     → -6 (6 урона)
+    """
+    h = max(0, int(hunger))
+    if h >= 40:
+        return 0
+    elif h >= 20:
+        return 2
+    elif h >= 1:
+        return 4
+    else:
+        return 6
+
+
+def get_dehydration_damage(thirst: int) -> int:
+    """Урон HP от уровня жажды за действие (таблица B).
+
+    Шкала:
+    - >= 40 → 0
+    - 20–39 → -2 (2 урона)
+    - 1–19  → -4 (4 урона)
+    - 0     → -6 (6 урона)
+    """
+    t = max(0, int(thirst))
+    if t >= 40:
+        return 0
+    elif t >= 20:
+        return 2
+    elif t >= 1:
+        return 4
+    else:
+        return 6
+
+
+def calculate_survival_damage(hunger: int, thirst: int) -> int:
+    """Суммарный урон от голода и жажды по таблице B (только Исследовать и Сон)."""
+    return get_starvation_damage(hunger) + get_dehydration_damage(thirst)
+
+
+def calculate_passive_regen(hunger: int, thirst: int, action_type: str = "explore") -> int:
+    """Пассивный реген HP (таблица A).
+
+    Условие: hunger >= 70 И thirst >= 70. Иначе 0.
+    - Исследовать: +2 HP
+    - Сон: +4 HP
+    """
+    h = max(0, int(hunger))
+    t = max(0, int(thirst))
+    if h >= 70 and t >= 70:
+        if str(action_type).lower() in ("sleep", "action_sleep", "action_4"):
+            return 4
+        return 2
+    return 0

@@ -1219,5 +1219,239 @@ def test_push_screen_canonical_resets():
     assert game.nav_stack == ["main", "campfire", "campfire_recipes"]
 
 
+# ==============================================================================
+# МЕХАНИКА 7: ПАССИВНЫЙ РЕГЕН И ТАБЛИЦА УРОНА ГОЛОДА/ЖАЖДЫ (ТЕСТЫ A, B, C, D)
+# ==============================================================================
+
+@pytest.mark.smoke
+@pytest.mark.mech
+@pytest.mark.anyio
+async def test_survival_regen_explore_both_above_70():
+    """D.1: оба >=70, исследование → +2 HP (не выше max_hp)."""
+    from modules.finds import handle_explore_callback
+    game = GameState()
+    game.ap = 5
+    game.hp = 80
+    game.hunger = 80
+    game.thirst = 80
+
+    await handle_explore_callback("action_1", game, 1001)
+    # После исследования списано 2 голода (78) и 4 жажды (76) -> оба >= 70
+    assert game.hunger == 78
+    assert game.thirst == 76
+    assert game.hp == 82  # +2 HP реген
+
+    # Проверка капа на max_hp
+    game.hp = game.max_hp
+    await handle_explore_callback("action_1", game, 1001)
+    assert game.hp == game.max_hp  # Не превышает max_hp
+
+    # Проверка с броней, увеличивающей max_hp
+    game.equipment["torso"] = "Сланцевый панцирь"  # +25 max_hp -> 125
+    assert game.max_hp == 125
+    game.hp = 124
+    game.hunger = 80
+    game.thirst = 80
+    await handle_explore_callback("action_1", game, 1001)
+    assert game.hp == 125  # Ограничено max_hp=125
+
+
+@pytest.mark.smoke
+@pytest.mark.mech
+def test_survival_regen_sleep_both_above_70():
+    """D.2: сон при обоих >=70 → +4 HP."""
+    game = GameState()
+    game.hp = 80
+    game.hunger = 80
+    game.thirst = 80
+
+    game.sleep_and_turn_day()
+    # После сна списано 1 голода (79) и 1 жажды (79) -> оба >= 70
+    assert game.hunger == 79
+    assert game.thirst == 79
+    assert game.hp == 84  # +4 HP реген
+
+    # Проверка капа на max_hp
+    game.hp = 99
+    game.hunger = 80
+    game.thirst = 80
+    game.sleep_and_turn_day()
+    assert game.hp == 100  # max_hp=100, прибавился только 1 HP
+
+
+@pytest.mark.mech
+@pytest.mark.anyio
+async def test_survival_regen_no_regen_if_one_below_70():
+    """D.3: одно <70 → регена нет."""
+    from modules.finds import handle_explore_callback
+    # Случай 1: сытость >= 70, но жажда < 70
+    game = GameState()
+    game.ap = 5
+    game.hp = 80
+    game.hunger = 80
+    game.thirst = 60
+    await handle_explore_callback("action_1", game, 1001)
+    assert game.hunger == 78
+    assert game.thirst == 56
+    assert game.hp == 80  # Регена нет (жажда 56 < 70, урон по таблице 0)
+
+    # Случай 2: жажда >= 70, но сытость < 70
+    game2 = GameState()
+    game2.ap = 5
+    game2.hp = 80
+    game2.hunger = 60
+    game2.thirst = 80
+    await handle_explore_callback("action_1", game2, 1001)
+    assert game2.hunger == 58
+    assert game2.thirst == 76
+    assert game2.hp == 80  # Регена нет (голод 58 < 70)
+
+    # Случай 3: до действия было ровно 70/70, но после списания стало < 70
+    game3 = GameState()
+    game3.ap = 5
+    game3.hp = 80
+    game3.hunger = 70
+    game3.thirst = 70
+    await handle_explore_callback("action_1", game3, 1001)
+    # 70 - 2 = 68 (<70), 70 - 4 = 66 (<70)
+    assert game3.hunger == 68
+    assert game3.thirst == 66
+    assert game3.hp == 80  # Реген НЕ выдан!
+
+
+@pytest.mark.smoke
+@pytest.mark.mech
+@pytest.mark.anyio
+async def test_survival_damage_explore_hunger_only():
+    """D.4: hunger 25, thirst 50, исследование → −2 HP (только голод)."""
+    from modules.finds import handle_explore_callback
+    game = GameState()
+    game.ap = 5
+    game.hp = 50
+    game.hunger = 25
+    game.thirst = 50
+
+    await handle_explore_callback("action_1", game, 1001)
+    # hunger: 25 - 2 = 23 (диапазон 20–39 -> -2 HP)
+    # thirst: 50 - 4 = 46 (диапазон >=40 -> 0 HP)
+    assert game.hunger == 23
+    assert game.thirst == 46
+    assert game.hp == 48  # -2 HP
+
+
+@pytest.mark.smoke
+@pytest.mark.mech
+def test_survival_damage_both_zero_minus_12():
+    """D.5: оба 0 → −12 HP (исследование и сон), честная смерть."""
+    # 1. Исследование при 0/0
+    g1 = GameState()
+    g1.ap = 5
+    g1.hp = 50
+    g1.hunger = 0
+    g1.thirst = 0
+    res1 = g1.consume_action(action_type="search", base_hunger=2, base_thirst=4, apply_survival_hp=True)
+    assert g1.hunger == 0
+    assert g1.thirst == 0
+    assert g1.hp == 38  # 50 - 12 = 38
+    assert res1["delta_hp"] == -12
+    assert res1["hunger_damage_to_hp"] == 6
+    assert res1["thirst_damage_to_hp"] == 6
+
+    # 2. Сон при 0/0
+    g2 = GameState()
+    g2.hp = 50
+    g2.hunger = 0
+    g2.thirst = 0
+    g2.sleep_and_turn_day()
+    assert g2.hunger == 0
+    assert g2.thirst == 0
+    assert g2.hp == 38  # 50 - 12 = 38
+
+    # 3. Честная смерть при падении HP <= 0 (без пола 1 HP)
+    g3 = GameState()
+    g3.hp = 10
+    g3.hunger = 0
+    g3.thirst = 0
+    g3.sleep_and_turn_day()
+    assert g3.hp == 0
+
+
+@pytest.mark.mech
+def test_survival_neutral_50_50_zero_damage_zero_regen():
+    """D.6: hunger 50, thirst 50 → 0 урона, 0 регена."""
+    # Исследование
+    g1 = GameState()
+    g1.ap = 5
+    g1.hp = 50
+    g1.hunger = 50
+    g1.thirst = 50
+    res1 = g1.consume_action(action_type="search", base_hunger=2, base_thirst=4, apply_survival_hp=True)
+    # hunger: 48 (>=40 -> 0 урона), thirst: 46 (>=40 -> 0 урона). Оба <70 -> 0 регена.
+    assert g1.hunger == 48
+    assert g1.thirst == 46
+    assert g1.hp == 50
+    assert res1["delta_hp"] == 0
+
+    # Сон
+    g2 = GameState()
+    g2.hp = 50
+    g2.hunger = 50
+    g2.thirst = 50
+    g2.sleep_and_turn_day()
+    assert g2.hunger == 49
+    assert g2.thirst == 49
+    assert g2.hp == 50
+
+
+@pytest.mark.mech
+def test_consumables_still_restore_hp_hunger_thirst():
+    """D.7: еда/зелье по-прежнему поднимают HP/hunger/thirst как раньше."""
+    from main import use_consumable
+    game = GameState()
+    game.hp = 40
+    game.hunger = 20
+    game.thirst = 20
+
+    # Еда
+    game.inventory["Жареные грибы"] = 1
+    use_consumable("Жареные грибы", game)
+    assert game.hunger > 20
+
+    # Зелье / отвар
+    hp_before = game.hp
+    game.inventory["Зелье здоровья"] = 1
+    use_consumable("Зелье здоровья", game)
+    assert game.hp > hp_before
+
+
+@pytest.mark.mech
+def test_survival_no_regen_or_table_damage_in_battle():
+    """D.8: в боевом состоянии исследование/сон не дают реген и не применяют таблицу."""
+    # 1. В бою при 80/80 реген не срабатывает
+    g1 = GameState()
+    g1.hp = 50
+    g1.hunger = 80
+    g1.thirst = 80
+    g1.wolf_battle = {"enemy_id": "old_wolf", "wolf_hp": 30}
+    assert g1.is_in_battle() is True
+
+    res1 = g1.consume_action(action_type="search", base_hunger=2, base_thirst=4, apply_survival_hp=True)
+    assert g1.hp == 50  # Реген НЕ выдан
+    assert res1["delta_hp"] == 0
+
+    # 2. В бою при 0/0 урон по таблице не наносится
+    g2 = GameState()
+    g2.hp = 50
+    g2.hunger = 0
+    g2.thirst = 0
+    g2.slug_pack_battle = {"slimes": []}
+    assert g2.is_in_battle() is True
+
+    res2 = g2.consume_action(action_type="sleep", base_hunger=1, base_thirst=1, ap_cost=0, apply_survival_hp=True)
+    assert g2.hp == 50  # Урон НЕ нанесён
+    assert res2["delta_hp"] == 0
+
+
+
 
 
