@@ -17,6 +17,7 @@ from modules.finds import (
 )
 
 
+@pytest.mark.mech
 def test_location_finds_tables_weights_and_names():
     """Проверка точного соответствия таблиц L1–L7 по предметам и весам (сумма 100)."""
     expected = {
@@ -38,6 +39,7 @@ def test_location_finds_tables_weights_and_names():
         assert total_weight == 100, f"Сумма весов на L{loc_id} равна {total_weight}, ожидалось 100"
 
 
+@pytest.mark.mech
 def test_berry_and_mushroom_drop_quantity():
     """Ягода/гриб выпадают в количестве ровно 1 или 2 шт."""
     single_berry_table = [{"item": "Лесная ягода", "chance": 100}]
@@ -53,6 +55,7 @@ def test_berry_and_mushroom_drop_quantity():
     assert 1 in counts_m and 2 in counts_m
 
 
+@pytest.mark.mech
 def test_soft_cap_batch_filtering():
     """Soft cap фильтрует пакет ресурса целиком (не поштучно) и снижает шанс при высоком have."""
     # Пакет из двух грибов: либо остаются оба, либо отбрасываются оба
@@ -75,6 +78,7 @@ def test_soft_cap_batch_filtering():
     assert all(len(res) == 2 for res in filtered_none)
 
 
+@pytest.mark.mech
 def test_empty_find_phrases():
     """При пустом списке лута возвращается одна из 5 канонических фраз."""
     game = GameState()
@@ -92,6 +96,7 @@ def test_empty_find_phrases():
     assert len(results) > 1  # возвращается не одна фиксированная фраза, а случайные из набора
 
 
+@pytest.mark.mech
 def test_roll_find_integration_with_inventory():
     """Все вызовы roll_find с inventory и без inventory работают стабильно."""
     game = GameState()

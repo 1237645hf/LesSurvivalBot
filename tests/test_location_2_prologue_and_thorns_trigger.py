@@ -16,6 +16,7 @@ from story.location_stories import (
 )
 
 
+@pytest.mark.l2
 def test_l2_prologue_starts_on_first_entrance():
     """При первом входе на Ручей открывается пролог 'Стук у воды' (а не терновник)."""
     game = GameState()
@@ -29,6 +30,7 @@ def test_l2_prologue_starts_on_first_entrance():
     assert "l2_1b" in cb_datas
 
 
+@pytest.mark.l2
 def test_l2_entry_preserves_location_and_first_story_across_save_load():
     """Первый экран L2 не перепрыгивает к стене; состояние и сюжет сохраняются в документе."""
     game = GameState()
@@ -56,6 +58,7 @@ def test_l2_entry_preserves_location_and_first_story_across_save_load():
     assert not restored.is_story_flag_set("l2_thorns_seen")
 
 
+@pytest.mark.l2
 def test_l2_prologue_path_to_backpack_and_items():
     """Прохождение пролога: прислушаться -> осмотреть рюкзак -> срезать -> осмотр -> коробочка и записка."""
     game = GameState()
@@ -99,6 +102,7 @@ def test_l2_prologue_path_to_backpack_and_items():
     assert game.story_flags["l2_prologue_completed_day"] == 5
 
 
+@pytest.mark.l2
 def test_l2_thorns_trigger_after_5_days_and_3_researches():
     """Стена терновника триггерится только через 5 дней на 3-е исследование ручья."""
     game = GameState()

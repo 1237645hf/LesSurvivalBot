@@ -23,6 +23,8 @@ from modules import traps, items
 # МЕХАНИКА 1: ФАКЕЛ (3 ТЕСТА)
 # ==============================================================================
 
+@pytest.mark.smoke
+@pytest.mark.mech
 def test_1_1_torch_equip_gives_plus_one_ap_left_hand_only():
     """Тест 1.1: Факел экипируется строго в левую руку и даёт +1 AP пока в руке."""
     game = GameState()
@@ -44,6 +46,7 @@ def test_1_1_torch_equip_gives_plus_one_ap_left_hand_only():
     assert game.inventory.get("Факел", 0) == 0
 
 
+@pytest.mark.mech
 def test_1_2_torch_limit_one_per_character():
     """Тест 1.2: Лимит 1 факел на персонажа (крафт: Ветка x2 + Сушняк x1)."""
     game = GameState()
@@ -74,6 +77,7 @@ def test_1_2_torch_limit_one_per_character():
     assert ok is False
 
 
+@pytest.mark.mech
 def test_1_3_torch_burns_at_night_without_extra_bonus():
     """Тест 1.3: Ночью факел сгорает, доп бонусов не даёт, а его +1 AP пропадает."""
     game = GameState()
@@ -99,6 +103,8 @@ def test_1_3_torch_burns_at_night_without_extra_bonus():
 # МЕХАНИКА 2: КОСТЁР (3 ТЕСТА)
 # ==============================================================================
 
+@pytest.mark.smoke
+@pytest.mark.mech
 def test_2_1_campfire_light_three_scenarios():
     """Тест 2.1: Проверка 3 сценариев умного розжига костра (от факела, спичками, трением)."""
     # Сценарий 1: От горящего факела в руке (1 AP, 0 спичек, 0 сытости, 0 жажды)
@@ -146,6 +152,7 @@ def test_2_1_campfire_light_three_scenarios():
     assert g3.thirst == 50 - 18
 
 
+@pytest.mark.mech
 def test_2_2_campfire_durability_loss_on_action_and_night():
     """Тест 2.2: Сгорание костра при действиях с AP (−1) и за ночь (−3)."""
     game = GameState()
@@ -162,6 +169,7 @@ def test_2_2_campfire_durability_loss_on_action_and_night():
     assert game.campfire_durability == 6
 
 
+@pytest.mark.mech
 def test_2_3_campfire_morning_cold_penalty_when_extinguished():
     """Тест 2.3: Штраф −1 AP утром от холода, если костёр потух к утру."""
     game = GameState()
@@ -176,6 +184,8 @@ def test_2_3_campfire_morning_cold_penalty_when_extinguished():
     assert game.ap == 4
 
 
+@pytest.mark.mech
+@pytest.mark.persist
 def test_cold_debuff_keeps_ap_limit_after_save_load_until_warm_night():
     """Холод сохраняет сниженный AP-лимит после загрузки и снимается ночёвкой у костра."""
     game = GameState()
@@ -197,6 +207,8 @@ def test_cold_debuff_keeps_ap_limit_after_save_load_until_warm_night():
     assert restored.ap == 5
 
 
+@pytest.mark.mech
+@pytest.mark.nav
 def test_2_4_campfire_main_keyboard_button():
     """Тест 2.4: Отображение кнопки костра на главном экране только пока он горит."""
     game = GameState()
@@ -219,6 +231,7 @@ def test_2_4_campfire_main_keyboard_button():
 # МЕХАНИКА 3: ВОДА, БУТЫЛКИ И СЛОТ ФЛЯГИ (3 ТЕСТА)
 # ==============================================================================
 
+@pytest.mark.mech
 def test_3_1_bottle_equip_flask_slot():
     """Тест 3.1: Экипировка «Бутылка воды» в слот flask на 20 глотков."""
     game = GameState()
@@ -235,6 +248,7 @@ def test_3_1_bottle_equip_flask_slot():
     assert game.inventory["Бутылка воды"] == 1
 
 
+@pytest.mark.mech
 def test_3_2_drink_from_flask_restores_thirst():
     """Тест 3.2: Питье из фляги восстанавливает жажду и тратит глоток."""
     game = GameState()
@@ -250,6 +264,7 @@ def test_3_2_drink_from_flask_restores_thirst():
     assert game.thirst == 45
 
 
+@pytest.mark.mech
 def test_3_3_bottle_empty_leaves_empty_bottle_and_logs_name():
     """Тест 3.3: Опустошение бутылки в 0: слот освобождается, даётся пустая бутылка, лог содержит имя ёмкости."""
     game = GameState()
@@ -272,6 +287,7 @@ def test_3_3_bottle_empty_leaves_empty_bottle_and_logs_name():
 # МЕХАНИКА 4: КУЛИНАРИЯ И ГОТОВКА НА КОСТРЕ (3 ТЕСТА)
 # ==============================================================================
 
+@pytest.mark.mech
 def test_4_1_cooking_without_water_requires_bark():
     """Тест 4.1: Сухая обжарка на коре (Печёные ягоды): расход коры и 5 ягод, без воды."""
     game = GameState()
@@ -289,6 +305,7 @@ def test_4_1_cooking_without_water_requires_bark():
     assert "Лесная ягода" not in game.inventory
 
 
+@pytest.mark.mech
 def test_4_2_cooking_with_single_flask_water():
     """Тест 4.2: Готовка с водой (Грибная похлёбка — 2 воды, 5 грибов): списание из надетой фляги."""
     game = GameState()
@@ -306,6 +323,7 @@ def test_4_2_cooking_with_single_flask_water():
     assert game.inventory.get("Грибная похлёбка") == 1
 
 
+@pytest.mark.mech
 def test_4_3_cooking_multi_container_water_consumption():
     """Тест 4.3: Забор воды из нескольких ёмкостей (во фляге 1 вода, рецепт требует 3: фляга опустошается, остаток берётся из инвентаря)."""
     game = GameState()
@@ -332,6 +350,7 @@ def test_4_3_cooking_multi_container_water_consumption():
     assert game.inventory.get("Охотничья похлёбка") == 1
 
 
+@pytest.mark.mech
 def test_4_4_cooking_taiga_feast_legendary():
     """Тест 4.4: Приготовление легендарного блюда 🟡 Таёжный пир."""
     game = GameState()
@@ -355,6 +374,7 @@ def test_4_4_cooking_taiga_feast_legendary():
 # МЕХАНИКА 5: РАСХОДНИКИ (3 ТЕСТА)
 # ==============================================================================
 
+@pytest.mark.mech
 def test_5_1_consumables_food_restores_hunger():
     """Тест 5.1: Использование Сухпая восстанавливает голод и списывает предмет."""
     game = GameState()
@@ -367,6 +387,7 @@ def test_5_1_consumables_food_restores_hunger():
     assert game.inventory.get("Сухпай") == 1
 
 
+@pytest.mark.mech
 def test_5_2_consumables_potions_restores_hp():
     """Тест 5.2: Зелье здоровья восстанавливает HP."""
     game = GameState()
@@ -379,6 +400,7 @@ def test_5_2_consumables_potions_restores_hp():
     assert "Зелье здоровья" not in game.inventory
 
 
+@pytest.mark.mech
 def test_5_3_consumables_berries_and_mushrooms():
     """Тест 5.3: Региональные ягоды и грибы восстанавливают голод."""
     game = GameState()
@@ -399,6 +421,7 @@ def test_5_3_consumables_berries_and_mushrooms():
 # МЕХАНИКА 6: ОХОТНИЧЬИ ЛОВУШКИ (3 ТЕСТА)
 # ==============================================================================
 
+@pytest.mark.mech
 def test_6_1_traps_placement_limit_one_per_location():
     """Тест 6.1: Установка ловушек — не более одной активной на локацию."""
     game = GameState()
@@ -414,6 +437,7 @@ def test_6_1_traps_placement_limit_one_per_location():
     assert trap2 is None
 
 
+@pytest.mark.mech
 def test_6_2_traps_probabilities_empty_broken_loot():
     """Тест 6.2: Проверка трёх исходов ловушки: 40% пусто, 20% сломалась, 40% добыча."""
     import random
@@ -447,6 +471,7 @@ def test_6_2_traps_probabilities_empty_broken_loot():
     random.randint = orig_randint
 
 
+@pytest.mark.mech
 def test_6_3_traps_rollover_loot_added_to_inventory():
     """Тест 6.3: Утренний ролловер ловушек передаёт добычу в инвентарь."""
     game = GameState()
@@ -469,6 +494,7 @@ def test_6_3_traps_rollover_loot_added_to_inventory():
 # МЕХАНИКА 7: РАНГИ КАЧЕСТВА, СОРТИРОВКА, ДЕБАФФЫ И КАРТОЧКИ (3 ТЕСТА)
 # ==============================================================================
 
+@pytest.mark.mech
 def test_7_1_food_ranks_markers_and_sorting():
     """Тест 7.1: Маркеры рангов еды и сортировка в инвентаре (лучшие ранги сверху)."""
     from modules.items import get_item_rank_marker, get_item_rank
@@ -495,6 +521,7 @@ def test_7_1_food_ranks_markers_and_sorting():
     assert pos_feast < pos_meat < pos_berries < pos_stone
 
 
+@pytest.mark.mech
 def test_7_2_raw_food_debuffs_chance():
     """Тест 7.2: Сырая еда имеет шанс негативных эффектов (расстройство, токсины, паразиты)."""
     import random
@@ -521,6 +548,7 @@ def test_7_2_raw_food_debuffs_chance():
     random.randint = orig_randint
 
 
+@pytest.mark.mech
 def test_7_3_item_and_recipe_cards_formatting():
     """Тест 7.3: Карточки предметов и рецептов костра содержат описание, эффекты и риски."""
     from modules.items import format_item_card
@@ -543,6 +571,7 @@ def test_7_3_item_and_recipe_cards_formatting():
 # МЕХАНИКА 8: ЭКРАН ПЕРСОНАЖА И ПОШАГОВАЯ НАВИГАЦИЯ
 # ==============================================================================
 
+@pytest.mark.mech
 def test_8_1_character_screen_format():
     """Тест 8.1: Экран персонажа содержит '👤 ВЫЖИВШИЙ: ...', стартовую одежду, рамки и без дефолт-кота."""
     game = GameState()
@@ -560,6 +589,9 @@ def test_8_1_character_screen_format():
 
 
 
+@pytest.mark.smoke
+@pytest.mark.mech
+@pytest.mark.nav
 def test_8_2_nav_stack_step_by_step_back():
     """Тест 8.2: Нажатие кнопки 'Назад' возвращает строго на один экран назад по стеку."""
     game = GameState()
@@ -584,6 +616,7 @@ def test_8_2_nav_stack_step_by_step_back():
     assert game.nav_stack == ["main"]
 
 
+@pytest.mark.mech
 def test_8_3_format_game_text_no_truncation_for_character_screen():
     """Тест 8.3: format_game_text возвращает полный текст без обрезки."""
     from main import format_game_text
@@ -598,6 +631,7 @@ def test_8_3_format_game_text_no_truncation_for_character_screen():
     assert "🐾 КОТЁНОК: Пусто" in formatted
 
 
+@pytest.mark.mech
 def test_8_4_sticks_drop_one_to_three():
     """Тест 8.4: При дропе палок в инвентарь выпадает случайное число от 1 до 3."""
     from modules.finds import _roll_table, _roll_bonus
@@ -615,6 +649,7 @@ def test_8_4_sticks_drop_one_to_three():
     assert any(c > 1 for c in bonus_counts)
 
 
+@pytest.mark.mech
 def test_8_5_campfire_feed_bark_and_branches():
     """Тест 8.5: Поддержание костра поддерживает палки и кору (R5)."""
     from keyboards import get_campfire_fuel_kb
@@ -636,6 +671,7 @@ def test_8_5_campfire_feed_bark_and_branches():
 # МЕХАНИКА 9: ДОЖДЬ, ЛУТ (3 БРОСКА), КОСТЁР, ТОПЛИВО (R1-R6)
 # ==============================================================================
 
+@pytest.mark.mech
 def test_9_1_rain_water_drinking_no_inventory_addition():
     """R1: Дождевая вода — пить дождь, короткая кнопка '🌧️ Пить дождь', 100% успех (+20 жажды, без урона)."""
     from keyboards import get_main_kb
@@ -661,6 +697,7 @@ def test_9_1_rain_water_drinking_no_inventory_addition():
     assert "напился свежей воды" in game.event_log[-1]
 
 
+@pytest.mark.mech
 def test_9_2_search_loot_three_rolls():
     """R2: 3 независимых броска лута (Roll A, Roll B, Roll C ~30% палки)."""
     from modules.finds import roll_find
@@ -672,6 +709,7 @@ def test_9_2_search_loot_three_rolls():
     assert any(len(r) > 2 for r in results)
 
 
+@pytest.mark.mech
 def test_9_3_cooking_zero_extra_costs():
     """R4: Готовка на костре не снижает campfire_durability и не тратит сытость/жажду."""
     game = GameState()
@@ -689,6 +727,7 @@ def test_9_3_cooking_zero_extra_costs():
     assert game.thirst == 50
 
 
+@pytest.mark.mech
 def test_9_4_campfire_light_friction_requires_2_ap():
     """R3: Розжиг трением требует минимум 2 AP."""
     game = GameState()
@@ -699,6 +738,7 @@ def test_9_4_campfire_light_friction_requires_2_ap():
     assert res["lit"] is False  # не разжегся, т.к. AP < 2
 
 
+@pytest.mark.mech
 def test_9_5_fuel_bark_even_spending_logic():
     """R5: Списание коры округляется вниз до чётного числа."""
     # count = 3 -> spent = 2, огня +1
@@ -711,6 +751,7 @@ def test_9_5_fuel_bark_even_spending_logic():
     assert spent_1 == 0
 
 
+@pytest.mark.mech
 def test_9_6_inventory_inspect_button_hand_emoji():
     """R6: Кнопка осмотра в инвентаре имеет эмодзи руки ✋."""
     from keyboards import inventory_inline_kb
@@ -722,6 +763,8 @@ def test_9_6_inventory_inspect_button_hand_emoji():
 # МЕХАНИКА 10: СТАРТ/СЕЙВ + ТОПЛИВО КОСТРА (S1-S5)
 # ==============================================================================
 
+@pytest.mark.mech
+@pytest.mark.persist
 def test_10_1_save_game_protection_and_load_game():
     """S1: Защита сохранения от случайного затирания и канонический старт."""
     from unittest.mock import patch
@@ -771,6 +814,7 @@ def test_10_1_save_game_protection_and_load_game():
     assert any(b.text == "🚀 Начать выживание" and b.callback_data == "start_new_game" for b in new_btns)
 
 
+@pytest.mark.mech
 def test_10_2_character_name_input_state_guard():
     """S2: Блокировка команд и действий до ввода имени персонажа."""
     game = GameState()
@@ -782,6 +826,8 @@ def test_10_2_character_name_input_state_guard():
     assert is_blocked is True
 
 
+@pytest.mark.mech
+@pytest.mark.nav
 def test_10_3_character_button_in_inventory_keyboard():
     """Блок 4: Кнопка [👤 Персонаж] убрана с главного экрана и перенесена в инвентарь."""
     from keyboards import get_main_kb, inventory_inline_kb
@@ -802,6 +848,7 @@ def test_10_3_character_button_in_inventory_keyboard():
     assert "menu_character" in row2_cbs
 
 
+@pytest.mark.mech
 def test_10_4_fuel_quantity_kb_no_custom_button():
     """S4: В клавиатуре выбора количества топлива нет отдельной кнопки ввода числа."""
     from keyboards import get_fuel_quantity_kb
@@ -818,6 +865,7 @@ def test_10_4_fuel_quantity_kb_no_custom_button():
         assert any(d == "back" for d in btn_data)
 
 
+@pytest.mark.mech
 def test_10_5_fuel_calculation_texts():
     """S5: Расчёт топлива для палок и коры прозрачен и понятен."""
     cur = 6
@@ -866,6 +914,8 @@ def test_10_5_fuel_calculation_texts():
 # МЕХАНИКА 11: НАВИГАЦИЯ PARENT_SCREEN, ПОРЦИИ ГОТОВКИ, КАРТОЧКИ И ПЕРСОНАЖ (БЛОКИ 1-6)
 # ==============================================================================
 
+@pytest.mark.mech
+@pytest.mark.nav
 def test_11_1_parent_screen_navigation():
     """Блок 2: Дерево родителей PARENT_SCREEN и поведение после готовки/топлива."""
     from main import PARENT_SCREEN, CANONICAL_STACKS
@@ -892,6 +942,7 @@ def test_11_1_parent_screen_navigation():
     assert CANONICAL_STACKS["recipe_card"] == ["main", "campfire", "campfire_recipes", "recipe_card"]
 
 
+@pytest.mark.mech
 def test_11_2_cooking_portions_and_max_count():
     """Блок 3: Расчёт max_count, порции готовки и клавиатура с выбором количества."""
     from modules.cooking import get_recipe_max_count, cook_portions, format_recipe_card
@@ -941,6 +992,7 @@ def test_11_2_cooking_portions_and_max_count():
     assert game.thirst == 50
 
 
+@pytest.mark.mech
 def test_11_3_character_screen_no_default_cat_and_frames():
     """Блок 6: Экран персонажа без дефолт-кота, со стартовой одеждой, флягой и аккуратными рамками."""
     game = GameState()
@@ -980,6 +1032,7 @@ def test_11_3_character_screen_no_default_cat_and_frames():
     assert "⚡ AP +1" in char_text_torch or "• ⚡ AP: +1" in char_text_torch
 
 
+@pytest.mark.mech
 def test_11_4_item_card_torch_and_frames():
     """Блок 5: Карточка осмотра факела (без Освещение +30, правильные свойства и рамки)."""
     from modules.items import format_item_card
@@ -1001,6 +1054,8 @@ def test_11_4_item_card_torch_and_frames():
     assert torch_card.endswith("\n━━━━━━━━━━━━━━━━━━━")
 
 
+@pytest.mark.mech
+@pytest.mark.nav
 def test_12_unified_emojis_torch_and_navigation():
     """Тест 12: Единый реестр эмодзи, маркер дикоросов 🌿, факел в руке и порядок текста костра."""
     from modules.items import get_item_emoji, get_item_rank_marker
@@ -1063,6 +1118,7 @@ def test_12_unified_emojis_torch_and_navigation():
     assert narrative_pos < header_pos < fire_pos
 
 
+@pytest.mark.mech
 def test_narrative_karma_and_endings():
     """Проверка сюжетной кармы, титула, прогресса и определения финалов."""
     from story.location_stories import resolve_ending
@@ -1098,6 +1154,7 @@ def test_narrative_karma_and_endings():
     assert resolve_ending(game) == "guardian"
 
 
+@pytest.mark.mech
 def test_campfire_recipes_visibility_and_bark_variants():
     """Тест: в меню костра отображаются ТОЛЬКО доступные рецепты, кора/тарелка учитываются, Кора мигрирует."""
     from modules.cooking import can_cook, COOKING_RECIPES, format_recipe_card
@@ -1147,6 +1204,8 @@ def test_campfire_recipes_visibility_and_bark_variants():
     assert restored.inventory["Кусок коры"] == 9
 
 
+@pytest.mark.mech
+@pytest.mark.nav
 def test_push_screen_canonical_resets():
     """Тест: push_screen нормализует стек навигации по CANONICAL_STACKS без мусорных экранов."""
     from game_state import CANONICAL_STACKS

@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, patch
 from main import process_callback, games, last_request_time
 
 
+@pytest.mark.smoke
+@pytest.mark.mech
 def test_trap_craft_and_consumption():
     game = GameState()
     game.inventory.clear()
@@ -33,6 +35,7 @@ def test_trap_craft_and_consumption():
     assert game.inventory.get("Кость", 0) == 0
 
 
+@pytest.mark.mech
 @pytest.mark.anyio
 async def test_trap_placement_requires_item():
     uid = 99991
@@ -72,6 +75,7 @@ async def test_trap_placement_requires_item():
         assert "уже взведена ловушка" in sent_text
 
 
+@pytest.mark.mech
 @pytest.mark.anyio
 async def test_trap_replace_broken():
     uid = 99992
@@ -110,6 +114,8 @@ async def test_trap_replace_broken():
         assert game.inventory.get("Охотничья ловушка", 0) == 0
 
 
+@pytest.mark.mech
+@pytest.mark.nav
 def test_trap_buttons_keyboard():
     game = GameState()
     game.traps.clear()

@@ -20,6 +20,7 @@ from services.database import (
 )
 
 
+@pytest.mark.l3
 def test_stove_properties_and_rekindle():
     """Тест свойств печи: макс. прочность 30, розжиг при 0 за 2 AP."""
     game = GameState()
@@ -42,6 +43,7 @@ def test_stove_properties_and_rekindle():
     assert game.thirst == 32  # -18
 
 
+@pytest.mark.l3
 def test_charcoal_and_slate_crafts():
     """Тест крафтов L3: Древесный уголь (х3), Сланцевый слиток, Сланцевая тарелка (х2), Сланцевый пенал."""
     game = GameState()
@@ -74,6 +76,7 @@ def test_charcoal_and_slate_crafts():
     assert game.inventory.get("Сланцевый слиток", 0) == 0
 
 
+@pytest.mark.l3
 def test_reusable_slate_plate_cooking_and_eating():
     """Тест многоразовой сланцевой тарелки при готовке и поедании."""
     game = GameState()
@@ -98,6 +101,7 @@ def test_reusable_slate_plate_cooking_and_eating():
     assert any("тарелка снова свободна" in log_msg for log_msg in game.log)
 
 
+@pytest.mark.l2
 def test_l2_dam_puzzle_karma():
     """Тест кармы L2: решение за 1 или 2 попытки даёт +2 к наблюдательности."""
     game = GameState()
@@ -112,6 +116,7 @@ def test_l2_dam_puzzle_karma():
     assert game2.narrative_karma.get("observation", 0) == 0
 
 
+@pytest.mark.l3
 def test_l3_research_story_trigger():
     """Тест триггера L3: срабатывает со 2-го дня пребывания на 2-е исследование."""
     game = GameState()
@@ -133,6 +138,7 @@ def test_l3_research_story_trigger():
     assert game.is_story_flag_set("l3_story_started") is True
 
 
+@pytest.mark.l3
 def test_l3_story_progression_and_stove_unlock():
     """Тест прохождения сюжета L3 от L3.1 до обустройства лагеря."""
     game = GameState()
@@ -166,6 +172,8 @@ def test_l3_story_progression_and_stove_unlock():
     assert game.campfire_durability >= 15
 
 
+@pytest.mark.l3
+@pytest.mark.persist
 def test_stone_tablet_pagination_and_storage():
     """Тест пагинации каменной плиты и сохранения записей."""
     notes = get_tablet_notes()
@@ -184,6 +192,7 @@ def test_stone_tablet_pagination_and_storage():
     assert any(n.get("text") == "Новая метка на плите" for n in updated_notes)
 
 
+@pytest.mark.l3
 def test_slate_armor_hp_defense_and_full_set():
     """Тест параметров сланцевого сета: +50 HP суммарно, 12 брони, распознавание полного сета."""
     game = GameState()
@@ -213,6 +222,7 @@ def test_slate_armor_hp_defense_and_full_set():
     assert game.is_full_slate_set_equipped() is True
 
 
+@pytest.mark.l3
 def test_ridge_without_armor_damage_and_retreat():
     """Тест попытки пройти гребень без сланцевой брони: получение урона и отступление в лагерь."""
     game = GameState()
@@ -245,6 +255,7 @@ def test_ridge_without_armor_damage_and_retreat():
     assert "Солонец (Секач)" in game.unlocked_locations
 
 
+@pytest.mark.l3
 def test_ridge_with_armor_and_peaceful_cache():
     """Тест прохождения гребня в сланцевой броне мирным путём (карниз / схрон) с паритетом лута."""
     game = GameState()
@@ -291,6 +302,7 @@ def test_ridge_with_armor_and_peaceful_cache():
     assert game.narrative_karma.get("compassion", 0) == 2
 
 
+@pytest.mark.l3
 def test_boar_combat_tactics_and_victory_loot(monkeypatch):
     """Тест боевой системы с Секачом: паттерн уворотов (1-нет, 2-да, 3-да, 4-нет, 5-да), крит x2 и добыча."""
     def mock_randint(a, b):
@@ -363,6 +375,7 @@ def test_boar_combat_tactics_and_victory_loot(monkeypatch):
     assert game.inventory["Кость"] == 2
 
 
+@pytest.mark.l3
 def test_l3_honest_damage_and_mortality():
     """Тест честного урона и гибели персонажа (README §1.8) во всех опасных сценах L3."""
     # 1. Смерть от тарана секача без брони (l3_9a_charge, урон 30)
@@ -407,6 +420,7 @@ def test_l3_honest_damage_and_mortality():
     assert "Секач насмерть сбил тебя внезапным тараном" in text
 
 
+@pytest.mark.l3
 def test_l3_anti_dupe_and_karma_guards():
     """Тест защиты от дюпов предметов, расхода бутылки воды и абуза кармы."""
     game = GameState()
@@ -476,6 +490,7 @@ def test_l3_anti_dupe_and_karma_guards():
     assert game_cache.inventory.get("Кость") == 2
 
 
+@pytest.mark.l3
 def test_l3_fsm_stabilization_and_stove_sync():
     """Тест сброса active_story_callback в лагере и синхронизации печи на 30 HP."""
     game = GameState()

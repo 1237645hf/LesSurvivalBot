@@ -29,6 +29,7 @@ from keyboards import get_item_card_actions_kb
 from crafts import handle_craft
 
 
+@pytest.mark.mech
 def test_bmw_package_is_ui_only_not_an_item():
     """Тест 1: Пакет «BMW» отображается в слоте спины по умолчанию, но не является предметом."""
     game = GameState()
@@ -48,6 +49,7 @@ def test_bmw_package_is_ui_only_not_an_item():
     assert "🎒 СПИНА: 🛍️ Пакет «BMW»" in char_text
 
 
+@pytest.mark.mech
 def test_back_slot_equip_and_unequip_backpack():
     """Тест 2: Надеть рюкзак -> отображается рюкзак. Снять -> возвращается «🎒 СПИНА: 🛍️ Пакет «BMW»»."""
     game = GameState()
@@ -67,6 +69,7 @@ def test_back_slot_equip_and_unequip_backpack():
     assert "🎒 СПИНА: 🛍️ Пакет «BMW»" in text_unequipped
 
 
+@pytest.mark.mech
 def test_stream_items_registry_canonical_data():
     """Тест 3: Три предмета в ITEMS с каноническими описаниями и свойствами."""
     assert "Рюкзак с красной заплаткой" in ITEMS
@@ -106,6 +109,7 @@ def test_stream_items_registry_canonical_data():
     )
 
 
+@pytest.mark.mech
 def test_stream_items_emojis_and_cards():
     """Тест 4: Канонические эмодзи и карточки предметов."""
     assert get_item_emoji("Рюкзак с красной заплаткой") == "🎒"
@@ -139,6 +143,7 @@ def test_stream_items_emojis_and_cards():
     assert "Небольшой выцветший рюкзак" in card_bp
 
 
+@pytest.mark.mech
 def test_equip_backpack_via_handle_craft():
     """Тест 5: Экипировка рюкзака через handle_craft."""
     game = GameState()

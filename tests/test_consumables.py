@@ -2,6 +2,8 @@ import pytest
 from main import Game, use_consumable
 
 
+@pytest.mark.smoke
+@pytest.mark.mech
 def test_use_consumable_water():
     """Вода: проверяем списание и рост жажды."""
     game = Game()
@@ -12,6 +14,8 @@ def test_use_consumable_water():
     assert game.inventory.get('Вода', 0) < 5
 
 
+@pytest.mark.smoke
+@pytest.mark.mech
 def test_use_consumable_food():
     """Еда: проверяем списание и рост голода."""
     game = Game()
@@ -22,6 +26,7 @@ def test_use_consumable_food():
     assert game.inventory['Еда'] == 2
 
 
+@pytest.mark.mech
 def test_use_consumable_potion():
     """Зелья: проверяем восстановление HP."""
     game = Game()
@@ -32,6 +37,7 @@ def test_use_consumable_potion():
     assert game.inventory['Зелье здоровья'] == 1
 
 
+@pytest.mark.mech
 def test_use_consumable_berry_and_mushroom():
     """Ягода и Гриб: проверяем базовое списание."""
     game = Game()

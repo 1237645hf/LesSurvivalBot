@@ -216,15 +216,21 @@ from story.location_stories import (
 # ──────────────────────────────────────────────────────────────────────────────
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
-    raise ValueError("TOKEN не найден!")
+    if os.getenv("LES_TESTING") == "1":
+        TOKEN = "999999999:AAFakeDummyTestTokenNotRealForPytest1"
+    else:
+        raise ValueError("TOKEN не найден!")
 
-MONGO_URI = os.getenv("MONGO_URI") or "mongodb://localhost:27017/test"
 
-logging.basicConfig(level=logging.INFO)
-logging.info("Бот запускается в режиме Telegram polling")
+MONGO_URI = os.getenv("MONGO_URI") or ("" if os.getenv("LES_TESTING") == "1" else "mongodb://localhost:27017/test")
+
+if os.getenv("LES_TESTING") != "1":
+    logging.basicConfig(level=logging.INFO)
+    logging.info("Бот запускается в режиме Telegram polling")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
+
 
 # Глобальные словари для трекинга состояний (запросы, сообщения, блокировки)
 last_request_time = {}

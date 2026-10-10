@@ -8,6 +8,7 @@ from keyboards import get_locations_kb, get_trap_buttons_kb
 import main
 
 
+@pytest.mark.nav
 def test_canonical_location_names():
     """Проверка, что меню локаций и ловушек выводит все 7 канонических названий."""
     game = GameState()
@@ -52,6 +53,8 @@ def test_canonical_location_names():
     assert any("Святилище" in t for t in trap_texts)
 
 
+@pytest.mark.smoke
+@pytest.mark.nav
 def test_is_in_active_story_detection():
     """Функция is_in_active_story корректно определяет нахождение игрока в сюжете или бою."""
     game = GameState()
@@ -76,6 +79,8 @@ def test_is_in_active_story_detection():
     assert main.is_in_active_story(game)
 
 
+@pytest.mark.smoke
+@pytest.mark.nav
 @pytest.mark.anyio
 async def test_commands_blocked_during_story():
     """Слеш-команды (/main, /inv, /start) во время сюжета удаляются, не сбивая сюжет."""
@@ -122,6 +127,7 @@ async def test_commands_blocked_during_story():
         assert game.active_story_callback == "l4_2_tracks"
 
 
+@pytest.mark.nav
 @pytest.mark.anyio
 async def test_callback_captures_active_message_id():
     """Любой callback мгновенно сохраняет message_id в last_active_msg_id и game.last_message_id."""
@@ -150,6 +156,7 @@ async def test_callback_captures_active_message_id():
     assert getattr(game, "last_message_id", None) == 77777
 
 
+@pytest.mark.nav
 @pytest.mark.anyio
 async def test_cmd_acquires_user_lock_safely():
     """Слэш-команды (/main, /inv, /start) синхронизируются через user_lock и не падают при таймауте."""

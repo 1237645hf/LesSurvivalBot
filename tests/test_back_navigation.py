@@ -14,6 +14,8 @@ def _camp_game(**kwargs) -> GameState:
     return game
 
 
+@pytest.mark.smoke
+@pytest.mark.nav
 def test_back_from_inventory_goes_to_camp_even_if_story_flag_left():
     """
     Баг: active_story_callback остался в сейве, игрок в лагере открыл инвентарь,
@@ -37,6 +39,8 @@ def test_back_from_inventory_goes_to_camp_even_if_story_flag_left():
     assert "action_2" in cbs or "action_1" in cbs
 
 
+@pytest.mark.smoke
+@pytest.mark.nav
 def test_story_leave_camp_via_back_clears_story():
     """
     Кнопка «В лагерь» на сюжетке часто с callback_data="back".
@@ -58,6 +62,7 @@ def test_story_leave_camp_via_back_clears_story():
     assert "action_2" in cbs or "action_1" in cbs
 
 
+@pytest.mark.nav
 def test_back_from_campfire_to_camp_clears_stale_story_flag():
     """Из костра «Назад» → лагерь, даже если в сейве висел старый сюжетный флаг."""
     game = _camp_game(
@@ -74,6 +79,7 @@ def test_back_from_campfire_to_camp_clears_stale_story_flag():
     assert kb is not None
 
 
+@pytest.mark.nav
 def test_back_inside_inventory_tree_stays_in_inventory():
     """
     «Назад» из подменю инвентаря (осмотр) должен вести в инвентарь,
@@ -95,6 +101,7 @@ def test_back_inside_inventory_tree_stays_in_inventory():
     assert "inv_inspect" in cbs or "inv_craft" in cbs or "back" in cbs
 
 
+@pytest.mark.nav
 def test_back_to_main_does_not_call_story_handler():
     """
     При выходе на main не должен подтягиваться старый сюжет
@@ -114,6 +121,7 @@ def test_back_to_main_does_not_call_story_handler():
     assert "проломиться" not in joined
 
 
+@pytest.mark.nav
 def test_get_craft_menu_kb_import_path_works_on_back_to_craft():
     """
     Регресс Render: get_craft_menu_kb импортировался из keyboards и падал.

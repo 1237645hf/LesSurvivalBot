@@ -18,6 +18,8 @@ from services.database import (
 )
 
 
+@pytest.mark.smoke
+@pytest.mark.persist
 def test_persist_to_document_contains_name_fields():
     """Проверка наличия полей имени и флага в to_document."""
     game = GameState()
@@ -40,6 +42,7 @@ def test_persist_to_document_contains_name_fields():
     assert doc["inventory"].get("Ветка") == 5
 
 
+@pytest.mark.persist
 def test_persist_to_document_no_set_types():
     """BSON-совместимость: to_document() не содержит типов set."""
     game = GameState()
@@ -60,6 +63,8 @@ def test_persist_to_document_no_set_types():
     _assert_no_sets(doc, "doc")
 
 
+@pytest.mark.smoke
+@pytest.mark.persist
 def test_persist_save_and_load_round_trip():
     """Round-trip через MemoryPlayersCollection: сохранение и чтение идентичны."""
     mock_store = MemoryPlayersCollection()
@@ -109,6 +114,7 @@ def test_persist_save_and_load_round_trip():
         assert loaded.traps[2]["is_active"] is True
 
 
+@pytest.mark.persist
 @pytest.mark.anyio
 async def test_persist_character_name_saves_immediately():
     """После успешного ввода имени в dialogs вызывается save_game и флаг is_name_set=True."""
@@ -159,6 +165,7 @@ async def test_persist_character_name_saves_immediately():
         assert saved_doc["game_data"]["is_name_set"] is True
 
 
+@pytest.mark.persist
 def test_migrate_memory_to_mongo_migrates_players_and_notes():
     """Тест миграции данных из Memory-коллекций и games кэша в MongoDB коллекции."""
     old_players = MemoryPlayersCollection()
@@ -207,6 +214,7 @@ def test_migrate_memory_to_mongo_migrates_players_and_notes():
         games.pop(333, None)
 
 
+@pytest.mark.persist
 def test_ensure_mongo_connection_full_reconnect_and_migration():
     """Тест: при восстановлении сети _ensure_mongo_connection переносит данные и переключает коллекции."""
     import services.database as db_module
@@ -275,6 +283,7 @@ def test_ensure_mongo_connection_full_reconnect_and_migration():
         games.pop(555, None)
 
 
+@pytest.mark.persist
 def test_ensure_mongo_connection_failure_keeps_fallback_intact():
     """Тест: если при попытке переподключения Mongo падает, fallback и накопленные данные не повреждаются."""
     import services.database as db_module

@@ -7,6 +7,7 @@ from main import handle_sleep_action
 from modules.traps import apply_trap_loot_to_inventory
 
 
+@pytest.mark.l6
 @pytest.mark.anyio
 async def test_fur_items_registration_and_stats():
     """1. Регистрация предметов мехового сета, их характеристики и функционал футляра."""
@@ -54,6 +55,7 @@ async def test_fur_items_registration_and_stats():
     assert "Футляр: Янтарное зелье" in game.get_character_text()
 
 
+@pytest.mark.l6
 def test_fur_crafting_from_inventory_and_equipped():
     """2. Проверка крафта: списание ресурсов, любой мох и улучшение прямо на персонаже."""
     game = GameState()
@@ -108,6 +110,7 @@ def test_fur_crafting_from_inventory_and_equipped():
     assert game.pants_pocket == "Ягодный отвар"  # Карман сохранился
 
 
+@pytest.mark.l6
 def test_fur_hunter_unlock_trigger():
     """3. Открытие рецептов при первом получении меха."""
     game = GameState()
@@ -129,6 +132,7 @@ def test_fur_hunter_unlock_trigger():
     assert any("прикидываешь выкройку" in log for log in logs)
 
 
+@pytest.mark.l6
 @pytest.mark.anyio
 async def test_l6_exploration_cold_damage_and_full_set_immunity():
     """4. Урон от холода при исследовании L6 с math.floor, поглощение и иммунитет сета."""
@@ -186,6 +190,7 @@ async def test_l6_exploration_cold_damage_and_full_set_immunity():
     assert "Смертельное переохлаждение" in text
 
 
+@pytest.mark.l6
 def test_l6_sleep_guard_and_sleep_damage():
     """5. Динамический гвард сна на основе actual_sleep_dmg (math.floor) и безопасный сон."""
     game = GameState()
@@ -282,6 +287,7 @@ def test_l6_sleep_guard_and_sleep_damage():
     assert game.hp == 1
 
 
+@pytest.mark.l6
 def test_warm_cave_entry_and_free_wall_fur():
     """6. Вход в Тёплую пещеру, разблокировка рецептов и неисчерпаемый мех со стен."""
     from story.locations.loc6_furry_cave import handle_location_6_furry_cave
@@ -347,6 +353,7 @@ def test_warm_cave_entry_and_free_wall_fur():
     assert game.inventory.get("Меховые сапоги", 0) == 1
 
 
+@pytest.mark.l6
 def test_l6_ascent_progression_and_milestones():
     """7. Подъём на L6: 30 исследований, логи [Подъём: X/30] и 4 ключевых вехи."""
     from story.location_stories import check_forest_research_story_trigger, handle_story
@@ -436,6 +443,7 @@ def test_l6_ascent_progression_and_milestones():
     assert "Меховые сапоги" in game.unlocked_crafts
 
 
+@pytest.mark.l6
 def test_l6_ascent_reset_on_leaving():
     """8. Сброс прогресса подъёма при отступлении из L6 до открытия Тёплой пещеры."""
     from story.location_stories import check_l6_ascent_leave

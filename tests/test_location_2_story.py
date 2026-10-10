@@ -24,6 +24,7 @@ from crafts import can_craft, do_craft, get_craft_menu_kb, handle_craft
 from keyboards import get_item_card_actions_kb, get_locations_kb
 
 
+@pytest.mark.l2
 def test_slate_craft_recipes_and_flexible_ingredients():
     """Тест 1: Рецепты сланцевой брони и гибкое списание ингредиентов (кора/мох/ветки)."""
     game = GameState()
@@ -63,6 +64,7 @@ def test_slate_craft_recipes_and_flexible_ingredients():
     assert game.inventory["Сланцевая пластина"] == 2
 
 
+@pytest.mark.l2
 def test_slate_armor_recipes_unlock_only_after_thorns_encounter():
     """Сланцевая броня закрыта до встречи с терновником и открывается на её экране."""
     game = GameState()
@@ -91,6 +93,7 @@ def test_slate_armor_recipes_unlock_only_after_thorns_encounter():
     assert all(f"craft_{recipe}" in unlocked_callbacks for recipe in recipes)
 
 
+@pytest.mark.l2
 def test_slate_armor_equipping_and_character_card():
     """Тест 2: Экипировка всех 4 сланцевых предметов и вывод • 🛡 Защита от шипов: X/4."""
     game = GameState()
@@ -129,6 +132,7 @@ def test_slate_armor_equipping_and_character_card():
     assert "• 🛡 Защита от шипов: 4/4" in game.get_character_text()
 
 
+@pytest.mark.l2
 def test_thorn_damage_calculation_and_death_prevention():
     """Тест 3: Формула урона терновника и скрытие кнопки пролома при недостаточном HP."""
     game = GameState()
@@ -166,6 +170,7 @@ def test_thorn_damage_calculation_and_death_prevention():
     assert "🪨 Проломиться" not in btn_texts
 
 
+@pytest.mark.l2
 def test_thorn_breakthrough_gear_wear_and_trampled_path():
     """Тест 4: При прорыве маска ломается в прах, а ботинки становятся отремонтированными."""
     game = GameState()
@@ -195,6 +200,7 @@ def test_thorn_breakthrough_gear_wear_and_trampled_path():
     assert kb.inline_keyboard[0][0].callback_data == "l2_dam_entrance"
 
 
+@pytest.mark.l2
 def test_dam_entrance_panel_explosion_and_kitten_reaction():
     """Тест 5: Вход в здание водосброса, взрыв шкафа и царапина испуганного котёнка."""
     game = GameState()
@@ -217,6 +223,7 @@ def test_dam_entrance_panel_explosion_and_kitten_reaction():
     assert kb_blow.inline_keyboard[0][0].callback_data == "l2_fusebox_inspect"
 
 
+@pytest.mark.l2
 def test_fusebox_insertion_safe_vs_shock():
     """Тест 6: Установка коробочки через перчатку котёнка или голыми руками (-10 HP)."""
     # Вариант А: С котёнком есть диэлектрическая перчатка
@@ -258,6 +265,7 @@ def test_fusebox_insertion_safe_vs_shock():
     assert kb_shock.inline_keyboard[0][0].callback_data == "start_new_game_confirmed"
 
 
+@pytest.mark.l2
 def test_puzzle_bank_integrity_and_no_hints_in_buttons():
     """Тест 7: Банк загадок содержит 10 заходов по 3 вопроса, и на кнопках НЕТ подсказок."""
     assert len(L2_PUZZLE_BANK) == 10
@@ -273,6 +281,7 @@ def test_puzzle_bank_integrity_and_no_hints_in_buttons():
                 assert "верно" not in opt_text.lower(), f"Текст кнопки '{opt_text}' не должен содержать подсказок!"
 
 
+@pytest.mark.l2
 def test_puzzle_error_penalty_and_attempt_cycling():
     """Тест 8: При ошибке — струя воды, -5 HP, AP=0, и номер захода сдвигается на (attempt+1)%10."""
     game = GameState()
@@ -296,6 +305,7 @@ def test_puzzle_error_penalty_and_attempt_cycling():
     assert kb_err.inline_keyboard[0][0].callback_data == "back"
 
 
+@pytest.mark.l2
 def test_puzzle_success_bridge_activation_and_note_removal():
     """Тест 9: Три верных ответа подряд опускают мост, удаляют записку и открывают Скромную Лощину."""
     game = GameState()
@@ -324,6 +334,8 @@ def test_puzzle_success_bridge_activation_and_note_removal():
     assert kb_bridge.inline_keyboard[0][0].text == "⛰️ Шагнуть в Скромную лощину"
 
 
+@pytest.mark.l2
+@pytest.mark.nav
 def test_return_to_location_2_after_completion():
     """Тест 10: Повторный вход на Ручей после завершения сюжета показывает опущенный мост."""
     game = GameState()
@@ -337,6 +349,7 @@ def test_return_to_location_2_after_completion():
     assert "location_enter_1" in cb_datas
 
 
+@pytest.mark.l2
 def test_thorns_break_idempotent_on_resume():
     """Повторный вызов l2_thorns_break (при load_game с active_story_callback) не наносит повторный урон."""
     game = GameState()
@@ -364,6 +377,7 @@ def test_thorns_break_idempotent_on_resume():
     assert kb2.inline_keyboard[0][0].callback_data == "l2_dam_entrance"
 
 
+@pytest.mark.l2
 def test_l2_location_sync_and_hearth_limit():
     """Тест 11: Синхронизация текущей локации и лимит очага 20 HP на Ручье."""
     game = GameState()
@@ -382,6 +396,7 @@ def test_l2_location_sync_and_hearth_limit():
     assert game.campfire_max_durability == 20
 
 
+@pytest.mark.l2
 def test_l2_item_dupes_and_karma_abuse_prevention():
     """Тест 12: Защита от дублирования предметов (рюкзак, коробка) и накрутки кармы."""
     game = GameState()
@@ -411,6 +426,7 @@ def test_l2_item_dupes_and_karma_abuse_prevention():
     assert game.narrative_karma.get("observation", 0) == k_obs
 
 
+@pytest.mark.l2
 def test_l2_fatal_damage_and_terminal_cleanup():
     """Тест 13: Честная гибель от травм и очистка FSM на терминальных экранах."""
     # 1. Смертельное падение в l2_3b
@@ -433,6 +449,8 @@ def test_l2_fatal_damage_and_terminal_cleanup():
     assert game_camp.story_state is None
 
 
+@pytest.mark.l2
+@pytest.mark.nav
 def test_l2_shore_hub_and_thorns_sublocation():
     """Тест 14: Игрок находится в основном лагере Ручья (L2), а Стена терновника доступна как подлокация."""
     from keyboards import get_locations_kb, get_main_kb

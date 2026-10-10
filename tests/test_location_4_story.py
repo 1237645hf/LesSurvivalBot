@@ -8,6 +8,7 @@ from modules.finds import BONUS_FINDS, _roll_bonus, roll_find
 from story.location_stories import handle_location_4_hunters_glade
 
 
+@pytest.mark.l4
 def test_location_4_bonus_find_sticks():
     """В таблице бонусов L4 присутствует ветка с шансом 30% и количеством 1-2 шт."""
     table = BONUS_FINDS[4]
@@ -30,6 +31,8 @@ def test_location_4_bonus_find_sticks():
     assert not any(c > 2 or c < 1 for c in rolled_counts)
 
 
+@pytest.mark.l4
+@pytest.mark.nav
 def test_location_4_window_1_only_two_buttons():
     """Окно 1 (Вход) должно содержать ровно 2 кнопки: 'Идти по верёвке' и 'Прямо на звук'."""
     game = GameState()
@@ -54,6 +57,7 @@ def test_location_4_window_1_only_two_buttons():
     assert all(len(t) <= 30 for t in btn_texts)
 
 
+@pytest.mark.l4
 def test_location_4_rope_and_bushes_kitten():
     """Окно L4.2 (Верёвка) переходит в L4.2a (За кустами) с проверкой питомца."""
     game = GameState()
@@ -78,6 +82,7 @@ def test_location_4_rope_and_bushes_kitten():
     assert "l4_2b_trap" in btns
 
 
+@pytest.mark.l4
 def test_location_4_trap_damage():
     """L4.2b наносит 5 урона и сохраняет коллбэк."""
     game = GameState()
@@ -89,6 +94,7 @@ def test_location_4_trap_damage():
     assert game.active_story_callback == "l4_2b_trap"
 
 
+@pytest.mark.l4
 def test_location_4_deer_branching_and_rescue():
     """Полное прохождение ветки спасения оленя с вяленым мясом, кожей и питьём из фляги."""
     game = GameState()
@@ -182,6 +188,7 @@ def test_location_4_deer_branching_and_rescue():
     assert "back" in final_btns
 
 
+@pytest.mark.l4
 def test_location_4_settlement_and_trigger():
     """Просека Охотников: первые 2 ночи - спокойное обживание, на 3-й день при исследовании стартует квест."""
     from story.location_stories import check_forest_research_story_trigger
@@ -226,6 +233,8 @@ def test_location_4_settlement_and_trigger():
     assert not game.active_story_callback
 
 
+@pytest.mark.l4
+@pytest.mark.nav
 def test_l3_unlocks_l4_navigation():
     """После завершения L3 (l3_13_boundary) Просека Охотников добавляется в unlocked_locations и видна в get_locations_kb."""
     from story.location_stories import handle_location_3_slate_hollow
@@ -247,6 +256,7 @@ def test_l3_unlocks_l4_navigation():
     assert "location_enter_4" in btn_cbs
 
 
+@pytest.mark.l4
 def test_location_4_observation_inspections():
     """Проверка трёх точек осмотра в L4 (узел, срез кожи, зола) на +2 Наблюдательности каждая и лимит <= 500 символов."""
     game = GameState()
@@ -313,6 +323,7 @@ def test_location_4_observation_inspections():
     assert "l4_7a_fire" in cbs_7_back
 
 
+@pytest.mark.l4
 def test_location_4_sequential_chapters_flow_and_sleeps():
     """Тестирование цепочки сюжеток L4 (Пролог -> 4 сна -> Глава 1 -> 4 сна -> Глава 2 -> 4 сна -> Глава 3)."""
     from story.location_stories import check_forest_research_story_trigger, handle_location_4_hunters_glade
@@ -422,6 +433,7 @@ def test_location_4_sequential_chapters_flow_and_sleeps():
     assert "Яр Слаймов" in game.unlocked_locations
 
 
+@pytest.mark.l4
 def test_leather_armor_schema_craft_and_equipment():
     """Тест использования схемы кожаной брони, открытия крафта и экипировки комплекта."""
     from crafts import handle_craft, do_craft
@@ -459,6 +471,8 @@ def test_leather_armor_schema_craft_and_equipment():
     assert game.equipment.get("boots") == "Кожаные сапоги"
 
 
+@pytest.mark.l4
+@pytest.mark.nav
 def test_location_5_entry_requirement():
     """Вход на локацию 5 открывает сюжет «То, что лес не отпустил» без искусственных блокировок."""
     from story.location_stories import handle_location_5_slug_pit
@@ -473,6 +487,7 @@ def test_location_5_entry_requirement():
     assert kb is not None
 
 
+@pytest.mark.l4
 def test_l4_slug_battle_full_cycle_and_mushroom_consumption():
     """Тест полного интерактивного цикла боя со слизнем и удаление гриба из инвентаря."""
     from story.location_stories import handle_location_4_hunters_glade, SLUG_ACTIONS
@@ -525,6 +540,7 @@ def test_l4_slug_battle_full_cycle_and_mushroom_consumption():
     assert "l4_ch1_4_stone_mark" in [b.callback_data for r in kb.inline_keyboard for b in r]
 
 
+@pytest.mark.l4
 def test_l4_wolf_pack_battle_full_cycle():
     """Тест боя со стаей волков: динамическая плашка, разброс урона, оборона и победа."""
     from story.location_stories import handle_location_4_hunters_glade
@@ -570,6 +586,7 @@ def test_l4_wolf_pack_battle_full_cycle():
     assert game.hp > 0
 
 
+@pytest.mark.l4
 def test_l4_no_premature_l5_unlock_in_ch1():
     """L5 («Яр Слаймов») не должна открываться в конце Главы 1 (l4_ch1_5_doubt), а только в Главе 3."""
     game = GameState()
@@ -586,6 +603,7 @@ def test_l4_no_premature_l5_unlock_in_ch1():
     assert "Яр Слаймов" in game.unlocked_locations
 
 
+@pytest.mark.l4
 def test_l4_karma_abuse_protection():
     """Повторные вызовы сюжетных экранов L4 не должны повторно начислять карму."""
     game = GameState()
@@ -649,6 +667,7 @@ def test_l4_karma_abuse_protection():
     assert game8.narrative_karma.get("pragmatism", 0) == 1
 
 
+@pytest.mark.l4
 def test_l4_mortality_and_death_screens():
     """Смерть на L4: при падении HP <= 0 вызывается некролог и экран гибели."""
     # 1. Ловушка (l4_2b_trap)
@@ -686,6 +705,7 @@ def test_l4_mortality_and_death_screens():
     assert "НЕКРОЛОГ" in txt or "погиб" in txt.lower() or "волк" in txt.lower()
 
 
+@pytest.mark.l4
 def test_l4_ch3_shelter_resource_requirement_and_deduction():
     """Подъём брони в укрытие требует 1 ветку и 1 кожу; без них действие блокируется."""
     # 1. Без ресурсов: кнопка заблокирована
@@ -713,6 +733,7 @@ def test_l4_ch3_shelter_resource_requirement_and_deduction():
     assert "Кожа" not in game.inventory
 
 
+@pytest.mark.l4
 def test_l4_battle_cleanup_and_peaceful_camp():
     """При завершении боёв и на мирной стоянке боевые контексты и FSM очищаются."""
     game = GameState()

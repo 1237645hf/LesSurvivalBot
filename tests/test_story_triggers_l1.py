@@ -18,6 +18,7 @@ from story.location_stories import (
 )
 
 
+@pytest.mark.l1
 def test_trigger_l1_day_2_ten_researches_with_torch_no_trigger():
     """day=2, 10 исследований с факелом на loc 1 → L1 не запускается (нужен day >= 3)."""
     game = GameState()
@@ -33,6 +34,8 @@ def test_trigger_l1_day_2_ten_researches_with_torch_no_trigger():
     assert not game.is_story_flag_set("l1_started")
 
 
+@pytest.mark.smoke
+@pytest.mark.l1
 def test_trigger_l1_day_3_activates_on_fourth_torch_research():
     """day=3, 3 исследования с факелом → L1 нет; 4-е → L1 запускается."""
     game = GameState()
@@ -53,6 +56,7 @@ def test_trigger_l1_day_3_activates_on_fourth_torch_research():
     assert game.torch_research_count == 4
 
 
+@pytest.mark.l1
 def test_trigger_l1_sleep_preserves_counter_and_fires_at_day_3():
     """2 исследования → сон → ещё 2 с новым факелом (счётчик сохранён) при day>=3 → L1 есть."""
     game = GameState()
@@ -85,6 +89,7 @@ def test_trigger_l1_sleep_preserves_counter_and_fires_at_day_3():
     assert game.torch_research_count == 4
 
 
+@pytest.mark.l1
 def test_trigger_l1_counter_already_ten_still_triggers_with_greater_equal():
     """torch_research_count уже 10, l1_started нет, day>=3, исследование с факелом → L1 всё равно стартует (>=)."""
     game = GameState()
@@ -98,6 +103,7 @@ def test_trigger_l1_counter_already_ten_still_triggers_with_greater_equal():
     assert log is not None
 
 
+@pytest.mark.l1
 def test_trigger_l1_without_torch_counter_does_not_grow_and_no_trigger():
     """Без факела счётчик L1 не растёт, сюжет не запускается даже при day>=3 и count>=4."""
     game = GameState()
@@ -120,6 +126,7 @@ def test_trigger_l1_without_torch_counter_does_not_grow_and_no_trigger():
     assert game.torch_research_count == 10
 
 
+@pytest.mark.l1
 def test_trigger_l1_5_chain_prerequisites():
     """L1.5 без l1_completed не стартует; с completed, day >= completed_day + 4 и 3 поисками → стартует."""
     game = GameState()

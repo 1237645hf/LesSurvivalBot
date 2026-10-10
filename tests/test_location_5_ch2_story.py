@@ -24,6 +24,7 @@ from story.location_stories import (
 from modules.combat.engine import start_battle, apply_action
 
 
+@pytest.mark.l5
 def test_l5_ch2_research_trigger_conditions():
     """Тест условий срабатывания триггера Главы 2 Локации 5."""
     game = GameState()
@@ -70,6 +71,8 @@ def test_l5_ch2_research_trigger_conditions():
     assert game.is_story_flag_set("l5_ch2_started")
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_l5_ch2_scouting_story_flow():
     """Тест прохождения разведки от l5_2_1 до l5_2_6."""
     game = GameState()
@@ -120,6 +123,7 @@ def test_l5_ch2_scouting_story_flow():
     assert "🏕️ Отступить в лагерь" in buttons6
 
 
+@pytest.mark.l5
 def test_l5_arena_menu_unlock_and_start():
     """Тест отображения подлокации в меню локаций и экрана входа."""
     game = GameState()
@@ -145,6 +149,8 @@ def test_l5_arena_menu_unlock_and_start():
     assert "🏕️ Вернуться в лагерь" in buttons_arena
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_l5_boss_combat_and_weapon_break():
     """Тест пошагового боя с Исполинским слаймом (555 HP), поломки посоха и победы."""
     game = GameState()
@@ -227,6 +233,8 @@ def test_l5_boss_combat_and_weapon_break():
     assert "☣️ Заводь Исполина" not in buttons
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_l5_boss_branch_b_and_damage_penalties():
     """Тест Ветки Б (ошибка выбора стороны) и штрафов за жадность/ошибку."""
     game = GameState()
@@ -260,6 +268,7 @@ def test_l5_boss_branch_b_and_damage_penalties():
     assert game.wolf_battle["phase"] == "1"
 
 
+@pytest.mark.l5
 def test_l5_boss_escape_burns_ap():
     """Тест побега из боя: сгорание всех AP до 0 и переход на l5_arena_escape."""
     game = GameState()
@@ -279,6 +288,8 @@ def test_l5_boss_escape_burns_ap():
     assert "🏕️ Вернуться в лагерь" in buttons
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_l5_boss_pocket_item_mechanic():
     """Тест использования кармана поножей во время боя с боссом."""
     game = GameState()
@@ -300,6 +311,7 @@ def test_l5_boss_pocket_item_mechanic():
     assert game.inventory.get("Пузырёк", 0) == 1
 
 
+@pytest.mark.l5
 def test_l5_ch2_aftermath_and_ancient_lair_unlock():
     """Тест экранов l5_2_8 -> l5_2_9 -> l5_2_10 и открытия Логова Древнего."""
     game = GameState()
@@ -349,6 +361,7 @@ def test_l5_ch2_aftermath_and_ancient_lair_unlock():
     assert "• 🕳️ Логово Древнего" not in buttons_after
 
 
+@pytest.mark.l5
 def test_l5_post_boss_unarmed_camp_and_spear_craft():
     """Тест реакции экрана лагеря на безоружность и скрытия рецепта после крафта копья."""
     from keyboards import get_main_kb, get_inventory_kb, get_item_card_actions_kb

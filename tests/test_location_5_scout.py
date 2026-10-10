@@ -34,6 +34,8 @@ from story.locations.loc5_slug_pit import (
 )
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_scout_limits_and_events_structure():
     """Тест структур данных 5-дневного шаблона и 23 событий на ветку."""
     assert RECON_LIMITS == [3, 2, 3, 2, 3]
@@ -48,6 +50,8 @@ def test_scout_limits_and_events_structure():
         assert "thought" in entry
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_scout_window_0_intro():
     """Тест Окна 0: первое прибытие."""
     game = GameState()
@@ -78,6 +82,8 @@ def test_scout_window_0_intro():
     assert len(text_hub) <= 500
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_scout_window_1_counters_display():
     """Тест динамического блока счётчиков в Окне 1."""
     game = GameState()
@@ -110,6 +116,8 @@ def test_scout_window_1_counters_display():
     assert "Всего изучено: 5/23" in text_both
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_scout_partial_visit_and_local_day_rollover():
     """Тест частичного визита (сохранение остатка) и смены локального дня только при полном расходе."""
     game = GameState()
@@ -166,6 +174,8 @@ def test_scout_partial_visit_and_local_day_rollover():
     assert get_daily_scout_limit(game) == 2
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_scout_dynamic_remaining_to_cap():
     """Тест: лимит не может превышать остаток до 23."""
     game = GameState()
@@ -179,6 +189,8 @@ def test_scout_dynamic_remaining_to_cap():
     assert get_daily_scout_limit(game) == 1
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_scout_final_screen_vector_1_habits():
     """Тест Окна Финала: Вектор 1 (habits >= 16)."""
     game = GameState()
@@ -206,6 +218,8 @@ def test_scout_final_screen_vector_1_habits():
     assert getattr(game, "wolf_battle", None) is not None
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_scout_final_screen_vector_2_surroundings():
     """Тест Окна Финала: Вектор 2 (surroundings >= 16) и полная спецоперация «Каменный пресс»."""
     game = GameState()
@@ -335,6 +349,8 @@ def test_scout_final_screen_vector_2_surroundings():
     assert game.story_state == "l5_ancient_cleared"
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_trap_op_damage_scaling():
     """Тест шкалы урона на шаге 4 в зависимости от surroundings_count."""
     game = GameState()
@@ -365,6 +381,8 @@ def test_trap_op_damage_scaling():
     assert game.hp == 85
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_scout_final_screen_vector_3_balanced():
     """Тест Окна Финала: Вектор 3 (гибрид, habits < 16 and surroundings < 16)."""
     game = GameState()
@@ -413,6 +431,8 @@ def test_scout_final_screen_vector_3_balanced():
     assert "🏃 Сбежать в лагерь" in fight_btns
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_hybrid_trash_battle_full_flow():
     """Полный тест всех фаз гибридного боя (Мусорный слайм, 2000 HP -> 0 HP)."""
     game = GameState()
@@ -571,6 +591,8 @@ def test_hybrid_trash_battle_full_flow():
     assert "На дне котловины яра тихо" in t_cleared
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_hybrid_trash_battle_extra_branches():
     """Тест дополнительных веток: уколы копьём, лечение, увороты и побег."""
     game = GameState()
@@ -636,6 +658,8 @@ def test_hybrid_trash_battle_extra_branches():
     assert "🏕️ Вернуться в лагерь" in btns_esc
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_hybrid_trash_battle_player_death_handling():
     """Тест обработки гибели персонажа на опасных фазах боя (сброс сессии и экран смерти)."""
     game = GameState()
@@ -673,6 +697,8 @@ def test_hybrid_trash_battle_player_death_handling():
     assert "Тварь погребла тебя под тоннами едкой жижи" in t_death2
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_habits_trash_battle_full_flow():
     """Полный тест Вектора 1: Тактический бой по повадкам (2000 HP -> 0 HP)."""
     game = GameState()
@@ -808,6 +834,8 @@ def test_habits_trash_battle_full_flow():
     assert "Мохнатая пещера" in game.unlocked_locations
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_habits_trash_battle_player_death():
     """Тест гибели игрока в тактическом бою по повадкам (Вектор 1)."""
     game = GameState()
@@ -829,6 +857,8 @@ def test_habits_trash_battle_player_death():
     assert "start_new_game_confirmed" in death_cbs
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_scout_cross_launch_protection():
     """Тест защиты от перекрестного запуска веток и повторного боя после победы."""
     game = GameState()
@@ -910,6 +940,8 @@ def test_scout_cross_launch_protection():
     assert getattr(game, "wolf_battle", None) is not None
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_scout_persistence_to_from_document():
     """Тест персистентности полей разведки."""
     game = GameState()
@@ -935,6 +967,8 @@ def test_scout_persistence_to_from_document():
     assert loaded.day_researches_done == 2
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_habits_23_events_content_and_triggers():
     """Тест 23 событий повадок, мыслей, бонусов и триггера разблокировки крюка на 9-м шаге."""
     import crafts
@@ -999,6 +1033,8 @@ def test_habits_23_events_content_and_triggers():
     assert "bone_hook_rope" in restored.unlocked_recipes
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_surroundings_23_events_content_and_mechanics():
     """Тест 23 исследований окрестностей: тексты, проверки инвентаря, списание ресурсов, бонусы."""
     assert len(SURROUNDINGS_EVENTS) == 23
@@ -1124,6 +1160,8 @@ def test_surroundings_23_events_content_and_mechanics():
     assert "💡 Кап ветки — урон при прорыве снижен до 10–15 HP" in text_th23
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_post_boss_flow_and_locations_kb_pin():
     """Тест флоу победы над Мусорным слаймом, возврата в лагерь и пина в get_locations_kb."""
     from keyboards import get_locations_kb
@@ -1197,6 +1235,8 @@ def test_post_boss_flow_and_locations_kb_pin():
     assert any("Ты уже находишься в этой локации" in l for l in game.event_log)
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_l5_blocked_entry_clears_fsm_story_triggers():
     """Тест: при попытке входа на пройденную L5 FSM-состояния гарантированно сбрасываются."""
     from main import is_in_active_story
@@ -1249,6 +1289,8 @@ def _assert_valid_screen(text, kb, expected_next_cb=None):
     return all_cbs
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_l5_vector_2_trap_operation_e2e_happy_path():
     """Сквозной интеграционный тест спецоперации Вектора 2 (Окрестности): от l5_trap_op_start до лагеря."""
     game = GameState()
@@ -1340,6 +1382,8 @@ def test_l5_vector_2_trap_operation_e2e_happy_path():
     assert game.wolf_battle is None
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_l5_vector_1_habits_battle_e2e_happy_path():
     """Сквозной интеграционный тест тактического боя Вектора 1 (Повадки) от старта до победы и выхода в лагерь."""
     game = GameState()
@@ -1417,6 +1461,8 @@ def test_l5_vector_1_habits_battle_e2e_happy_path():
     assert game.wolf_battle is None
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_l5_vector_3_hybrid_battle_e2e_happy_path():
     """Сквозной интеграционный тест позиционного боя Вектора 3 (Гибрид) от старта до победы и выхода в лагерь."""
     game = GameState()
@@ -1486,6 +1532,8 @@ def test_l5_vector_3_hybrid_battle_e2e_happy_path():
     assert game.wolf_battle is None
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_l5_scout_reconnaissance_e2e_happy_path():
     """Сквозной тест разведки: прибытие, наблюдение повадок и окрестностей, лимиты дня и возврат в лагерь."""
     game = GameState()

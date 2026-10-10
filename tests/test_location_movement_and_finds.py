@@ -5,6 +5,7 @@ from story.location_stories import handle_story
 from story.locations.loc5_slug_pit import handle_location_5_slug_pit
 
 
+@pytest.mark.nav
 def test_location_id_from_game_mapping_and_synchronization():
     """Проверяет маппинг строковых названий и корней в id и синхронизацию location_index."""
     game = GameState()
@@ -45,6 +46,7 @@ def test_location_id_from_game_mapping_and_synchronization():
     assert game.location_index == 6
 
 
+@pytest.mark.nav
 def test_location_id_from_game_root_variations():
     """Проверяет устойчивость к падежам и вариациям через корни слов."""
     game = GameState()
@@ -71,6 +73,8 @@ def test_location_id_from_game_root_variations():
     assert location_id_from_game(game) == 7
 
 
+@pytest.mark.mech
+@pytest.mark.l2
 def test_l2_finds_yield_l2_loot_not_l1():
     """
     Проверяет, что при нахождении на L2 (Ручей со змеями) поиск ресурсов
@@ -100,6 +104,7 @@ def test_l2_finds_yield_l2_loot_not_l1():
     assert found_any_l2_specific, "Специфичный для L2 лут должен был выпасть хотя бы раз за 50 бросков"
 
 
+@pytest.mark.nav
 def test_story_transitions_synchronize_location_and_index():
     """Проверяет синхронную установку current_location, location_index и pre_story_location."""
     game = GameState()
@@ -115,6 +120,7 @@ def test_story_transitions_synchronize_location_and_index():
         assert game.current_location == game.pre_story_location
 
 
+@pytest.mark.nav
 def test_pre_story_location_preserved_on_back_navigation():
     """Проверяет возврат в исходную локацию через handle_back_navigation."""
     from game_state import handle_back_navigation
@@ -134,6 +140,7 @@ def test_pre_story_location_preserved_on_back_navigation():
     assert game.pre_story_location is None
 
 
+@pytest.mark.nav
 def test_l5_scout_leave_to_camp_preserves_location():
     """Проверяет, что выход из разведки L5 (до победы над боссом) не сбрасывает локацию в Стартовый лес."""
     game = GameState()

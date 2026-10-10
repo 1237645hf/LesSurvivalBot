@@ -14,6 +14,7 @@ from main import (
 )
 
 
+@pytest.mark.nav
 @pytest.mark.anyio
 async def test_safe_delete_messages_empty():
     with patch.object(main.bot, "delete_messages", new_callable=AsyncMock) as mock_delete:
@@ -21,6 +22,7 @@ async def test_safe_delete_messages_empty():
         mock_delete.assert_not_called()
 
 
+@pytest.mark.nav
 @pytest.mark.anyio
 async def test_safe_delete_messages_single_batch():
     with patch.object(main.bot, "delete_messages", new_callable=AsyncMock) as mock_delete:
@@ -31,6 +33,7 @@ async def test_safe_delete_messages_single_batch():
         assert set(kwargs["message_ids"]) == {10, 20, 30}
 
 
+@pytest.mark.nav
 @pytest.mark.anyio
 async def test_safe_delete_messages_chunking_over_100():
     with patch.object(main.bot, "delete_messages", new_callable=AsyncMock) as mock_delete:
@@ -43,6 +46,7 @@ async def test_safe_delete_messages_chunking_over_100():
         assert len(chunk2) == 50
 
 
+@pytest.mark.nav
 @pytest.mark.anyio
 async def test_safe_delete_messages_handles_bad_request():
     with patch.object(
@@ -56,6 +60,7 @@ async def test_safe_delete_messages_handles_bad_request():
         mock_delete.assert_called_once()
 
 
+@pytest.mark.nav
 @pytest.mark.anyio
 async def test_fsm_track_and_clear_messages():
     storage = MemoryStorage()
@@ -80,6 +85,7 @@ async def test_fsm_track_and_clear_messages():
         assert data_after.get("messages_to_delete") == []
 
 
+@pytest.mark.nav
 @pytest.mark.anyio
 async def test_cmd_start_no_blind_deletion_loop():
     storage = MemoryStorage()
@@ -112,6 +118,7 @@ async def test_cmd_start_no_blind_deletion_loop():
                 assert call[0][1] not in [999 - i for i in range(1, 50)]
 
 
+@pytest.mark.nav
 @pytest.mark.anyio
 async def test_update_or_send_message_batch_delete_success():
     """При need_recreate сначала отправляется один пакетный запрос delete_messages (до 100 ID), включающий гарантированные ID."""
@@ -151,6 +158,7 @@ async def test_update_or_send_message_batch_delete_success():
         main.last_active_msg_id.pop(uid, None)
 
 
+@pytest.mark.nav
 @pytest.mark.anyio
 async def test_update_or_send_message_batch_delete_fallback():
     """Если пакетный запрос упал с ошибкой, fallback сначала точечно удаляет гарантированные ID."""

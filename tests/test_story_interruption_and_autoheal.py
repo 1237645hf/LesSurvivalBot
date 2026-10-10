@@ -17,6 +17,8 @@ from story.location_stories import (
 )
 
 
+@pytest.mark.l1
+@pytest.mark.nav
 def test_l1_interruption_does_not_softlock():
     """L1: прерывание на экране факела/котёнка не сжигает триггер; повторное исследование возвращает сюжет."""
     game = GameState()
@@ -50,6 +52,8 @@ def test_l1_interruption_does_not_softlock():
     assert ev3 is None
 
 
+@pytest.mark.l1
+@pytest.mark.nav
 def test_l1_5_interruption_and_map_unlock():
     """L1.5: прерывание до открытия логова не теряет логово; после wolf_lair_unlocked исследование свободно."""
     game = GameState()
@@ -81,6 +85,8 @@ def test_l1_5_interruption_and_map_unlock():
     assert ev3 is None
 
 
+@pytest.mark.l3
+@pytest.mark.nav
 def test_l3_fire_low_keyboard_has_no_back_button():
     """Экран l3_1_fire_low не содержит деструктивной кнопки back."""
     game = GameState()
@@ -95,6 +101,8 @@ def test_l3_fire_low_keyboard_has_no_back_button():
     assert "l3_3_inspect" in callback_datas
 
 
+@pytest.mark.l3
+@pytest.mark.nav
 def test_l3_shelter_interruption_does_not_lose_stove():
     """L3: прерывание до фиксации убежища не сжигает печь; повторное исследование находит печь."""
     game = GameState()
@@ -125,6 +133,8 @@ def test_l3_shelter_interruption_does_not_lose_stove():
     assert ev3 != "l3_1_fire_low"
 
 
+@pytest.mark.l3
+@pytest.mark.nav
 def test_l3_7_ridge_unlock_pattern():
     """L3.7: после появления Солонца в unlocked_locations исследование лощины свободно."""
     game = GameState()
@@ -143,6 +153,7 @@ def test_l3_7_ridge_unlock_pattern():
     assert ev2 is None
 
 
+@pytest.mark.persist
 def test_autoheal_broken_saves_in_from_document():
     """GameState.from_document автоматически очищает зависшие флаги _started / _triggered."""
     doc = {

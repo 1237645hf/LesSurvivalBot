@@ -28,6 +28,7 @@ from main import PARENT_SCREEN, CANONICAL_STACKS
 # ЭТАП 1: ТРИГГЕР ИССЛЕДОВАНИЯ В МОДУЛЕ STORY (АЛГОРИТМ НЕ В MAIN.PY)
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_01_research_trigger_algorithm_in_story_module():
     """Этап 1: Алгоритм проверки триггера L1.5 живёт в location_stories и активируется на 3-е исследование."""
     game = GameState()
@@ -62,6 +63,7 @@ def test_stage_01_research_trigger_algorithm_in_story_module():
 # ЭТАП 2: ОКНО 1 — НАХОДКА ОВРАГА И ПЕЩЕРЫ (l1_5_start)
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_02_l1_5_start_screen_and_contact():
     """Этап 2: Экран l1_5_start и контактная кнопка перехода на l1_5_wolf."""
     game = GameState()
@@ -82,6 +84,7 @@ def test_stage_02_l1_5_start_screen_and_contact():
 # ЭТАП 3: ОКНО 2 — СТАРЫЙ ВОЛК С ОЖОГОМ (l1_5_wolf)
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_03_l1_5_wolf_screen_and_contact():
     """Этап 3: Экран l1_5_wolf с описанием ожога морды и контактная кнопка на l1_5_behind."""
     game = GameState()
@@ -99,6 +102,7 @@ def test_stage_03_l1_5_wolf_screen_and_contact():
 # ЭТАП 4: ОКНО 3 — РАСЩЕЛИНА И ШУМ ВОДЫ (l1_5_behind)
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_04_l1_5_behind_screen_and_contact():
     """Этап 4: Экран l1_5_behind с намёком на ручей и контактная кнопка на l1_5_thought."""
     game = GameState()
@@ -115,6 +119,7 @@ def test_stage_04_l1_5_behind_screen_and_contact():
 # ЭТАП 5: ОКНО 4 — ОСОЗНАНИЕ НЕОБХОДИМОСТИ ОРУЖИЯ (l1_5_thought)
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_05_l1_5_thought_screen_and_contact():
     """Этап 5: Экран l1_5_thought (самоубийство с голыми руками) и контакт на l1_5_leave."""
     game = GameState()
@@ -132,6 +137,7 @@ def test_stage_05_l1_5_thought_screen_and_contact():
 # ЭТАП 6: ОТСТУПЛЕНИЕ В ЛАГЕРЬ И ОТКРЫТИЕ КРАФТА (l1_5_leave)
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_06_l1_5_leave_and_camp_return_and_craft_unlock():
     """Этап 6: Отступление в лагерь, открытие крафта посоха и временного меню Волчьего логова."""
     game = GameState()
@@ -151,6 +157,7 @@ def test_stage_06_l1_5_leave_and_camp_return_and_craft_unlock():
 # ЭТАП 7: КРАФТ И ЭКИПИРОВКА ПОСОХА (В ПРАВУЮ РУКУ, НЕ СНИМАЯ ФАКЕЛ)
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_07_staff_craft_and_dual_wield_torch():
     """Этап 7: Крафт 'Крепкий посох' из 8 веток, надевание в hand_right, факел в hand_left цел."""
     game = GameState()
@@ -185,6 +192,7 @@ def test_stage_07_staff_craft_and_dual_wield_torch():
 # ЭТАП 8: МЕНЮ ЛОКАЦИЙ И ВХОД В ЛОГОВО (БЕЗ ОРУЖИЯ vs С ПОСОХОМ)
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_08_wolf_lair_entry_screen_unarmed_vs_armed():
     """Этап 8: Проверка входа в логово: без посоха вход закрыт, с посохом открыт бой."""
     game = GameState()
@@ -214,6 +222,7 @@ def test_stage_08_wolf_lair_entry_screen_unarmed_vs_armed():
 # ЭТАП 9: ИНИЦИАЛИЗАЦИЯ БОЯ (wolf_battle_start)
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_09_wolf_battle_initialization():
     """Этап 9: Старт боя: инициализация 50 HP волка, боевой клавиатуры и экрана."""
     game = GameState()
@@ -239,6 +248,7 @@ def test_stage_09_wolf_battle_initialization():
 # ЭТАП 10: РАУНД АТАКИ ПОСОХОМ (wolf_battle_attack)
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_10_wolf_battle_attack_round():
     """Этап 10: Атака посохом наносит 5–7 урона, волк получает урон."""
     game = GameState()
@@ -256,6 +266,7 @@ def test_stage_10_wolf_battle_attack_round():
 # ЭТАП 11: РАУНД ЗАЩИТЫ (wolf_battle_defend) И СНИЖЕНИЕ УРОНА НА 50%
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_11_wolf_battle_defend_round_damage_mitigation():
     """Этап 11: Защита снижает входящий урон волка на 50% (2–4 ед. вместо 5–7)."""
     game = GameState()
@@ -274,6 +285,7 @@ def test_stage_11_wolf_battle_defend_round_damage_mitigation():
 # ЭТАП 12: БЕГСТВО ИЗ БОЯ (wolf_battle_flee)
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_12_wolf_battle_flee_contact():
     """Этап 12: Бегство из боя безопасно выводит игрока и даёт контактную кнопку в меню локаций."""
     game = GameState()
@@ -290,6 +302,7 @@ def test_stage_12_wolf_battle_flee_contact():
 # ЭТАП 13: ПОБЕДА НАД ВОЛКОМ И РАЗВЕТВЛЕНИЕ (ПИТОМЕЦ vs БЕЗ ПИТОМЦА)
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_13_wolf_battle_defeat_transitions():
     """Этап 13: Победа над волком: с котёнком ведёт на мольбу котёнка, без котёнка — на выбор пощады/добивания."""
     # Вариант А: Есть котёнок
@@ -310,6 +323,7 @@ def test_stage_13_wolf_battle_defeat_transitions():
 # ЭТАП 14: ПРОСЬБА КОТЁНКА (l1_5_kitten_plea)
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_14_l1_5_kitten_plea_screen_and_contacts():
     """Этап 14: Экран просьбы котёнка с контактами на l1_5_spare и l1_5_kill."""
     game = GameState()
@@ -328,6 +342,7 @@ def test_stage_14_l1_5_kitten_plea_screen_and_contacts():
 # ЭТАП 15: ПОЩАДА С ЕДОЙ (СПИСАНИЕ НИЗШЕГО РАНГА)
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_15_spare_branch_with_food_consumption():
     """Этап 15: Пощада с едой открывает выбор еды, выбор Сырого мяса отдаёт его и ведёт в l1_6_passage."""
     game = GameState()
@@ -355,6 +370,7 @@ def test_stage_15_spare_branch_with_food_consumption():
 # ЭТАП 16: ПОЩАДА БЕЗ ЕДЫ (БЕЗОПАСНЫЙ ФОЛЛБЭК)
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_16_spare_branch_without_food_fallback():
     """Этап 16: Пощада без еды не падает с ошибкой, волк отползает, переход на l1_6_passage."""
     game = GameState()
@@ -370,6 +386,7 @@ def test_stage_16_spare_branch_without_food_fallback():
 # ЭТАП 17: ДОБИВАНИЕ ВОЛКА (L1.5b — ТОЧНАЯ КАНОНИЧЕСКАЯ ФРАЗА)
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_17_kill_branch_exact_canonical_phrase():
     """Этап 17: Добивание волка выводит точный канонический текст L1.5b и контакт на l1_6_passage."""
     game = GameState()
@@ -384,6 +401,7 @@ def test_stage_17_kill_branch_exact_canonical_phrase():
 # ЭТАП 18: ПРОХОД СКВОЗЬ РАСЩЕЛИНУ (l1_6_passage)
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_18_l1_6_fissure_passage():
     """Этап 18: Протискивание сквозь узкую расщелину и контактная кнопка на l1_6_exit."""
     game = GameState()
@@ -397,6 +415,7 @@ def test_stage_18_l1_6_fissure_passage():
 # ЭТАП 19: ВЫХОД К ВОДЕ (l1_6_exit)
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_19_l1_6_exit_to_stream_water():
     """Этап 19: Выход на свежий речной воздух и контактная кнопка на l1_7_finish."""
     game = GameState()
@@ -410,6 +429,7 @@ def test_stage_19_l1_6_exit_to_stream_water():
 # ЭТАП 20: ФИНАЛ L1.7, ЗАКРЫТИЕ ЛОГОВА И ОТКРЫТИЕ РУЧЬЯ (l1_7_finish & inspect)
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
 def test_stage_20_l1_7_finish_and_inspect_open_stream():
     """Этап 20: Завершение арки L1.7, логово закрыто навсегда, открыт Ручей."""
     game = GameState()
@@ -440,6 +460,8 @@ def test_stage_20_l1_7_finish_and_inspect_open_stream():
 # ПРОВЕРКА АРХИТЕКТУРНЫХ ПРАВИЛ: MONGODB И СТЕК НАВИГАЦИИ PARENT_SCREEN
 # ══════════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.l1
+@pytest.mark.persist
 def test_architectural_rule_1_mongodb_persistence():
     """Правило 1: Состояние боя wolf_battle полностью персистится в MongoDB."""
     game = GameState()
@@ -457,6 +479,8 @@ def test_architectural_rule_1_mongodb_persistence():
     assert restored.wolf_battle["wolf_dmg_dealt"] == doc["wolf_battle"]["wolf_dmg_dealt"]
 
 
+@pytest.mark.l1
+@pytest.mark.nav
 def test_architectural_rule_4_canonical_navigation_stack():
     """Правило 4: Стек навигации экрана wolf_lair и wolf_battle каноничен и защищён от циклов."""
     assert PARENT_SCREEN["wolf_lair"] == "locations"
@@ -468,6 +492,8 @@ def test_architectural_rule_4_canonical_navigation_stack():
     assert CANONICAL_STACKS["combat"] == ["main", "locations", "wolf_lair", "combat"]
 
 
+@pytest.mark.l1
+@pytest.mark.mech
 def test_combat_module_engine_and_enemies():
     """Проверка независимой работы модуля modules.combat."""
     assert "old_wolf" in ENEMIES
@@ -502,6 +528,7 @@ def test_combat_module_engine_and_enemies():
     assert "сломя голову выбегаешь" in text_flee
 
 
+@pytest.mark.l1
 def test_wolf_torch_equipped_only_and_idempotent():
     """wolf_torch работает только при наличии факела в экипировке и не дублирует карму при перезаходе."""
     game = GameState()
@@ -537,6 +564,7 @@ def test_wolf_torch_equipped_only_and_idempotent():
     assert kb_b3.inline_keyboard[0][0].text == "👀 Заглянуть под пень"
 
 
+@pytest.mark.l1
 def test_restored_l1_kitten_full_chain():
     """Тест восстановленной канонической цепочки L1.2 -> L1.2b -> L1.2b.1 -> L1.3."""
     game = GameState()
@@ -600,6 +628,7 @@ def test_restored_l1_kitten_full_chain():
     assert game.active_story_callback == "waiting_pet_name"
 
 
+@pytest.mark.l1
 def test_wolf_feed_and_spare_idempotency():
     """Повторные вызовы пощады и кормления волка не абузят карму и не списывают еду повторно."""
     game = GameState()
@@ -624,6 +653,8 @@ def test_wolf_feed_and_spare_idempotency():
     assert getattr(game, "spared_souls", 0) == 1
 
 
+@pytest.mark.l1
+@pytest.mark.persist
 def test_wolf_battle_screen_fatal_player_death():
     """При падении HP <= 0 в wolf_battle_screen выводится стандартизированный экран гибели."""
     game = GameState()
@@ -638,6 +669,7 @@ def test_wolf_battle_screen_fatal_player_death():
     assert game.active_story_callback is None
 
 
+@pytest.mark.l1
 def test_l1_7_finish_idempotent_locations_unlock():
     """l1_7_finish сохраняет уже имеющиеся локации и добавляет L1 и L2 без дубликатов."""
     game = GameState()

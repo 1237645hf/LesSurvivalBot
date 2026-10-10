@@ -18,6 +18,8 @@ from story.location_stories import (
 from modules.combat import start_battle, apply_action
 
 
+@pytest.mark.smoke
+@pytest.mark.persist
 def test_story_callback_persistence():
     """Тест 1: active_story_callback сохраняется в to_document и восстанавливается в from_document."""
     game = GameState()
@@ -31,6 +33,8 @@ def test_story_callback_persistence():
     assert restored.active_story_callback == "l1_5_behind"
 
 
+@pytest.mark.persist
+@pytest.mark.nav
 def test_story_callback_set_and_clear_lifecycle():
     """Тест 2: При показе сюжетного экрана active_story_callback выставляется, а при выходе в лагерь очищается."""
     game = GameState()
@@ -51,6 +55,8 @@ def test_story_callback_set_and_clear_lifecycle():
     assert game.active_story_callback is None
 
 
+@pytest.mark.persist
+@pytest.mark.nav
 def test_story_callback_resumes_exact_screen():
     """Тест 3: Восстановление сюжетного экрана через handle_story по active_story_callback."""
     game = GameState()
@@ -62,6 +68,8 @@ def test_story_callback_resumes_exact_screen():
     assert any(b.callback_data == "l1_5_leave" for row in kb.inline_keyboard for b in row)
 
 
+@pytest.mark.persist
+@pytest.mark.mech
 def test_process_damage_honest_death_and_no_overexertion():
     """Тест 4: process_damage списывает урон честно до 0, не держит пол 1 и не конвертирует урон в ресурсы."""
     game = GameState()
@@ -86,6 +94,8 @@ def test_process_damage_honest_death_and_no_overexertion():
     assert "поглощён" in msg_none
 
 
+@pytest.mark.persist
+@pytest.mark.mech
 def test_resource_multipliers_and_ap_by_hp_remain():
     """Тест 5: Множители ресурсов и расчет AP от HP работают по канону."""
     game = GameState()
@@ -109,6 +119,9 @@ def test_resource_multipliers_and_ap_by_hp_remain():
     assert calculate_ap_by_hp(game) == 2
 
 
+@pytest.mark.persist
+@pytest.mark.l1
+@pytest.mark.mech
 def test_combat_wolf_fatal_blow():
     """Тест 6: Удар волка при низком HP честно опускает здоровье до 0 и выдаёт экран гибели."""
     game = GameState()
@@ -124,6 +137,9 @@ def test_combat_wolf_fatal_blow():
     assert kb.inline_keyboard[0][0].callback_data == "start_new_game_confirmed"
 
 
+@pytest.mark.persist
+@pytest.mark.nav
+@pytest.mark.l2
 def test_thorns_gate_blocks_deadly_entry():
     """Тест 7: Ворота терновника блокируют прорыв при недостаточном HP."""
     game = GameState()
@@ -157,6 +173,8 @@ def test_thorns_gate_blocks_deadly_entry():
     assert "Попытка проломиться сейчас будет смертельной" in text_thorns
 
 
+@pytest.mark.persist
+@pytest.mark.nav
 def test_death_text_and_kb_format():
     """Тест 8: Форматирование текста смерти и клавиатуры рестарта."""
     game = GameState()
@@ -194,6 +212,9 @@ def test_death_text_and_kb_format():
     assert kb.inline_keyboard[0][0].callback_data == "start_new_game_confirmed"
 
 
+@pytest.mark.persist
+@pytest.mark.nav
+@pytest.mark.l2
 def test_l2_mid_screen_resume():
     """Тест 9: Промежуточный экран L2 сохраняет active_story_callback, а выход очищает его."""
     game = GameState()
@@ -211,6 +232,8 @@ def test_l2_mid_screen_resume():
     assert game.active_story_callback is None
 
 
+@pytest.mark.persist
+@pytest.mark.nav
 def test_l3_to_l7_active_story_callback_lifecycle():
     """Тест 10: Локации L3-L7 корректно устанавливают и сбрасывают active_story_callback."""
     game = GameState()
@@ -239,6 +262,8 @@ def test_l3_to_l7_active_story_callback_lifecycle():
         assert game.active_story_callback == "slate_hollow_start"
 
 
+@pytest.mark.persist
+@pytest.mark.l1
 def test_kitten_naming_resume_no_duplicate_karma():
     """Тест 11: pet_take выставляет waiting_pet_name, а continue/повтор не дублирует карму."""
     game = GameState()
@@ -263,6 +288,8 @@ def test_kitten_naming_resume_no_duplicate_karma():
     assert game.narrative_karma.get("compassion", 0) == 2
 
 
+@pytest.mark.persist
+@pytest.mark.l1
 @pytest.mark.anyio
 async def test_kitten_naming_submit_and_idempotency():
     """Тест 13: Ввод имени очищает callback и state, а повторный вход при наличии питомца уходит в main."""
@@ -316,6 +343,8 @@ async def test_kitten_naming_submit_and_idempotency():
     assert game.active_story_callback is None
 
 
+@pytest.mark.persist
+@pytest.mark.l1
 def test_wolf_battle_screen_no_restart_after_defeat():
     """Тест 12: wolf_battle_screen не перезапускает бой, если волк уже повержен."""
     game = GameState()
@@ -331,6 +360,8 @@ def test_wolf_battle_screen_no_restart_after_defeat():
     assert "Тяжёлый удар посоха окончательно сбивает старого волка" in text
 
 
+@pytest.mark.persist
+@pytest.mark.l2
 def test_boar_battle_active_story_callback_lifecycle():
     """Тест 13: В бою с Секачом (L3) active_story_callback всегда равен boar_battle_screen на всех ходах."""
     game = GameState()
@@ -357,6 +388,8 @@ def test_boar_battle_active_story_callback_lifecycle():
     assert restored.wolf_battle["enemy_id"] == "ancient_boar"
 
 
+@pytest.mark.persist
+@pytest.mark.l2
 def test_boar_battle_no_wolf_desync_on_wolf_battle_screen():
     """Тест 14: Если игрок дрался с Секачом, wolf_battle_screen не превращает бой в бой со Старым волком."""
     game = GameState()
@@ -375,6 +408,8 @@ def test_boar_battle_no_wolf_desync_on_wolf_battle_screen():
     assert not any("wolf_battle" in cb for cb in button_cbs)
 
 
+@pytest.mark.persist
+@pytest.mark.mech
 def test_survival_counters_and_mechanics():
     """Тест 15: Счётчики выживания (победы, пощады, костры, кулинария), их сериализация и логика."""
     from modules.cooking import cook_portions
@@ -453,6 +488,8 @@ def test_survival_counters_and_mechanics():
     assert game_deer.spared_souls == 1
 
 
+@pytest.mark.persist
+@pytest.mark.nav
 def test_handle_session_callback_restart_and_confirm():
     """Тест 21: handle_session_callback корректно отрабатывает start_new_game_confirmed и restart_game без NameError/UnboundLocalError."""
     from services.dialogs import handle_session_callback

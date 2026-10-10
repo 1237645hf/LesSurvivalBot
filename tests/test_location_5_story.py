@@ -11,6 +11,8 @@ from main import use_consumable
 from keyboards import get_main_kb, get_item_card_actions_kb
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_location_5_story_full_flow_wait_branch():
     """Прохождение сюжета Локации 5 через выжидание и использование гриба."""
     game = GameState()
@@ -81,6 +83,8 @@ def test_location_5_story_full_flow_wait_branch():
     assert "Приманка для слизней" in game.unlocked_crafts
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_location_5_story_force_branch():
     """Прохождение сюжета Локации 5 через силовой разрыв кокона."""
     game = GameState()
@@ -95,6 +99,7 @@ def test_location_5_story_force_branch():
     assert "в спешке и суматохе некогда вскрывать ядра" in text
 
 
+@pytest.mark.l5
 def test_location_5_story_leave_without_lantern():
     """Проверка ухода без фонаря: крафт 'Зарядить фонарь' не разблокируется и не виден в меню."""
     from crafts import get_craft_menu_text, get_craft_menu_kb
@@ -135,6 +140,7 @@ def test_location_5_story_leave_without_lantern():
     assert not any("Зарядить фонарь" in b.text for r in get_craft_menu_kb(game2).inline_keyboard for b in r)
 
 
+@pytest.mark.l5
 def test_lantern_equip_and_durability_and_charging():
     """Экипировка старого фонаря, бонус AP, отображение на кнопке и крафт перезарядки."""
     game = GameState()
@@ -170,6 +176,7 @@ def test_lantern_equip_and_durability_and_charging():
     assert game.inventory.get("Янтарное ядро", 0) == 0
 
 
+@pytest.mark.l5
 def test_hunter_amulet_equip_and_dodge():
     """Экипировка амулета охотника и проверка бонуса уворота."""
     game = GameState()
@@ -181,6 +188,7 @@ def test_hunter_amulet_equip_and_dodge():
     assert game.dodge_chance == initial_dodge + 5
 
 
+@pytest.mark.l5
 def test_vial_craft_and_potion_consumption():
     """Крафт 5 пузырьков из 1 сланцевого слитка, крафт зелья и его применение с возвратом пузырька."""
     game = GameState()
@@ -209,6 +217,7 @@ def test_vial_craft_and_potion_consumption():
     assert game.inventory.get("Пузырёк", 0) == 3
 
 
+@pytest.mark.l5
 def test_slug_bait_mechanics():
     """Тест крафта приманки (только на L5, 10 любых ягод), установки, меню засады и ночного распада."""
     game = GameState()
@@ -249,6 +258,7 @@ def test_slug_bait_mechanics():
     assert any("сожрали приманку" in log for log in game.event_log)
 
 
+@pytest.mark.l5
 def test_pants_pocket_and_button_exact_text():
     """Тест футляра на кожаных поножах и точного текста кнопки без искажения рода и скобок HP."""
     game = GameState()
@@ -286,6 +296,8 @@ def test_pants_pocket_and_button_exact_text():
     assert "Ты принимаешь Янтарное зелье" in text_after
 
 
+@pytest.mark.l5
+@pytest.mark.slow
 def test_multi_slime_pack_combat_simulation():
     """Тест экрана боя со скоплением слизней: заголовок, HP 15-25, полный блок по 1 HP, победа и трофеи."""
     game = GameState()
@@ -335,6 +347,7 @@ def test_multi_slime_pack_combat_simulation():
     assert "l5_slug_battle_finish" in [b.callback_data for r in kb_fin.inline_keyboard for b in r]
 
 
+@pytest.mark.l5
 def test_vial_and_amber_potion_card_metadata():
     """Тест карточек предметов: отсутствие ранга, эмодзи 🍹, описание пузырька и зелья."""
     from modules.items import ITEM_EMOJIS, ITEMS
@@ -353,6 +366,7 @@ def test_vial_and_amber_potion_card_metadata():
     assert "+70 HP" in ITEMS["Янтарное зелье"]["note"]
 
 
+@pytest.mark.l5
 def test_l5_leave_early_karma_exploit_prevention():
     """Многократный вызов l5_leave_early начисляет карму строго один раз."""
     game = GameState()
@@ -378,6 +392,7 @@ def test_l5_leave_early_karma_exploit_prevention():
     assert game.narrative_karma.get("observation", 0) == initial_observation + 1
 
 
+@pytest.mark.l5
 def test_l5_reentry_after_chapter1():
     """После финала Главы 1 игрок не видит заглушку 'Яр спокоен' и не начинает Главу 1 заново."""
     game = GameState()
@@ -391,6 +406,7 @@ def test_l5_reentry_after_chapter1():
     assert "back" in buttons
 
 
+@pytest.mark.l5
 def test_l5_sturdy_staff_no_duplication_on_boss_win():
     """Проверка отсутствия дюпа Крепкого посоха во всех 3 векторах финала босса."""
     # 1. Вектор 3 (Гибрид)
@@ -428,6 +444,8 @@ def test_l5_sturdy_staff_no_duplication_on_boss_win():
     assert g2.is_story_flag_set("l5_completed")
 
 
+@pytest.mark.l5
+@pytest.mark.nav
 def test_l5_scout_leave_to_camp_clears_wolf_battle():
     """Возврат в лагерь через l5_scout_leave_to_camp зануляет wolf_battle."""
     game = GameState()

@@ -19,6 +19,7 @@ from modules.cooking import handle_campfire_callback
 from story.location_stories import check_forest_research_story_trigger, handle_story
 
 
+@pytest.mark.mech
 def test_items_specification():
     """Проверка характеристик Армейской фляги и Бутылки дождевой воды."""
     assert "Армейская фляга" in ITEMS
@@ -42,6 +43,7 @@ def test_items_specification():
     assert neg["effects"]["thirst"] == -15
 
 
+@pytest.mark.mech
 def test_army_flask_equip_and_empty_retention():
     """Армейская фляга при опустошении остаётся 0/20 и не превращается в пластиковую бутылку."""
     game = GameState()
@@ -68,6 +70,7 @@ def test_army_flask_equip_and_empty_retention():
     assert "🟨 Армейская фляга (0/20)" in char_text
 
 
+@pytest.mark.mech
 def test_boiling_rainwater_logic():
     """Тест переливания и кипячения дождевой воды во флягу."""
     # Пример 1: во фляге 8, в бутылке 4 -> во фляге 12, бутылка опустела и вернулась
@@ -125,6 +128,7 @@ def test_boiling_rainwater_logic():
     assert game2.inventory["Бутылка дождевой воды"] == 1
 
 
+@pytest.mark.mech
 def test_clean_bottle_water_transfers_to_army_flask():
     """Чистая вода из обычной бутылки переливается во флягу без кипячения."""
     game = GameState()
@@ -143,6 +147,7 @@ def test_clean_bottle_water_transfers_to_army_flask():
     assert "Перелито 4 глотков" in text
 
 
+@pytest.mark.mech
 def test_boiling_rainwater_callback_checks_fire_and_water():
     """Реальный callback кипятит дождевую воду во фляге и не меняет состояние без костра."""
     game = GameState()
@@ -172,6 +177,7 @@ def test_boiling_rainwater_callback_checks_fire_and_water():
     assert game.rain_bottles == [3]
 
 
+@pytest.mark.mech
 def test_campfire_boiling_button_uses_army_flask_water_when_unequipped():
     """Кнопка кипячения смотрит запас армейской фляги, а не обычной надетой бутылки."""
     game = GameState()
@@ -191,6 +197,8 @@ def test_campfire_boiling_button_uses_army_flask_water_when_unequipped():
     assert "campfire_boil_water" in button_callbacks
 
 
+@pytest.mark.mech
+@pytest.mark.persist
 def test_zero_flask_water_survives_document_round_trip():
     """Загрузка сейва не подставляет 10 глотков вместо сохранённого нуля."""
     game = GameState()
@@ -204,6 +212,7 @@ def test_zero_flask_water_survives_document_round_trip():
     assert restored.army_flask_water == 0
 
 
+@pytest.mark.l1
 def test_dome_discovery_trigger():
     """Локация открывается на день >= 2 на 2-е исследование в лесу."""
     game = GameState()
@@ -224,6 +233,8 @@ def test_dome_discovery_trigger():
     assert game.is_story_flag_set("l1_dome_discovered")
 
 
+@pytest.mark.l1
+@pytest.mark.nav
 def test_dome_in_locations_kb_at_top():
     """Забытый купол располагается в САМОМ ВЕРХУ меню локаций и исчезает после завершения."""
     game = GameState()
@@ -246,6 +257,7 @@ def test_dome_in_locations_kb_at_top():
     assert not any("Забытый купол" in btn.text for row in kb_closed.inline_keyboard for btn in row)
 
 
+@pytest.mark.l1
 def test_dome_first_visit_fall_and_daily_lock():
     """Первый визит: попытка залезть -> падение (-5 HP, -1 AP) -> блокировка на текущий день."""
     game = GameState()
@@ -280,6 +292,7 @@ def test_dome_first_visit_fall_and_daily_lock():
     assert "Вернуться в лагерь" in kb_re.inline_keyboard[0][0].text
 
 
+@pytest.mark.l1
 def test_dome_bad_weather_visit():
     """В плохую погоду (дождь/пасмурно) на следующий день ничего нельзя достать."""
     game = GameState()
@@ -295,6 +308,7 @@ def test_dome_bad_weather_visit():
     assert "Вернуться в лагерь" in kb.inline_keyboard[0][0].text
 
 
+@pytest.mark.l1
 def test_dome_stone_throw_fails():
     """Броски камнями не достают и тратят 1 AP и 15 жажды."""
     game = GameState()
@@ -313,6 +327,7 @@ def test_dome_stone_throw_fails():
     assert "Перевести дух" in kb.inline_keyboard[0][0].text
 
 
+@pytest.mark.l1
 def test_dome_staff_progression_and_loot():
     """Посох: 1-я и 2-я попытка не получаются, 3-я попытка сбивает ранец.
     Упавший ранец сохраняется при повторном входе даже в дождь.
@@ -382,6 +397,7 @@ def test_dome_staff_progression_and_loot():
     assert game.ap == ap_after_first_reward
 
 
+@pytest.mark.l1
 def test_dome_cat_solve():
     """С котёнком на следующий ясный день доступна кнопка и ранец сбивается сразу."""
     game = GameState()
@@ -414,6 +430,7 @@ def test_dome_cat_solve():
     assert "Осмотреть завал у корней" in kb_cat.inline_keyboard[0][0].text
 
 
+@pytest.mark.l1
 def test_dome_climb_fatal_fall():
     """Падение с дуба при HP <= 5 приводит к честной гибели персонажа."""
     game = GameState()
@@ -426,6 +443,7 @@ def test_dome_climb_fatal_fall():
     assert kb.inline_keyboard[0][0].callback_data == "start_new_game_confirmed"
 
 
+@pytest.mark.l1
 def test_dome_stone_throw_and_staff_ap_guards():
     """При 0 AP бросок камней и попытка с посохом не списывают жажду/попытки и отправляют в лагерь."""
     game = GameState()

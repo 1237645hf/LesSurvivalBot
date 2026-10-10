@@ -104,7 +104,12 @@ class MemoryTabletNotesCollection:
 # ──────────────────────────────────────────────────────────────────────────────
 # MONGODB INIT
 # ──────────────────────────────────────────────────────────────────────────────
-MONGO_URI = os.getenv("MONGO_URI") or "mongodb://localhost:27017/test"
+def is_testing_mode() -> bool:
+    """Проверка, запущен ли код в тестовом режиме (pytest / локальные тесты)."""
+    return os.getenv("LES_TESTING") == "1" or os.getenv("FORCE_MEMORY_DB") == "1"
+
+
+MONGO_URI = os.getenv("MONGO_URI") or ("" if is_testing_mode() else "mongodb://localhost:27017/test")
 
 mongo_client = None
 players_collection = None
@@ -118,6 +123,11 @@ def is_mongo_connected() -> bool:
 
 def _init_mongo():
     global mongo_client, players_collection, tablet_notes_collection
+    if is_testing_mode():
+        players_collection = MemoryPlayersCollection()
+        tablet_notes_collection = MemoryTabletNotesCollection()
+        return
+
     try:
         # Увеличенный таймаут 10000мс для стабильного DNS-резолвинга SRV и TLS handshake на Render
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=10000)
@@ -142,6 +152,7 @@ def _init_mongo():
 
 
 _init_mongo()
+
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -215,9 +226,14 @@ def _ensure_mongo_connection():
     global mongo_client, players_collection, tablet_notes_collection
     if is_mongo_connected():
         return
-    if os.getenv("MONGO_URI"):
+    uri = os.getenv("MONGO_URI") or MONGO_URI
+    # В тестовом режиме не пытаемся подключаться к реальной Mongo, кроме тестов с моками (когда задан MONGO_URI)
+    if is_testing_mode() and not os.getenv("MONGO_URI"):
+        return
+    if uri:
         try:
-            client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+            timeout_ms = 100 if is_testing_mode() else 5000
+            client = MongoClient(uri, serverSelectionTimeoutMS=timeout_ms)
             db = client["forest_game"]
             coll = db["players"]
             notes_coll = db["stone_tablet_notes"]
@@ -243,7 +259,9 @@ def _ensure_mongo_connection():
                 f"Мигрировано игроков: {migrated_players}, заметок каменной плиты: {migrated_notes}."
             )
         except Exception as exc:
-            logging.warning(f"MongoDB: попытка восстановления подключения не удалась ({exc}). Продолжаем fallback.")
+            if not is_testing_mode():
+                logging.warning(f"MongoDB: попытка восстановления подключения не удалась ({exc}). Продолжаем fallback.")
+
 
 
 # ──────────────────────────────────────────────────────────────────────────────

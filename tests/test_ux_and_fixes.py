@@ -13,6 +13,7 @@ from keyboards import get_drop_item_kb, get_inspect_menu_kb
 from main import process_callback, process_text_message, games, last_request_time, get_user_lock
 
 
+@pytest.mark.nav
 @pytest.mark.anyio
 async def test_pet_name_validation():
     """Тест валидации клички питомца (regex, длина, эмодзи, переносы строк)."""
@@ -90,6 +91,7 @@ async def test_pet_name_validation():
     assert game.is_story_flag_set("saved_kitten") is True
 
 
+@pytest.mark.mech
 def test_traps_probabilities_and_empty_reporting():
     """Тест соотношения 40% пуста / 20% ломается / 40% добыча и события empty."""
     import random
@@ -134,6 +136,7 @@ def test_traps_probabilities_and_empty_reporting():
         random.randint = orig_randint
 
 
+@pytest.mark.nav
 @pytest.mark.anyio
 async def test_race_condition_double_tap_prevention():
     """Тест защиты от Race Condition при двойном клике через per-user asyncio.Lock."""
@@ -174,6 +177,7 @@ async def test_race_condition_double_tap_prevention():
     assert game.inventory["Вода"] == 4
 
 
+@pytest.mark.nav
 @pytest.mark.anyio
 async def test_process_text_message_immediate_delete_and_timeout():
     """Тест: входящий текст удаляется сразу до взятия лока, а при занятом локе срабатывает таймаут 3.0с."""
@@ -209,6 +213,8 @@ async def test_process_text_message_immediate_delete_and_timeout():
     lock.release()
 
 
+@pytest.mark.nav
+@pytest.mark.mech
 def test_inventory_inspect_and_drop_use_short_callbacks_and_return_screens():
     """Длинные имена предметов не ломают callback; осмотр и сброс возвращают экраны."""
     item_name = "Редкий предмет " + "из длинного названия " * 5
