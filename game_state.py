@@ -410,6 +410,15 @@ class GameState:
             old_loc = self.__dict__.get("current_location")
             if old_loc and old_loc != value:
                 self.switch_location_hearth(old_loc, value)
+                old_low = str(old_loc).lower()
+                new_low = str(value).lower()
+                is_old_l6 = ("мохнат" in old_low or "пещер" in old_low or self.__dict__.get("location_index") == 5)
+                is_new_l6 = ("мохнат" in new_low or "пещер" in new_low)
+                if is_old_l6 and not is_new_l6:
+                    story_flags = self.__dict__.get("story_flags", {})
+                    if not story_flags.get("warm_cave_shelter") and story_flags.get("l6_ascent_progress", 0) > 0:
+                        story_flags["l6_ascent_progress"] = 0
+                        self.add_log("Ты отступил назад, спасаясь от стужи. Метель замела уступы — подъём придётся начинать заново.")
             if isinstance(value, str):
                 v_low = value.lower()
                 if "святилищ" in v_low or "вершин" in v_low:

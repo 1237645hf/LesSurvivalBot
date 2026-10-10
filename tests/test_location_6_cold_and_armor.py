@@ -355,8 +355,8 @@ def test_warm_cave_entry_and_free_wall_fur():
 
 @pytest.mark.l6
 def test_l6_ascent_progression_and_milestones():
-    """7. Подъём на L6: 30 исследований, логи [Подъём: X/30] и 4 ключевых вехи."""
-    from story.location_stories import check_forest_research_story_trigger, handle_story
+    """7. Подъём на L6: 40 исследований, логи [Подъём: X/40] и утверждённые шаги 2, 4, 7, 8, 10."""
+    from story.location_stories import check_forest_research_story_trigger
     from story.locations.loc6_furry_cave import handle_location_6_furry_cave
 
     game = GameState()
@@ -365,75 +365,149 @@ def test_l6_ascent_progression_and_milestones():
     game.unlocked_crafts = ["Костёр", "Факел"]
     assert game.story_flags.get("l6_ascent_progress", 0) == 0
 
-    # Шаги 1-6: обычный подъём
-    for i in range(1, 7):
-        ev, log = check_forest_research_story_trigger(game, 6, False)
-        assert ev is None
-        assert game.story_flags["l6_ascent_progress"] == i
-        logs = [str(x) for x in game.event_log]
-        assert any(f"[Подъём: {i}/30]" in l for l in logs)
+    # Шаг 1: обычный подъём
+    ev, log = check_forest_research_story_trigger(game, 6, False)
+    assert ev is None
+    assert game.story_flags["l6_ascent_progress"] == 1
+    logs = [str(x) for x in game.event_log]
+    assert any("[Подъём: 1/40]" in l for l in logs)
 
-    # Шаг 7: Веха 1 — «Окно в облака и непуганые бараны»
+    # Шаг 2: Веха 2 — Интерактивный хаб структуры пещеры
     ev, _ = check_forest_research_story_trigger(game, 6, False)
-    assert ev == "l6_ascent_step7"
-    assert game.story_flags["l6_ascent_progress"] == 7
+    assert ev == "l6_step2_hub"
+    assert game.story_flags["l6_ascent_progress"] == 2
 
-    # Выбор 1: Наблюдать (+Observation)
-    text, kb = handle_location_6_furry_cave("l6_step7_observe", game, 1001)
-    assert game.narrative_karma["observation"] == 1
-    # Возврат в игровой процесс
+    # Проверяем хаб: 3 кнопки осмотра + 1 кнопка подъёма
+    text, kb = handle_location_6_furry_cave("l6_step2_hub", game, 1001)
+    assert len(text) >= 380 and len(text) <= 580
+    assert len(kb.inline_keyboard) == 4
+
+    # Осмотр стока воды: экран 2.1
+    text_w, kb_w = handle_location_6_furry_cave("l6_step2_water", game, 1001)
+    assert len(text_w) >= 350 and len(text_w) <= 430
+    assert game.is_story_flag_set("l6_step2_water_seen")
+
+    # Возврат в хаб: кнопка стока скрылась, осталось 3 кнопки
+    text_h2, kb_h2 = handle_location_6_furry_cave("l6_step2_hub", game, 1001)
+    assert len(kb_h2.inline_keyboard) == 3
+
+    # Осмотр людей (2.2) и разлома (2.3)
+    text_p, _ = handle_location_6_furry_cave("l6_step2_people", game, 1001)
+    assert len(text_p) >= 350 and len(text_p) <= 430
+    text_c, _ = handle_location_6_furry_cave("l6_step2_chasm", game, 1001)
+    assert len(text_c) >= 350 and len(text_c) <= 430
+
+    # Завершение шага 2
     handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
     assert game.story_state is None
 
-    # Шаги 8-14:
-    for i in range(8, 15):
+    # Шаг 3: обычный подъём
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev is None
+    assert game.story_flags["l6_ascent_progress"] == 3
+
+    # Шаг 4: Веха 4 — Шатающийся уступ и схрон
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev == "l6_step4_main"
+    assert game.story_flags["l6_ascent_progress"] == 4
+    text4, kb4 = handle_location_6_furry_cave("l6_step4_main", game, 1001)
+    assert len(text4) >= 380 and len(text4) <= 580
+    assert len(kb4.inline_keyboard) == 3
+
+    # Выбор 4.3: Вбить клин под плиту (+1 вмешательство)
+    handle_location_6_furry_cave("l6_step4_wedge", game, 1001)
+    assert game.narrative_karma["intervention"] == 1
+    handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
+
+    # Тестируем схрон шага 4 на отдельном состоянии
+    g4 = GameState()
+    g4.inventory["Жареное мясо"] = 2
+    text4_i, kb4_i = handle_location_6_furry_cave("l6_step4_inspect", g4, 1001)
+    assert g4.inventory.get("Кремень", 0) == 1
+    assert g4.inventory.get("Пещерный мох", 0) == 1
+    # Положить подарок взамен (+1 сострадание)
+    handle_location_6_furry_cave("l6_step4_leave_gift", g4, 1001)
+    assert g4.narrative_karma["compassion"] == 1
+    assert g4.inventory.get("Жареное мясо") == 1
+
+    # Шаги 5-6:
+    for i in range(5, 7):
         ev, _ = check_forest_research_story_trigger(game, 6, False)
         assert ev is None
         assert game.story_flags["l6_ascent_progress"] == i
 
-    # Шаг 15: Веха 2 — «Вмёрзший привал и знак охотников»
+    # Шаг 7: Веха 7 — Окно в облака и непуганые бараны
     ev, _ = check_forest_research_story_trigger(game, 6, False)
-    assert ev == "l6_ascent_step15"
-    assert game.story_flags["l6_ascent_progress"] == 15
+    assert ev == "l6_ascent_step7"
+    assert game.story_flags["l6_ascent_progress"] == 7
+    text7, kb7 = handle_location_6_furry_cave("l6_ascent_step7", game, 1001)
+    assert len(text7) >= 380 and len(text7) <= 580
+    assert len(kb7.inline_keyboard) == 3
 
-    # Выбор: Разгрести лёд (+Observation, +1 Древесный уголь)
-    obs_before = game.narrative_karma["observation"]
-    handle_location_6_furry_cave("l6_step15_observe", game, 1001)
-    assert game.narrative_karma["observation"] == obs_before + 1
+    # Наблюдать (+1 Наблюдение)
+    handle_location_6_furry_cave("l6_step7_observe", game, 1001)
+    assert game.narrative_karma["observation"] == 1
+    handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
+
+    # Шаг 8: Веха 8 — Дыхание стужи и спутник (кот / без кота)
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev == "l6_step8_main"
+    assert game.story_flags["l6_ascent_progress"] == 8
+
+    # Без питомца
+    text8_no_pet, _ = handle_location_6_furry_cave("l6_step8_main", game, 1001)
+    assert len(text8_no_pet) >= 380 and len(text8_no_pet) <= 580
+    assert "Котёнок" not in text8_no_pet
+
+    # С питомцем
+    game.set_story_flag("has_pet", True)
+    text8_pet, _ = handle_location_6_furry_cave("l6_step8_main", game, 1001)
+    assert len(text8_pet) >= 380 and len(text8_pet) <= 580
+    assert "Котёнок забился глубоко под куртку" in text8_pet
+    handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
+
+    # Шаг 9:
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev is None
+    assert game.story_flags["l6_ascent_progress"] == 9
+
+    # Шаг 10: Веха 10 — Вмёрзшая стоянка у очага
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev == "l6_step10_main"
+    assert game.story_flags["l6_ascent_progress"] == 10
+
+    text10, kb10 = handle_location_6_furry_cave("l6_step10_main", game, 1001)
+    assert len(text10) >= 380 and len(text10) <= 580
+    assert len(kb10.inline_keyboard) == 3
+
+    # Осмотреть за ларчиком (+1 Наблюдение)
+    obs_b10 = game.narrative_karma["observation"]
+    handle_location_6_furry_cave("l6_step10_behind", game, 1001)
+    assert game.narrative_karma["observation"] == obs_b10 + 1
+
+    # Забрать ларчик (+1 Древесный уголь, +1 Бинт)
+    handle_location_6_furry_cave("l6_step10_box", game, 1001)
     assert game.inventory.get("Древесный уголь", 0) >= 1
-    handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
+    assert game.inventory.get("Бинт", 0) >= 1
 
-    # Шаги 16-21:
-    for i in range(16, 22):
+    # Забрать всё под ноль (+1 Прагматизм)
+    handle_location_6_furry_cave("l6_step10_take_all", game, 1001)
+    assert game.narrative_karma["pragmatism"] == 1
+
+    # Шаги 11-39: обычный подъём
+    for i in range(11, 40):
         ev, _ = check_forest_research_story_trigger(game, 6, False)
         assert ev is None
         assert game.story_flags["l6_ascent_progress"] == i
 
-    # Шаг 22: Веха 3 — «Морозный морок (Шёпот из глубин)»
-    ev, _ = check_forest_research_story_trigger(game, 6, False)
-    assert ev == "l6_ascent_step22"
-    assert game.story_flags["l6_ascent_progress"] == 22
-
-    # Тестируем выбор Сострадания (+2 Compassion)
-    handle_location_6_furry_cave("l6_whisper_compassion", game, 1001)
-    assert game.narrative_karma["compassion"] == 2
-    assert game.story_flags.get("l6_whisper_choice") == "compassion"
-    handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
-
-    # Шаги 23-29:
-    for i in range(23, 30):
-        ev, _ = check_forest_research_story_trigger(game, 6, False)
-        assert ev is None
-        assert game.story_flags["l6_ascent_progress"] == i
-
-    # Шаг 30: Веха 4 — «Тёплый оазис» (активация шелтера и рецептов)
+    # Шаг 40: Веха завершения подъёма — открытие Тёплой пещеры
     assert not game.is_story_flag_set("warm_cave_shelter")
     ev, _ = check_forest_research_story_trigger(game, 6, False)
-    assert ev == "l6_ascent_step30"
-    assert game.story_flags["l6_ascent_progress"] == 30
+    assert ev == "l6_ascent_step40"
+    assert game.story_flags["l6_ascent_progress"] == 40
 
-    # Обработка l6_ascent_step30
-    text, kb = handle_location_6_furry_cave("l6_ascent_step30", game, 1001)
+    # Обработка l6_ascent_step40
+    text, kb = handle_location_6_furry_cave("l6_ascent_step40", game, 1001)
     assert "Тёплая пещера" in text
     assert game.is_story_flag_set("warm_cave_shelter") is True
     assert game.is_story_flag_set("fur_recipes_unlocked") is True
@@ -441,6 +515,7 @@ def test_l6_ascent_progression_and_milestones():
     assert "Меховой плащ-нагрудник" in game.unlocked_crafts
     assert "Меховые поножи" in game.unlocked_crafts
     assert "Меховые сапоги" in game.unlocked_crafts
+
 
 
 @pytest.mark.l6
@@ -470,5 +545,116 @@ def test_l6_ascent_reset_on_leaving():
     assert game.story_flags.get("l6_ascent_progress") == 30
     logs_after = [str(x) for x in game.event_log]
     assert not any("Ты отступил назад" in l for l in logs_after)
+
+
+@pytest.mark.l6
+def test_l6_ascent_leave_and_reenter_no_duplicate_stories():
+    """Проверка правила: при уходе из L6 прогресс сбрасывается в 0, но пройденные сюжетные окна не повторяются."""
+    from story.location_stories import check_forest_research_story_trigger
+    from story.locations.loc6_furry_cave import handle_location_6_furry_cave
+
+    game = GameState()
+    game.current_location = "Мохнатая пещера"
+    game.location_index = 5
+    assert game.story_flags.get("l6_ascent_progress", 0) == 0
+
+    # Шаг 1: обычный шаг
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev is None
+    assert game.story_flags["l6_ascent_progress"] == 1
+
+    # Шаг 2: срабатывает хаб l6_step2_hub
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev == "l6_step2_hub"
+    assert game.story_flags["l6_ascent_progress"] == 2
+    assert game.is_story_flag_set("l6_step2_seen")
+    handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
+
+    # Шаг 3: обычный
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev is None
+
+    # Шаг 4: срабатывает l6_step4_main
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev == "l6_step4_main"
+    assert game.story_flags["l6_ascent_progress"] == 4
+    assert game.is_story_flag_set("l6_step4_seen")
+    # Берём лут
+    handle_location_6_furry_cave("l6_step4_inspect", game, 1001)
+    assert game.inventory.get("Кремень") == 1
+    handle_location_6_furry_cave("l6_step4_take_all", game, 1001)
+
+    # Доходим до шага 8
+    for i in range(5, 7):
+        ev, _ = check_forest_research_story_trigger(game, 6, False)
+        assert ev is None
+    # Шаг 7
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev == "l6_ascent_step7"
+    handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
+    # Шаг 8
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev == "l6_step8_main"
+    handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
+
+    assert game.story_flags["l6_ascent_progress"] == 8
+
+    # Игрок решает уйти в другую локацию (например, Стартовый лес)
+    game.current_location = "Стартовый лес"
+    # Прогресс сбросился в 0
+    assert game.story_flags.get("l6_ascent_progress") == 0
+    assert any("Ты отступил назад, спасаясь от стужи" in str(x) for x in game.event_log)
+
+    # Игрок возвращается в Мохнатую пещеру
+    game.current_location = "Мохнатая пещера"
+    assert game.story_flags.get("l6_ascent_progress") == 0
+
+    # Начинает подъём заново:
+    # Шаг 1: обычный
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev is None
+    assert game.story_flags["l6_ascent_progress"] == 1
+
+    # Шаг 2: РАНЕЕ ПРОЙДЕН! Не должен вызываться повторно!
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev is None  # Никакого повторного сюжета!
+    assert game.story_flags["l6_ascent_progress"] == 2
+
+    # Шаг 3: обычный
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev is None
+
+    # Шаг 4: РАНЕЕ ПРОЙДЕН! Не должен вызываться повторно и дублировать лут!
+    flint_count = game.inventory.get("Кремень", 0)
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev is None  # Не вызывается!
+    assert game.story_flags["l6_ascent_progress"] == 4
+    assert game.inventory.get("Кремень", 0) == flint_count  # Лут не удвоился!
+
+    # Шаги 5, 6:
+    for i in range(5, 7):
+        ev, _ = check_forest_research_story_trigger(game, 6, False)
+        assert ev is None
+
+    # Шаги 7 и 8: РАНЕЕ ПРОЙДЕНЫ!
+    ev7, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev7 is None
+    assert game.story_flags["l6_ascent_progress"] == 7
+
+    ev8, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev8 is None
+    assert game.story_flags["l6_ascent_progress"] == 8
+
+    # Шаг 9: обычный
+    ev9, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev9 is None
+    assert game.story_flags["l6_ascent_progress"] == 9
+
+    # Шаг 10: РАНЕЕ НЕ БЫЛ ПРОЙДЕН (игрок ушёл на 8-м)! Должен сработать!
+    ev10, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev10 == "l6_step10_main"
+    assert game.story_flags["l6_ascent_progress"] == 10
+    assert game.is_story_flag_set("l6_step10_seen")
+
 
 

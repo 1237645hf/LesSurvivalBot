@@ -346,22 +346,29 @@ def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool)
         return None, None
 
     if loc_id == 6:
+        # Подъём по ледяным гротам (исследования 1..40 до Тёплой пещеры)
         if not game.is_story_flag_set("warm_cave_shelter"):
             cur_prog = game.story_flags.get("l6_ascent_progress", 0) + 1
-            game.story_flags["l6_ascent_progress"] = min(30, cur_prog)
-            game.add_log(f"Вылазка вглубь ледяных гротов... [Подъём: {cur_prog}/30]")
+            game.story_flags["l6_ascent_progress"] = min(40, cur_prog)
+            game.add_log(f"Вылазка вглубь ледяных гротов... [Подъём: {cur_prog}/40]")
 
+            if cur_prog == 2 and not game.is_story_flag_set("l6_step2_seen"):
+                game.set_story_flag("l6_step2_seen", True)
+                return "l6_step2_hub", None
+            if cur_prog == 4 and not game.is_story_flag_set("l6_step4_seen"):
+                game.set_story_flag("l6_step4_seen", True)
+                return "l6_step4_main", None
             if cur_prog == 7 and not game.is_story_flag_set("l6_step7_seen"):
                 game.set_story_flag("l6_step7_seen", True)
                 return "l6_ascent_step7", None
-            if cur_prog == 15 and not game.is_story_flag_set("l6_step15_seen"):
-                game.set_story_flag("l6_step15_seen", True)
-                return "l6_ascent_step15", None
-            if cur_prog == 22 and not game.is_story_flag_set("l6_step22_seen"):
-                game.set_story_flag("l6_step22_seen", True)
-                return "l6_ascent_step22", None
-            if cur_prog >= 30 and not game.is_story_flag_set("warm_cave_shelter"):
-                return "l6_ascent_step30", None
+            if cur_prog == 8 and not game.is_story_flag_set("l6_step8_seen"):
+                game.set_story_flag("l6_step8_seen", True)
+                return "l6_step8_main", None
+            if cur_prog == 10 and not game.is_story_flag_set("l6_step10_seen"):
+                game.set_story_flag("l6_step10_seen", True)
+                return "l6_step10_main", None
+            if cur_prog >= 40 and not game.is_story_flag_set("warm_cave_shelter"):
+                return "l6_ascent_step40", None
         return None, None
 
     if loc_id != 1:
