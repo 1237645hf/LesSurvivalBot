@@ -7,6 +7,7 @@ modules/finds.py — Лут исследования по локациям (ис
 
 from typing import Dict, List, Any, Optional, Tuple
 import random
+import math
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -348,6 +349,8 @@ def apply_finds_to_inventory(game, found: List[str]) -> str:
             parts.append(f"{item} ×{qty}")
         else:
             parts.append(item)
+    if hasattr(game, "check_fur_unlock"):
+        game.check_fur_unlock()
     return "🔍 Нашёл: " + ", ".join(parts)
 
 
@@ -424,6 +427,27 @@ async def handle_explore_callback(
             text = get_death_text(game, "Смертельное истощение от голода и жажды в ходе исследования.", getattr(game, "current_location", None))
             kb = get_death_kb()
             return text, kb
+
+        # Механика холода на Локации 6 (Мохнатая пещера)
+        if loc_id == 6:
+            cold_prot = int(getattr(game, "cold_protection", 0) or 0)
+            if cold_prot < 100:
+                unprotected = (100 - cold_prot) / 100.0
+                base_dmg = random.randint(10, 15)
+                actual_dmg = math.floor(base_dmg * unprotected)
+                if actual_dmg > 0:
+                    game.hp -= actual_dmg
+                    game.add_log(f"🥶 Пронизывающий мороз пещеры сковывает мышцы и пробирает до костей! (❤️ -{actual_dmg} HP)")
+                    if game.hp <= 0:
+                        game.hp = 0
+                        game.active_story_callback = None
+                        text = get_death_text(
+                            game,
+                            reason="Смертельное переохлаждение в гротах Мохнатой пещеры.",
+                            location_name="Мохнатая пещера",
+                        )
+                        kb = get_death_kb()
+                        return text, kb
 
         torch_equipped = (
             game.equipment.get("hand_left") == "Факел"

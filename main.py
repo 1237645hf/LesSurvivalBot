@@ -3,6 +3,7 @@ import logging
 import os
 import time
 import random
+import math
 from typing import Optional, Dict, List, Any
 from textwrap import wrap
 from pathlib import Path
@@ -864,8 +865,82 @@ async def cmd_settings(message: Message):
 
 def handle_sleep_action(game: Any) -> tuple[str, Any]:
     """Обрабатывает сон персонажа, смену дня, проверки смерти и ловушек."""
-    game.sleep_and_turn_day()
     cur_loc = str(getattr(game, "current_location", "") or "")
+    is_l6 = (
+        "мохнат" in cur_loc.lower()
+        or "пещер" in cur_loc.lower()
+        or getattr(game, "location_index", None) == 5
+    )
+    is_warm_shelter = bool(hasattr(game, "is_story_flag_set") and game.is_story_flag_set("warm_cave_shelter")) or bool(getattr(game, "story_flags", {}).get("warm_cave_shelter"))
+
+    if is_l6 and not is_warm_shelter:
+        cold_prot = int(getattr(game, "cold_protection", 0) or 0)
+        if cold_prot < 100:
+            unprotected = (100 - cold_prot) / 100.0
+            has_campfire = bool(getattr(game, "campfire_active", False) and getattr(game, "campfire_durability", 0) > 0)
+            base_sleep_dmg = 30 if has_campfire else 50
+            actual_sleep_dmg = math.floor(base_sleep_dmg * unprotected)
+
+            if actual_sleep_dmg > 0:
+                if game.hp <= actual_sleep_dmg:
+                    game.add_log("⚠️ Засыпать на такой холодриге без подготовки — верная смерть!")
+                    return game.get_ui(), get_main_kb(game)
+
+                if has_campfire:
+                    cold_sleep_log = f"🥶 Даже жар костра не смог защитить от ледяного сквозняка пещеры. Во сне ты сильно обморозился (❤️ -{actual_sleep_dmg} HP)."
+                else:
+                    cold_sleep_log = f"🥶 Заснув в ледяной пещере без огня, ты едва не замёрз насмерть (❤️ -{actual_sleep_dmg} HP)."
+
+                game.sleep_and_turn_day()
+                game.hp -= actual_sleep_dmg
+                game.add_log(cold_sleep_log)
+
+                if game.hp <= 0:
+                    game.hp = 0
+                    game.active_story_callback = None
+                    return get_death_text(
+                        game,
+                        "Смертельное обморожение во сне в Мохнатой пещере.",
+                        getattr(game, "current_location", "Мохнатая пещера"),
+                    ), get_death_kb()
+
+                trap_msgs = []
+                for event in process_trap_rollover(game):
+                    loc_id = event.get("location_id")
+                    if event.get("broken"):
+                        msg = f"Ловушка на локации {loc_id}: сломалась, добычи нет."
+                        game.add_log(msg)
+                        trap_msgs.append(msg)
+                        continue
+                    if event.get("empty"):
+                        msg = f"Ловушка на локации {loc_id}: пуста, ничего не попалось."
+                        game.add_log(msg)
+                        trap_msgs.append(msg)
+                        continue
+                    animal = event.get("animal")
+                    loot = event.get("loot") or {}
+                    if loot:
+                        apply_trap_loot_to_inventory(game, loot)
+                        loot_txt = ", ".join(f"{k}×{v}" for k, v in loot.items())
+                        msg = f"Ловушка на локации {loc_id}: {animal} (+{loot_txt})"
+                        game.add_log(msg)
+                        trap_msgs.append(msg)
+                    elif animal:
+                        msg = f"Ловушка на локации {loc_id}: {animal}"
+                        game.add_log(msg)
+                        trap_msgs.append(msg)
+                    trap = getattr(game, "traps", {}).get(loc_id)
+                    if trap:
+                        trap["pending_animal"] = None
+                        trap["pending_loot"] = None
+                if trap_msgs:
+                    text = game.get_ui() + "\n" + "\n".join(trap_msgs)
+                else:
+                    text = game.get_ui()
+                kb = get_main_kb(game)
+                return text, kb
+
+    game.sleep_and_turn_day()
     if "Просека" in cur_loc:
         if not hasattr(game, "story_flags") or game.story_flags is None:
             game.story_flags = {}
@@ -1000,6 +1075,8 @@ async def process_callback(callback: types.CallbackQuery):
             kb = get_locations_kb(game)
 
         elif data == "location_enter_1":
+            from story.location_stories import check_l6_ascent_leave
+            check_l6_ascent_leave(game, "Стартовый лес")
             game.current_location = "Стартовый лес"
             game.location_index = 0
             game.location = game.current_location

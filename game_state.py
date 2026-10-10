@@ -1115,7 +1115,7 @@ class GameState:
 
         # Штаны с футляром
         pants_line = _format_slot_line("👖 ШТАНЫ:", pants_item)
-        if _clean_title(pants_item) == "Кожаные поножи":
+        if _clean_title(pants_item) in ("Кожаные поножи", "Меховые поножи"):
             pocket_item = getattr(self, "pants_pocket", None)
             if pocket_item:
                 pants_line += f" (👝 Футляр: {pocket_item})"
@@ -1192,7 +1192,7 @@ class GameState:
             bonus_ap += 1
         elif self.equipment.get("hand_left") == "Старый фонарь":
             bonus_ap += 2
-        if self.equipment.get("pants") in ("Кожаные поножи", "Сланцевые поножи"):
+        if self.equipment.get("pants") in ("Кожаные поножи", "Сланцевые поножи", "Меховые поножи"):
             bonus_ap += 1
         bonus_ap += int(getattr(self, "equipment_ap_bonus", 0) or 0)
 
@@ -1207,6 +1207,8 @@ class GameState:
             stat_parts.append(f"⚡ AP {bonus_ap:+d}")
         if self.armor_defense > 0:
             stat_parts.append(f"🛡 Защита +{self.armor_defense}")
+        if self.cold_protection > 0:
+            stat_parts.append(f"❄️ Теплоизоляция: {self.cold_protection}%")
 
         stat_line = ", ".join(stat_parts)
 
@@ -1226,6 +1228,14 @@ class GameState:
         }
         leather_count = sum(1 for slot, name in leather_items.items() if self.equipment.get(slot) == name)
 
+        fur_items = {
+            "head": "Меховой капюшон",
+            "torso": "Меховой плащ-нагрудник",
+            "pants": "Меховые поножи",
+            "boots": "Меховые сапоги",
+        }
+        fur_count = sum(1 for slot, name in fur_items.items() if self.equipment.get(slot) == name)
+
         set_block_lines = []
         if slate_count > 0:
             set_block_lines.append(f"КОМПЛЕКТ: {slate_count} из 4")
@@ -1233,6 +1243,18 @@ class GameState:
                 set_block_lines.append("• 🛡 Иммунитет к оглушению")
             if slate_count > 0 or getattr(self, "is_story_flag_set", lambda f: False)("l2_thorns_seen"):
                 set_block_lines.append(f"• 🛡 Защита от шипов: {slate_count}/4")
+        elif fur_count > 0:
+            set_block_lines.append(f"КОМПЛЕКТ: {fur_count} из 4 (Меховой)")
+            if self.is_full_fur_set_equipped():
+                set_block_lines.append("• ❄️ Полная защита от холода (100%)")
+                set_block_lines.append("• 🧪 Защита от кислоты")
+                set_block_lines.append("• 🏃 Уворот: 15%")
+            else:
+                set_block_lines.append(f"• ❄️ Защита от холода: {self.cold_protection}%")
+                if self.equipment.get("torso") == "Меховой плащ-нагрудник":
+                    set_block_lines.append("• 🧪 Защита от кислоты")
+                if self.dodge_chance > 0:
+                    set_block_lines.append(f"• 🏃 Уворот: +{self.dodge_chance}%")
         elif leather_count > 0:
             set_block_lines.append(f"КОМПЛЕКТ: {leather_count} из 4")
             if self.is_full_leather_set_equipped():
@@ -1280,6 +1302,10 @@ class GameState:
             "Кожаный нагрудник": 16,
             "Кожаные поножи": 8,
             "Кожаные сапоги": 4,
+            "Меховой капюшон": 6,
+            "Меховой плащ-нагрудник": 20,
+            "Меховые поножи": 10,
+            "Меховые сапоги": 6,
         }
         for item in (getattr(self, "equipment", {}) or {}).values():
             if item in armor_hp:
@@ -1298,6 +1324,10 @@ class GameState:
             "Кожаный нагрудник": 3,
             "Кожаные поножи": 2,
             "Кожаные сапоги": 1,
+            "Меховой капюшон": 2,
+            "Меховой плащ-нагрудник": 4,
+            "Меховые поножи": 2,
+            "Меховые сапоги": 2,
         }
         for item in (getattr(self, "equipment", {}) or {}).values():
             if item in armor_def:
@@ -1322,19 +1352,61 @@ class GameState:
             and eq.get("boots") == "Кожаные сапоги"
         )
 
+    def is_full_fur_set_equipped(self) -> bool:
+        eq = getattr(self, "equipment", {}) or {}
+        return (
+            eq.get("head") == "Меховой капюшон"
+            and eq.get("torso") == "Меховой плащ-нагрудник"
+            and eq.get("pants") == "Меховые поножи"
+            and eq.get("boots") == "Меховые сапоги"
+        )
+
+    @property
+    def cold_protection(self) -> int:
+        from modules.items import ITEMS
+        eq = getattr(self, "equipment", {}) or {}
+        prot = 0
+        for slot in ("head", "torso", "pants", "boots"):
+            item = eq.get(slot)
+            if item and item in ITEMS:
+                prot += ITEMS[item].get("effects", {}).get("cold_protection", 0)
+        return min(100, prot)
+
+    def check_fur_unlock(self) -> bool:
+        """Проверяет получение меха или нахождение в тёплой пещере и разблокирует рецепты мехового сета."""
+        has_fur_or_shelter = (
+            getattr(self, "inventory", {}).get("Мех", 0) > 0
+            or getattr(self, "is_story_flag_set", lambda f: False)("warm_cave_shelter")
+            or getattr(self, "story_flags", {}).get("warm_cave_shelter")
+        )
+        if has_fur_or_shelter and not getattr(self, "is_story_flag_set", lambda f: False)("fur_recipes_unlocked"):
+            self.set_story_flag("fur_recipes_unlocked", True)
+            unlocked = list(getattr(self, "unlocked_crafts", []) or [])
+            for item in ("Меховой капюшон", "Меховой плащ-нагрудник", "Меховые поножи", "Меховые сапоги"):
+                if item not in unlocked:
+                    unlocked.append(item)
+            self.unlocked_crafts = unlocked
+            self.add_log("Держа в руках плотный мех, ты прикидываешь выкройку. В меню крафта открыта меховая экипировка.")
+            return True
+        return False
+
     @property
     def dodge_chance(self) -> int:
         """Шанс уворота в процентах (0..100%)."""
-        leather_dodge = {
+        armor_dodge = {
             "Кожаный капюшон": 5,
             "Кожаный нагрудник": 15,
             "Кожаные поножи": 8,
             "Кожаные сапоги": 7,
+            "Меховой капюшон": 2,
+            "Меховой плащ-нагрудник": 7,
+            "Меховые поножи": 3,
+            "Меховые сапоги": 3,
         }
         dodge = 0
         for item in (getattr(self, "equipment", {}) or {}).values():
-            if item in leather_dodge:
-                dodge += leather_dodge[item]
+            if item in armor_dodge:
+                dodge += armor_dodge[item]
         if self.equipment.get("trinket") == "Костяной амулет охотника":
             dodge += 5
         return dodge

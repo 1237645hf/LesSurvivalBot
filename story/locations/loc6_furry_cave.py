@@ -26,12 +26,40 @@ def get_main_kb(*args, **kwargs):
     return keyboards.get_main_kb(*args, **kwargs)
 
 
+def unlock_warm_cave_shelter(game):
+    """Активирует Тёплую пещеру, рецепты мехового сета и защиту."""
+    game.set_story_flag("warm_cave_shelter", True)
+    game.set_story_flag("fur_recipes_unlocked", True)
+    unlocked = getattr(game, "unlocked_crafts", None)
+    if unlocked is not None:
+        for r in ("Меховой капюшон", "Меховой плащ-нагрудник", "Меховые поножи", "Меховые сапоги"):
+            if r not in unlocked:
+                unlocked.append(r)
+
+
 def handle_location_6_furry_cave(data, game, uid):
     """Обработать события на локации 'Мохнатая Пещера' (L6)."""
     text = None
     kb = None
 
-    if data in ("furry_cave_start", "location_enter_6"):
+    # При взаимодействии с Тёплой пещерой активируем шелтер и рецепты
+    if data.startswith("furry_") or data == "l6_ascent_step30":
+        unlock_warm_cave_shelter(game)
+
+    if data == "location_enter_6":
+        game.current_location = "Мохнатая пещера"
+        game.location_index = 5
+        game.location = game.current_location
+        game.pre_story_location = game.current_location
+        if game.is_story_flag_set("warm_cave_shelter"):
+            data = "furry_cave_start"
+        else:
+            game.story_state = None
+            game.active_story_callback = None
+            return game.get_ui(), get_main_kb(game)
+
+    if data == "furry_cave_start":
+        unlock_warm_cave_shelter(game)
         game.story_state = "furry_cave_start"
         text = (
             "Ты входишь в Мохнатую Пещеру. Воздух здесь тёплый, пахнет дымом, мехом\n"
@@ -75,7 +103,7 @@ def handle_location_6_furry_cave(data, game, uid):
         game.story_state = "furry_bundle"
         text = (
             "Ты развязываешь бечёвку.\n"
-            "Внутри — три хороших куска выделанного меха и короткая надпись,\n"
+            "Внутри — три хороших куска выделанного меха, выкройки тёплой одежды и короткая надпись,\n"
             "нацарапанная углем на внутренней стороне шкуры:\n\n"
             "«Бери, если нужно.\n"
             "Оставь, если сможешь.»"
@@ -246,7 +274,162 @@ def handle_location_6_furry_cave(data, game, uid):
             game.reset_nav()
         kb = get_main_kb(game)
 
-    if kb == get_main_kb(game) or data in ("furry_end", "furry_leave", "back") or getattr(game, "hp", 100) <= 0:
+    # ──────────────────────────────────────────────────────────────────────────
+    # СЮЖЕТНЫЕ ОКНА ПОДЪЁМА (30 ИССЛЕДОВАНИЙ)
+    # ──────────────────────────────────────────────────────────────────────────
+
+    elif data == "l6_ascent_step7":
+        game.story_state = "l6_ascent_step7"
+        text = (
+            "Пещера на миг распахивается узким ледяным балконом над бездной. "
+            "В клубах пара на карнизе пасутся горные бараны. Они спокойно смотрят на человека "
+            "немигающими глазами, словно не боясь людей вовсе."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👁️ Замереть и молча наблюдать", callback_data="l6_step7_observe")],
+            [InlineKeyboardButton(text="⏩ Торопливо пройти вглубь теснины", callback_data="l6_step7_pass")],
+        ])
+
+    elif data == "l6_step7_observe":
+        game.adjust_narrative_karma("observation", 1)
+        game.story_state = "l6_step7_observe"
+        text = (
+            "Ты замираешь, стараясь даже не дышать паром. "
+            "Бараны переступают копытами по обледенелому карнизу, не спуская с тебя внимательных глаз. "
+            "В их спокойствии чувствуется величие этой горы. Ты тихо двигаешься дальше."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➡️ Продолжить подъём", callback_data="l6_ascent_continue")]
+        ])
+
+    elif data == "l6_step7_pass":
+        game.adjust_narrative_karma("pragmatism", 1)
+        game.story_state = "l6_step7_pass"
+        text = (
+            "Здесь слишком ветрено и опасно. Не теряя драгоценных сил и тепла, "
+            "ты отводишь взгляд и быстро ныряешь обратно в скальную теснину, следуя за тягой воздуха."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➡️ Продолжить подъём", callback_data="l6_ascent_continue")]
+        ])
+
+    elif data == "l6_ascent_step15":
+        game.story_state = "l6_ascent_step15"
+        text = (
+            "Под слоем прозрачного льда в скальной нише видны остатки древнего кострища и обгоревшие кости. "
+            "Рядом на монолите выбит знакомый знак: три насечки, перечёркнутые линией. "
+            "Кто-то шёл этой дорогой до нас, но бросил стоянку."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 Разгрести лёд в поисках угля и зацепок", callback_data="l6_step15_observe")],
+            [InlineKeyboardButton(text="⏩ Двигаться дальше, экономя тепло", callback_data="l6_step15_pass")],
+        ])
+
+    elif data == "l6_step15_observe":
+        game.adjust_narrative_karma("observation", 1)
+        game.inventory["Древесный уголь"] = game.inventory.get("Древесный уголь", 0) + 1
+        game.story_state = "l6_step15_observe"
+        text = (
+            "Ты скалываешь тонкую кромку наплыва. Среди углей видны следы старой стоянки — "
+            "здесь пережидали буран те, кто оставил метки на просеке и яре. "
+            "Найден кусок древесного угля (+1 Древесный уголь). Ты запоминаешь направление их ухода."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➡️ Продолжить подъём", callback_data="l6_ascent_continue")]
+        ])
+
+    elif data == "l6_step15_pass":
+        game.adjust_narrative_karma("pragmatism", 1)
+        game.story_state = "l6_step15_pass"
+        text = (
+            "Ковыряться в промёрзшем камне голыми руками — верный путь к обморожению пальцев. "
+            "Ты отдаёшь молчаливую дань первопроходцам и упорно шагаешь выше."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➡️ Продолжить подъём", callback_data="l6_ascent_continue")]
+        ])
+
+    elif data == "l6_ascent_step22":
+        game.story_state = "l6_ascent_step22"
+        text = (
+            "Воздух становится кристально разреженным, мороз обжигает лёгкие до звона в ушах. "
+            "Из гулкой темноты расщелины, сквозь вой ветра, начинает доноситься не то шёпот, не то монотонный гул, "
+            "складывающийся в слова в голове персонажа. Морок это от гипотермии или дыхание горы?\n\n"
+            "Голос не зовёт, а будто испытывает чужака вопросом с подвохом:\n\n"
+            "«Зачем ты лезешь наверх, смертный ком плоти? Чтобы выжить любой ценой, согрев лишь своё нутро? "
+            "Или чтобы понять, почему этот мир молчит?»"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🕊️ «Я иду, чтобы сохранить в себе человека и сберечь других»", callback_data="l6_whisper_compassion")],
+            [InlineKeyboardButton(text="⚔️ «Я выживу назло этой горе, чего бы это ни стоило»", callback_data="l6_whisper_pragmatism")],
+            [InlineKeyboardButton(text="👁️ Зажать уши и молча шагнуть сквозь туман", callback_data="l6_whisper_observation")],
+        ])
+
+    elif data == "l6_whisper_compassion":
+        game.adjust_narrative_karma("compassion", 2)
+        game.set_story_flag("l6_whisper_choice", "compassion")
+        game.story_state = "l6_whisper_compassion"
+        text = (
+            "«Сохранить...» — эхо мягко растворяется в ледяных кристаллах.\n\n"
+            "Тяжесть в груди сменяется странным, тёплым спокойствием. "
+            "Наваждение резко спадает — впереди лишь тишина, пар изо рта и уходящая круто вверх тропа."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➡️ Шагнуть сквозь тишину", callback_data="l6_ascent_continue")]
+        ])
+
+    elif data == "l6_whisper_pragmatism":
+        game.adjust_narrative_karma("pragmatism", 1)
+        game.adjust_narrative_karma("intervention", 1)
+        game.set_story_flag("l6_whisper_choice", "pragmatism")
+        game.story_state = "l6_whisper_pragmatism"
+        text = (
+            "Холодный смешок проносится по сводам, рассыпаясь ледяной крошкой. "
+            "Твоя воля тверда как кремень, и гора отступает перед твоим упрямством.\n\n"
+            "Наваждение резко спадает — впереди лишь тишина, пар изо рта и уходящая круто вверх тропа."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➡️ Шагнуть сквозь тишину", callback_data="l6_ascent_continue")]
+        ])
+
+    elif data == "l6_whisper_observation":
+        game.adjust_narrative_karma("observation", 2)
+        game.set_story_flag("l6_whisper_choice", "observation")
+        game.story_state = "l6_whisper_observation"
+        text = (
+            "Ты не вступаешь в диалог с мороком, отрешённо наблюдая за тем, как пляшут тени в клубах пара. "
+            "Ты просто идёшь вперёд, фиксируя каждый шаг.\n\n"
+            "Наваждение бессильно отступает. Впереди лишь тишина, пар изо рта и уходящая круто вверх тропа."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➡️ Шагнуть сквозь тишину", callback_data="l6_ascent_continue")]
+        ])
+
+    elif data == "l6_ascent_step30":
+        unlock_warm_cave_shelter(game)
+        game.story_state = "furry_cave_start"
+        text = (
+            "Сквозняк внезапно стихает. Протиснувшись сквозь ледяную щель, герой попадает в замкнутый грот: "
+            "сухо, на стенах развешаны шкуры, пахнет дымом старого очага, под ногами мягкий мох. "
+            "То самое спасительное убежище.\n\n"
+            "Открыта постоянная база: Тёплая пещера!\n\n"
+            "Что будешь делать?"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 Осмотреть пещеру", callback_data="furry_examine")],
+            [InlineKeyboardButton(text="🔥 Подойти к очагу", callback_data="furry_warm")],
+            [InlineKeyboardButton(text="💤 Сразу лечь отдохнуть", callback_data="furry_sleep")],
+            [InlineKeyboardButton(text="🚶 Уйти", callback_data="furry_leave")],
+        ])
+
+    elif data == "l6_ascent_continue":
+        game.story_state = None
+        game.active_story_callback = None
+        if hasattr(game, "reset_nav"):
+            game.reset_nav()
+        return game.get_ui(), get_main_kb(game)
+
+    if kb == get_main_kb(game) or data in ("furry_end", "furry_leave", "back", "l6_ascent_continue") or getattr(game, "hp", 100) <= 0:
         game.active_story_callback = None
     elif text is not None:
         game.active_story_callback = data

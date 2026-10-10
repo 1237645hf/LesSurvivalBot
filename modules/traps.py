@@ -233,6 +233,8 @@ def apply_trap_loot_to_inventory(game_state, loot: Dict[str, int]) -> None:
     inv = game_state.inventory
     for item, qty in (loot or {}).items():
         inv[item] = inv.get(item, 0) + int(qty)
+    if hasattr(game_state, "check_fur_unlock"):
+        game_state.check_fur_unlock()
 
 
 def is_traps_callback(data: str) -> bool:

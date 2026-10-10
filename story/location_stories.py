@@ -72,11 +72,24 @@ from story.locations.loc7_sanctuary import (
 )
 
 
+def check_l6_ascent_leave(game, new_location_name: str = ""):
+    """Сброс прогресса подъёма при уходе с L6 до открытия Тёплой пещеры."""
+    cur_loc = str(getattr(game, "current_location", "") or "").lower()
+    is_on_l6 = ("мохнат" in cur_loc or "пещер" in cur_loc or getattr(game, "location_index", None) == 5)
+    if is_on_l6 and "мохнат" not in str(new_location_name).lower() and "пещер" not in str(new_location_name).lower():
+        if not game.is_story_flag_set("warm_cave_shelter") and game.story_flags.get("l6_ascent_progress", 0) > 0:
+            game.story_flags["l6_ascent_progress"] = 0
+            game.add_log("Ты отступил назад, спасаясь от стужи. Метель замела уступы — подъём придётся начинать заново.")
+
+
 def handle_story(data: str, game, uid: int):
     """Обработать сюжетную сцену волка и котёнка или передать в ветку других локаций."""
     if data in ("already_here", "loc_already_here"):
         game.add_log("Ты уже находишься в этой локации.")
         return game.get_ui(), get_locations_kb(game)
+
+    if data.startswith("location_enter_") and data != "location_enter_6":
+        check_l6_ascent_leave(game, data)
 
     if not getattr(game, "active_story_callback", None) and not getattr(game, "story_state", None):
         if not getattr(game, "pre_story_location", None):
@@ -138,13 +151,13 @@ def handle_story(data: str, game, uid: int):
             res = handle_location_5_slug_pit("slug_pit_start", game, uid)
         else:
             res = handle_location_5_slug_pit(data, game, uid)
-    elif data.startswith("furry_") or data.startswith("warm_") or data.startswith("cave_") or data == "location_enter_6":
+    elif data.startswith("furry_") or data.startswith("warm_") or data.startswith("cave_") or data.startswith("l6_") or data == "location_enter_6":
         if data == "location_enter_6":
             game.current_location = "Мохнатая пещера"
             game.location_index = 5
             game.location = game.current_location
             game.pre_story_location = game.current_location
-            res = handle_location_6_furry_cave("furry_cave_start", game, uid)
+            res = handle_location_6_furry_cave("location_enter_6", game, uid)
         else:
             res = handle_location_6_furry_cave(data, game, uid)
     elif data.startswith("sanctuary_") or data == "location_enter_7":
@@ -328,6 +341,25 @@ def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool)
                     return "l5_2_1", "👣 На сухом уступе возле сланцевой плиты приходят мысли о виденной твари..."
         return None, None
 
+    if loc_id == 6:
+        if not game.is_story_flag_set("warm_cave_shelter"):
+            cur_prog = game.story_flags.get("l6_ascent_progress", 0) + 1
+            game.story_flags["l6_ascent_progress"] = min(30, cur_prog)
+            game.add_log(f"Вылазка вглубь ледяных гротов... [Подъём: {cur_prog}/30]")
+
+            if cur_prog == 7 and not game.is_story_flag_set("l6_step7_seen"):
+                game.set_story_flag("l6_step7_seen", True)
+                return "l6_ascent_step7", None
+            if cur_prog == 15 and not game.is_story_flag_set("l6_step15_seen"):
+                game.set_story_flag("l6_step15_seen", True)
+                return "l6_ascent_step15", None
+            if cur_prog == 22 and not game.is_story_flag_set("l6_step22_seen"):
+                game.set_story_flag("l6_step22_seen", True)
+                return "l6_ascent_step22", None
+            if cur_prog >= 30 and not game.is_story_flag_set("warm_cave_shelter"):
+                return "l6_ascent_step30", None
+        return None, None
+
     if loc_id != 1:
         return None, None
 
@@ -400,7 +432,7 @@ def is_story_callback(data: str) -> bool:
             "l3_", "slate_", "rest_", "examine",
             "hunters_", "glade_", "l4_",
             "slug_", "pit_", "l5_", "slime_battle",
-            "furry_", "warm_", "cave_",
+            "furry_", "warm_", "cave_", "l6_",
             "sanctuary_",
         ))
     )

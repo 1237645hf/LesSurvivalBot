@@ -35,6 +35,34 @@ CRAFT_RECIPES = {
         ("Кость", 2),
         ("Кожа", 2),
     ],
+    "Меховой капюшон": [
+        ("Кожаный капюшон", 1),
+        ("Мех", 2),
+        ("Пещерный мох", 1),
+        ("Кожа", 1),
+        ("Слизь", 1),
+    ],
+    "Меховой плащ-нагрудник": [
+        ("Кожаный нагрудник", 1),
+        ("Мех", 10),
+        ("Пещерный мох", 4),
+        ("Кожа", 1),
+        ("Слизь", 5),
+    ],
+    "Меховые поножи": [
+        ("Кожаные поножи", 1),
+        ("Мех", 5),
+        ("Пещерный мох", 3),
+        ("Кожа", 2),
+        ("Слизь", 1),
+    ],
+    "Меховые сапоги": [
+        ("Кожаные сапоги", 1),
+        ("Мех", 4),
+        ("Пещерный мох", 2),
+        ("Кожа", 2),
+        ("Слизь", 2),
+    ],
 }
 
 CRAFT_YIELDS = {
@@ -50,6 +78,27 @@ SLATE_ARMOR_RECIPES = {
     "Сланцевые поножи",
     "Сланцевые ботинки",
 }
+
+FUR_ARMOR_RECIPES = {
+    "Меховой капюшон",
+    "Меховой плащ-нагрудник",
+    "Меховые поножи",
+    "Меховые сапоги",
+}
+
+
+def is_warm_cave_active(game) -> bool:
+    """Проверяет, активен ли шелтер тёплой пещеры или находится ли игрок на базе L6."""
+    if getattr(game, "is_story_flag_set", lambda f: False)("warm_cave_shelter"):
+        return True
+    if getattr(game, "story_flags", {}).get("warm_cave_shelter"):
+        return True
+    cur_loc = str(getattr(game, "current_location", "") or "").lower()
+    if any(kw in cur_loc for kw in ("мохнат", "пещер", "тёпл")):
+        return True
+    if getattr(game, "location_index", None) == 5:
+        return True
+    return False
 
 
 def get_available_tinder(game) -> Optional[str]:
@@ -70,7 +119,11 @@ count_sushnyak = count_tinder
 
 
 def _check_ingredient(game, name: str, need: int) -> bool:
-    if name in ("Сушняк", "Трут", "Мох"):
+    if name == "Мех":
+        if is_warm_cave_active(game):
+            return True
+        return game.inventory.get(name, 0) >= need
+    if name in ("Пещерный мох", "Сушняк", "Трут", "Мох"):
         return count_tinder(game) >= need
     if name in ("Кусок коры", "Кора"):
         return (game.inventory.get("Кусок коры", 0) + game.inventory.get("Кора", 0)) >= need
@@ -85,6 +138,14 @@ def _check_ingredient(game, name: str, need: int) -> bool:
         return total_berries >= need
     if name == "Старый фонарь":
         return game.inventory.get("Старый фонарь", 0) >= need or game.equipment.get("hand_left") == "Старый фонарь"
+    if name == "Кожаный капюшон":
+        return (game.inventory.get(name, 0) + (1 if game.equipment.get("head") == name else 0)) >= need
+    if name == "Кожаный нагрудник":
+        return (game.inventory.get(name, 0) + (1 if game.equipment.get("torso") == name else 0)) >= need
+    if name == "Кожаные поножи":
+        return (game.inventory.get(name, 0) + (1 if game.equipment.get("pants") == name else 0)) >= need
+    if name == "Кожаные сапоги":
+        return (game.inventory.get(name, 0) + (1 if game.equipment.get("boots") == name else 0)) >= need
     return game.inventory.get(name, 0) >= need
 
 
@@ -155,6 +216,15 @@ def can_craft(game, recipe_name: str) -> bool:
         has_cores = game.inventory.get("Янтарное ядро", 0) >= 2
         not_full = int(getattr(game, "lantern_durability", 20) or 0) < 20
         return has_lantern and has_cores and not_full
+    if recipe_name in FUR_ARMOR_RECIPES:
+        has_fur_unlock = (
+            getattr(game, "is_story_flag_set", lambda f: False)("fur_recipes_unlocked")
+            or getattr(game, "story_flags", {}).get("fur_recipes_unlocked")
+            or is_warm_cave_active(game)
+            or getattr(game, "inventory", {}).get("Мех", 0) > 0
+        )
+        if not has_fur_unlock:
+            return False
     return all(_check_ingredient(game, n, q) for n, q in ingredients)
 
 
@@ -163,6 +233,15 @@ def craft_mark(game, recipe_name: str) -> str:
         return "❌ (уже есть)"
     if recipe_name in SLATE_ARMOR_RECIPES and not game.is_story_flag_set("l2_thorns_seen"):
         return "❌ (сначала стена терновника)"
+    if recipe_name in FUR_ARMOR_RECIPES:
+        has_fur_unlock = (
+            getattr(game, "is_story_flag_set", lambda f: False)("fur_recipes_unlocked")
+            or getattr(game, "story_flags", {}).get("fur_recipes_unlocked")
+            or is_warm_cave_active(game)
+            or getattr(game, "inventory", {}).get("Мех", 0) > 0
+        )
+        if not has_fur_unlock:
+            return "❌ (заблокировано)"
     if recipe_name == "Факел" and has_torch(game):
         return "❌ (уже есть)"
     if recipe_name == "Костёр" and has_campfire(game):
@@ -242,10 +321,28 @@ def do_craft(game, recipe_name: str):
     if not can_craft(game, recipe_name):
         missing = []
         for n, q in ingredients:
-            if n in ("Сушняк", "Трут", "Мох"):
+            if n == "Мех" and is_warm_cave_active(game):
+                continue
+            elif n in ("Сушняк", "Трут", "Мох", "Пещерный мох"):
                 have = count_tinder(game)
                 if have < q:
-                    missing.append(f"Мох/сушняк {have}/{q}")
+                    missing.append(f"Мох {have}/{q}")
+            elif n == "Кожаный капюшон":
+                have = game.inventory.get(n, 0) + (1 if game.equipment.get("head") == n else 0)
+                if have < q:
+                    missing.append(f"Кожаный капюшон {have}/{q}")
+            elif n == "Кожаный нагрудник":
+                have = game.inventory.get(n, 0) + (1 if game.equipment.get("torso") == n else 0)
+                if have < q:
+                    missing.append(f"Кожаный нагрудник {have}/{q}")
+            elif n == "Кожаные поножи":
+                have = game.inventory.get(n, 0) + (1 if game.equipment.get("pants") == n else 0)
+                if have < q:
+                    missing.append(f"Кожаные поножи {have}/{q}")
+            elif n == "Кожаные сапоги":
+                have = game.inventory.get(n, 0) + (1 if game.equipment.get("boots") == n else 0)
+                if have < q:
+                    missing.append(f"Кожаные сапоги {have}/{q}")
             elif n in ("Кусок коры", "Кора"):
                 have = game.inventory.get("Кусок коры", 0) + game.inventory.get("Кора", 0)
                 if have < q:
@@ -264,10 +361,23 @@ def do_craft(game, recipe_name: str):
                     missing.append(f"{n} {have}/{q}")
         return False, "Не хватает: " + ", ".join(missing)
 
+    equipped_upgrade_slot = None
+    if recipe_name == "Меховой капюшон" and game.equipment.get("head") == "Кожаный капюшон" and game.inventory.get("Кожаный капюшон", 0) <= 0:
+        equipped_upgrade_slot = "head"
+    elif recipe_name == "Меховой плащ-нагрудник" and game.equipment.get("torso") == "Кожаный нагрудник" and game.inventory.get("Кожаный нагрудник", 0) <= 0:
+        equipped_upgrade_slot = "torso"
+    elif recipe_name == "Меховые поножи" and game.equipment.get("pants") == "Кожаные поножи" and game.inventory.get("Кожаные поножи", 0) <= 0:
+        equipped_upgrade_slot = "pants"
+    elif recipe_name == "Меховые сапоги" and game.equipment.get("boots") == "Кожаные сапоги" and game.inventory.get("Кожаные сапоги", 0) <= 0:
+        equipped_upgrade_slot = "boots"
+
     # Списание ресурсов
     for n, q in ingredients:
         rem = q
-        if n in ("Сушняк", "Трут", "Мох"):
+        if n == "Мех" and is_warm_cave_active(game):
+            # Мех берётся напрямую со стен пещеры, из инвентаря игрока НЕ списывается!
+            continue
+        elif n in ("Сушняк", "Трут", "Мох", "Пещерный мох"):
             for t_name in TINDER_ITEMS:
                 if rem <= 0:
                     break
@@ -278,6 +388,14 @@ def do_craft(game, recipe_name: str):
                     rem -= take
                     if game.inventory[t_name] <= 0:
                         del game.inventory[t_name]
+        elif n in ("Кожаный капюшон", "Кожаный нагрудник", "Кожаные поножи", "Кожаные сапоги"):
+            if game.inventory.get(n, 0) >= q:
+                game.inventory[n] -= q
+                if game.inventory[n] <= 0:
+                    del game.inventory[n]
+            else:
+                # Базовый предмет был надет на персонаже и будет заменён прямо в слоте
+                pass
         elif n in ("Кусок коры", "Кора"):
             for b_name in ("Кусок коры", "Кора"):
                 if rem <= 0:
@@ -328,8 +446,25 @@ def do_craft(game, recipe_name: str):
                 del game.inventory[n]
 
     # Добавление скрафченного предмета
-    yield_qty = CRAFT_YIELDS.get(recipe_name, 1)
-    game.inventory[recipe_name] = game.inventory.get(recipe_name, 0) + yield_qty
+    if recipe_name in FUR_ARMOR_RECIPES and is_warm_cave_active(game):
+        cave_note = " Мех взят из запасов пещеры — здесь его более чем в избытке."
+        if equipped_upgrade_slot:
+            game.equipment[equipped_upgrade_slot] = recipe_name
+            game.add_log(f"Ваша броня улучшена: {recipe_name} теперь надето на вас!{cave_note}")
+        else:
+            yield_qty = CRAFT_YIELDS.get(recipe_name, 1)
+            game.inventory[recipe_name] = game.inventory.get(recipe_name, 0) + yield_qty
+            game.add_log(f"Скрафчено: {recipe_name}.{cave_note}")
+        if hasattr(game, "unlock_craft"):
+            game.unlock_craft(recipe_name)
+        return True, "Мех взят из запасов пещеры — здесь его более чем в избытке."
+
+    if equipped_upgrade_slot:
+        game.equipment[equipped_upgrade_slot] = recipe_name
+        game.add_log(f"Ваша броня улучшена: {recipe_name} теперь надето на вас!")
+    else:
+        yield_qty = CRAFT_YIELDS.get(recipe_name, 1)
+        game.inventory[recipe_name] = game.inventory.get(recipe_name, 0) + yield_qty
     if hasattr(game, "unlock_craft"):
         game.unlock_craft(recipe_name)
     if recipe_name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
@@ -375,6 +510,10 @@ CRAFT_ICONS = {
     "Кожаный нагрудник": "🦺",
     "Кожаные поножи": "👖",
     "Кожаные сапоги": "🥾",
+    "Меховой капюшон": "🧢",
+    "Меховой плащ-нагрудник": "🧥",
+    "Меховые поножи": "👖",
+    "Меховые сапоги": "🥾",
     "Зарядить фонарь": "🔦",
     "Пузырёк": "🧪",
     "Янтарное зелье": "🍹",
@@ -383,6 +522,8 @@ CRAFT_ICONS = {
 
 def get_craft_menu_text(game) -> str:
     """Формирует текст экрана крафта: показывает сколько есть / сколько надо для каждого ингредиента."""
+    if hasattr(game, "check_fur_unlock"):
+        game.check_fur_unlock()
     unlocked = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
     has_spear = (
         game.inventory.get("Охотничье сланцевое копьё", 0) > 0
@@ -400,6 +541,21 @@ def get_craft_menu_text(game) -> str:
             continue
         if name in SLATE_ARMOR_RECIPES and not game.is_story_flag_set("l2_thorns_seen"):
             continue
+        if name in FUR_ARMOR_RECIPES:
+            has_fur_unlock = (
+                getattr(game, "is_story_flag_set", lambda f: False)("fur_recipes_unlocked")
+                or getattr(game, "story_flags", {}).get("fur_recipes_unlocked")
+                or is_warm_cave_active(game)
+                or getattr(game, "inventory", {}).get("Мех", 0) > 0
+            )
+            if not has_fur_unlock:
+                continue
+            has_fur_item = (
+                game.inventory.get(name, 0) > 0
+                or name in (getattr(game, "equipment", {}) or {}).values()
+            )
+            if has_fur_item:
+                continue
         if name == "Факел" and has_torch(game):
             continue
         if name == "Костёр" and has_campfire(game):
@@ -418,22 +574,45 @@ def get_craft_menu_text(game) -> str:
         ingredients = CRAFT_RECIPES[name]
         ing_strs = []
         for n, q in ingredients:
-            if n in ("Сушняк", "Трут", "Мох"):
+            if n == "Мех" and is_warm_cave_active(game):
+                ing_strs.append("Мех: со стен пещеры (в избытке)")
+            elif n in ("Сушняк", "Трут", "Мох", "Пещерный мох"):
                 have = count_tinder(game)
                 display_n = "Мох"
+                ing_strs.append(f"{display_n} ({have}/{q})")
+            elif n == "Кожаный капюшон":
+                have = game.inventory.get(n, 0) + (1 if game.equipment.get("head") == n else 0)
+                display_n = n
+                ing_strs.append(f"{display_n} ({have}/{q})")
+            elif n == "Кожаный нагрудник":
+                have = game.inventory.get(n, 0) + (1 if game.equipment.get("torso") == n else 0)
+                display_n = n
+                ing_strs.append(f"{display_n} ({have}/{q})")
+            elif n == "Кожаные поножи":
+                have = game.inventory.get(n, 0) + (1 if game.equipment.get("pants") == n else 0)
+                display_n = n
+                ing_strs.append(f"{display_n} ({have}/{q})")
+            elif n == "Кожаные сапоги":
+                have = game.inventory.get(n, 0) + (1 if game.equipment.get("boots") == n else 0)
+                display_n = n
+                ing_strs.append(f"{display_n} ({have}/{q})")
             elif n in ("Кусок коры", "Кора"):
                 have = game.inventory.get("Кусок коры", 0) + game.inventory.get("Кора", 0)
                 display_n = "Кусок коры"
+                ing_strs.append(f"{display_n} ({have}/{q})")
             elif n in ("Ветка", "Палка", "Палки"):
                 have = game.inventory.get("Ветка", 0) + game.inventory.get("Палка", 0) + game.inventory.get("Палки", 0)
                 display_n = "Ветка"
+                ing_strs.append(f"{display_n} ({have}/{q})")
             else:
                 have = game.inventory.get(n, 0)
                 display_n = n
-            ing_strs.append(f"{display_n} ({have}/{q})")
+                ing_strs.append(f"{display_n} ({have}/{q})")
         lines.append(f"• {icon} {name}: {', '.join(ing_strs)}")
     if not has_any:
         lines.append("Пока нечего крафтить.")
+    elif is_warm_cave_active(game):
+        lines.append("\n💡 Мех взят из запасов пещеры — здесь его более чем в избытке.")
     body = "\n".join(lines)
     return f"━━━━━━━━━━━━━━━━━━━\n{body}\n━━━━━━━━━━━━━━━━━━━"
 
@@ -441,6 +620,8 @@ def get_craft_menu_text(game) -> str:
 def get_craft_menu_kb(game):
     """Клавиатура крафта: иконка предмета + короткое название + статус ✅/❌ n/m."""
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    if hasattr(game, "check_fur_unlock"):
+        game.check_fur_unlock()
     unlocked = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
     has_spear = (
         game.inventory.get("Охотничье сланцевое копьё", 0) > 0
@@ -457,6 +638,21 @@ def get_craft_menu_kb(game):
             continue
         if name in SLATE_ARMOR_RECIPES and not game.is_story_flag_set("l2_thorns_seen"):
             continue
+        if name in FUR_ARMOR_RECIPES:
+            has_fur_unlock = (
+                getattr(game, "is_story_flag_set", lambda f: False)("fur_recipes_unlocked")
+                or getattr(game, "story_flags", {}).get("fur_recipes_unlocked")
+                or is_warm_cave_active(game)
+                or getattr(game, "inventory", {}).get("Мех", 0) > 0
+            )
+            if not has_fur_unlock:
+                continue
+            has_fur_item = (
+                game.inventory.get(name, 0) > 0
+                or name in (getattr(game, "equipment", {}) or {}).values()
+            )
+            if has_fur_item:
+                continue
         if name == "Факел" and has_torch(game):
             continue
         if name == "Костёр" and has_campfire(game):
@@ -848,6 +1044,70 @@ def handle_craft(data, game, uid):
             kb = get_main_kb(game)
         else:
             game.add_log("В инвентаре нет кожаных сапог.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Меховой капюшон":
+        if game.inventory.get("Меховой капюшон", 0) > 0:
+            old_item = game.equipment.get("head")
+            if old_item and old_item not in ("⚪ Грязная кепка", "Грязная кепка", "Пусто"):
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory["Меховой капюшон"] -= 1
+            if game.inventory["Меховой капюшон"] <= 0:
+                del game.inventory["Меховой капюшон"]
+            game.equipment["head"] = "Меховой капюшон"
+            game.add_log("Вы надели меховой капюшон.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет мехового капюшона.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Меховой плащ-нагрудник":
+        if game.inventory.get("Меховой плащ-нагрудник", 0) > 0:
+            old_item = game.equipment.get("torso")
+            if old_item and old_item not in ("⚪ Потасканная куртка", "Потасканная куртка", "Пусто"):
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory["Меховой плащ-нагрудник"] -= 1
+            if game.inventory["Меховой плащ-нагрудник"] <= 0:
+                del game.inventory["Меховой плащ-нагрудник"]
+            game.equipment["torso"] = "Меховой плащ-нагрудник"
+            game.add_log("Вы надели меховой плащ-нагрудник.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет мехового плаща-нагрудника.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Меховые поножи":
+        if game.inventory.get("Меховые поножи", 0) > 0:
+            old_item = game.equipment.get("pants")
+            if old_item and old_item not in ("⚪ Рваные штаны", "Рваные штаны", "Пусто"):
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory["Меховые поножи"] -= 1
+            if game.inventory["Меховые поножи"] <= 0:
+                del game.inventory["Меховые поножи"]
+            game.equipment["pants"] = "Меховые поножи"
+            game.add_log("Вы надели меховые поножи.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет меховых поножей.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+    elif data == "use_item_Меховые сапоги":
+        if game.inventory.get("Меховые сапоги", 0) > 0:
+            old_item = game.equipment.get("boots")
+            if old_item and old_item not in ("⚪ Стоптанные ботинки", "Стоптанные ботинки", "Пусто"):
+                game.inventory[old_item] = game.inventory.get(old_item, 0) + 1
+            game.inventory["Меховые сапоги"] -= 1
+            if game.inventory["Меховые сапоги"] <= 0:
+                del game.inventory["Меховые сапоги"]
+            game.equipment["boots"] = "Меховые сапоги"
+            game.add_log("Вы надели меховые сапоги.")
+            text = game.get_ui()
+            kb = get_main_kb(game)
+        else:
+            game.add_log("В инвентаре нет меховых сапог.")
             text = game.get_ui()
             kb = get_main_kb(game)
     elif data == "use_item_Костяной амулет охотника":

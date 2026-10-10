@@ -145,12 +145,28 @@ def get_item_card_actions_kb(item_name: str, game=None):
         keyboard.append([InlineKeyboardButton(text="🍯 Установить приманку", callback_data="use_item_Приманка для слизней")])
     elif item_name == "Старый фонарь":
         keyboard.append([InlineKeyboardButton(text="🔦 Взять в левую руку", callback_data="use_item_Старый фонарь")])
+    elif item_name == "Кожаный капюшон":
+        keyboard.append([InlineKeyboardButton(text="🧢 Надеть капюшон", callback_data="use_item_Кожаный капюшон")])
+    elif item_name == "Кожаный нагрудник":
+        keyboard.append([InlineKeyboardButton(text="🥋 Надеть нагрудник", callback_data="use_item_Кожаный нагрудник")])
+    elif item_name == "Кожаные поножи":
+        keyboard.append([InlineKeyboardButton(text="👖 Надеть поножи", callback_data="use_item_Кожаные поножи")])
+    elif item_name == "Кожаные сапоги":
+        keyboard.append([InlineKeyboardButton(text="🥾 Надеть сапоги", callback_data="use_item_Кожаные сапоги")])
+    elif item_name == "Меховой капюшон":
+        keyboard.append([InlineKeyboardButton(text="🧢 Надеть капюшон", callback_data="use_item_Меховой капюшон")])
+    elif item_name == "Меховой плащ-нагрудник":
+        keyboard.append([InlineKeyboardButton(text="🧥 Надеть плащ-нагрудник", callback_data="use_item_Меховой плащ-нагрудник")])
+    elif item_name == "Меховые поножи":
+        keyboard.append([InlineKeyboardButton(text="👖 Надеть поножи", callback_data="use_item_Меховые поножи")])
+    elif item_name == "Меховые сапоги":
+        keyboard.append([InlineKeyboardButton(text="🥾 Надеть сапоги", callback_data="use_item_Меховые сапоги")])
     elif item_name == "Костяной амулет охотника":
         keyboard.append([InlineKeyboardButton(text="🧿 Надеть амулет", callback_data="use_item_Костяной амулет охотника")])
     elif is_item_consumable(item_name):
         keyboard.append([InlineKeyboardButton(text="🍽️ Съесть / Применить", callback_data=f"use_consumable_{item_name}")])
 
-    if game and game.equipment.get("pants") == "Кожаные поножи":
+    if game and game.equipment.get("pants") in ("Кожаные поножи", "Меховые поножи"):
         from modules.items import ITEMS
         it_info = ITEMS.get(item_name, {})
         is_healing = (
