@@ -68,9 +68,11 @@ def test_story_callback_resumes_exact_screen():
     assert any(b.callback_data == "l1_5_leave" for row in kb.inline_keyboard for b in row)
 
 
+@pytest.mark.smoke
 @pytest.mark.persist
 @pytest.mark.mech
 def test_process_damage_honest_death_and_no_overexertion():
+
     """Тест 4: process_damage списывает урон честно до 0, не держит пол 1 и не конвертирует урон в ресурсы."""
     game = GameState()
     game.hp = 15

@@ -16,8 +16,10 @@ from story.location_stories import (
 )
 
 
+@pytest.mark.smoke
 @pytest.mark.l2
 def test_l2_prologue_starts_on_first_entrance():
+
     """При первом входе на Ручей открывается пролог 'Стук у воды' (а не терновник)."""
     game = GameState()
     game.current_location = "Ручей"

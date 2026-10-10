@@ -323,8 +323,10 @@ def test_location_4_observation_inspections():
     assert "l4_7a_fire" in cbs_7_back
 
 
+@pytest.mark.slow
 @pytest.mark.l4
 def test_location_4_sequential_chapters_flow_and_sleeps():
+
     """Тестирование цепочки сюжеток L4 (Пролог -> 4 сна -> Глава 1 -> 4 сна -> Глава 2 -> 4 сна -> Глава 3)."""
     from story.location_stories import check_forest_research_story_trigger, handle_location_4_hunters_glade
 

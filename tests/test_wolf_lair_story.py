@@ -564,8 +564,10 @@ def test_wolf_torch_equipped_only_and_idempotent():
     assert kb_b3.inline_keyboard[0][0].text == "👀 Заглянуть под пень"
 
 
+@pytest.mark.slow
 @pytest.mark.l1
 def test_restored_l1_kitten_full_chain():
+
     """Тест восстановленной канонической цепочки L1.2 -> L1.2b -> L1.2b.1 -> L1.3."""
     game = GameState()
 
