@@ -1195,5 +1195,104 @@ def test_bundle_and_cache_duplication_prevented():
     assert any(b.callback_data == "l6_ascent_continue" for row in kb_s17_ta.inline_keyboard for b in row)
 
 
+@pytest.mark.l6
+def test_l6_gift_deduction_validation_and_death_resets():
+    """Тест проверки наличия припасов при подарке (шаги 4, 10, 17) и сброса состояния при гибели."""
+    game = GameState()
+    from story.locations.loc6_furry_cave import handle_location_6_furry_cave
+
+    # 1. Шаг 4: попытка оставить подарок с пустым инвентарём
+    game.inventory.clear()
+    comp_before = game.narrative_karma["compassion"]
+    text_s4_fail, kb_s4_fail = handle_location_6_furry_cave("l6_step4_leave_gift", game, 1001)
+    assert 380 <= len(text_s4_fail) <= 580
+    assert game.narrative_karma["compassion"] == comp_before  # карма НЕ начислена
+    assert not game.is_story_flag_set("l6_step4_gift_left")   # флаг НЕ установлен
+    cb_s4_fail = [b.callback_data for row in kb_s4_fail.inline_keyboard for b in row]
+    assert "l6_step4_take_all" in cb_s4_fail
+    assert "l6_ascent_continue" in cb_s4_fail
+
+    # Шаг 4: успешный подарок при наличии еды
+    game.inventory["Жареное мясо"] = 1
+    text_s4_ok, kb_s4_ok = handle_location_6_furry_cave("l6_step4_leave_gift", game, 1001)
+    assert 380 <= len(text_s4_ok) <= 580
+    assert game.narrative_karma["compassion"] == comp_before + 1
+    assert game.is_story_flag_set("l6_step4_gift_left")
+    assert game.inventory.get("Жареное мясо", 0) == 0
+
+    # 2. Шаг 10: попытка оставить подарок без еды
+    g10 = GameState()
+    g10.inventory.clear()
+    comp10_before = g10.narrative_karma["compassion"]
+    text_s10_fail, kb_s10_fail = handle_location_6_furry_cave("l6_step10_leave_gift", g10, 1001)
+    assert 380 <= len(text_s10_fail) <= 580
+    assert g10.narrative_karma["compassion"] == comp10_before
+    assert not g10.is_story_flag_set("l6_step10_gift_left")
+    cb_s10_fail = [b.callback_data for row in kb_s10_fail.inline_keyboard for b in row]
+    assert "l6_step10_take_all" in cb_s10_fail
+    assert "l6_ascent_continue" in cb_s10_fail
+
+    # Шаг 10: успешный подарок
+    g10.inventory["Сухпай"] = 1
+    text_s10_ok, _ = handle_location_6_furry_cave("l6_step10_leave_gift", g10, 1001)
+    assert 380 <= len(text_s10_ok) <= 580
+    assert g10.narrative_karma["compassion"] == comp10_before + 1
+    assert g10.is_story_flag_set("l6_step10_gift_left")
+    assert g10.inventory.get("Сухпай", 0) == 0
+
+    # 3. Шаг 17: попытка оставить подарок без еды
+    g17 = GameState()
+    g17.inventory.clear()
+    comp17_before = g17.narrative_karma["compassion"]
+    text_s17_fail, kb_s17_fail = handle_location_6_furry_cave("l6_step17_leave_gift", g17, 1001)
+    assert 380 <= len(text_s17_fail) <= 580
+    assert g17.narrative_karma["compassion"] == comp17_before
+    assert not g17.is_story_flag_set("l6_step17_gift_left")
+    cb_s17_fail = [b.callback_data for row in kb_s17_fail.inline_keyboard for b in row]
+    assert "l6_step17_take_all" in cb_s17_fail
+    assert "l6_ascent_continue" in cb_s17_fail
+
+    # Шаг 17: успешный подарок
+    g17.inventory["Жареное мясо"] = 1
+    text_s17_ok, _ = handle_location_6_furry_cave("l6_step17_leave_gift", g17, 1001)
+    assert 380 <= len(text_s17_ok) <= 580
+    assert g17.narrative_karma["compassion"] == comp17_before + 1
+    assert g17.is_story_flag_set("l6_step17_gift_left")
+    assert g17.inventory.get("Жареное мясо", 0) == 0
+
+    # 4. Проверка сброса состояния при гибели на шаге 13
+    g_d13 = GameState()
+    g_d13.hp = 5
+    g_d13.story_state = "some_state"
+    g_d13.active_story_callback = "some_callback"
+    text_d13, _ = handle_location_6_furry_cave("l6_step13_break", g_d13, 1001)
+    assert g_d13.hp == 0
+    assert g_d13.story_state is None
+    assert g_d13.active_story_callback is None
+    assert "Смертельный обвал" in text_d13
+
+    # 5. Проверка сброса состояния при гибели на шаге 27
+    g_d27 = GameState()
+    g_d27.hp = 3
+    g_d27.story_state = "some_state"
+    g_d27.active_story_callback = "some_callback"
+    text_d27, _ = handle_location_6_furry_cave("l6_step27_clear", g_d27, 1001)
+    assert g_d27.hp == 0
+    assert g_d27.story_state is None
+    assert g_d27.active_story_callback is None
+    assert "Обвал каменной осыпи" in text_d27
+
+    # 6. Проверка furry_bundle при наличии left_something_in_bundle: только кнопка отхода
+    g_b = GameState()
+    g_b.set_story_flag("left_something_in_bundle", True)
+    text_gb, kb_gb = handle_location_6_furry_cave("furry_bundle", g_b, 1001)
+    assert 380 <= len(text_gb) <= 580
+    cb_gb = [b.callback_data for row in kb_gb.inline_keyboard for b in row]
+    assert "furry_take_all" not in cb_gb
+    assert "furry_take_part" not in cb_gb
+    assert "furry_bundle_leave" in cb_gb
+
+
+
 
 
