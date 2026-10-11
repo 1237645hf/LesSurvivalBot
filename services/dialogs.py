@@ -876,7 +876,6 @@ def format_tablet_notes_text(
     lines = []
     if notice:
         lines.append(f"{notice}\n")
-    lines.append("━━━━━━━━━━━━━━━━━━━━")
     lines.append("📜 КАМЕННАЯ ПЛИТА У ПЕЧИ")
     lines.append("━━━━━━━━━━━━━━━━━━━━\n")
     lines.append("На гладкой поверхности сланца высечены слова тех, кто проходил здесь до тебя:\n")

@@ -164,7 +164,7 @@ def test_boiling_rainwater_callback_checks_fire_and_water():
     assert game.flask_water == game.army_flask_water == 4
     assert game.rain_bottles == []
     assert game.inventory["Пустая бутылка"] == 1
-    assert game.campfire_durability == 4
+    assert game.campfire_durability == 5
     assert "4/20 чистой воды" in text
 
     game.campfire_active = False

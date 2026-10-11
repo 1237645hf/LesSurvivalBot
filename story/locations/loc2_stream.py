@@ -51,7 +51,7 @@ L2_PUZZLE_BANK = [
     [
         {
             "num_str": "«Вопрос номер один»",
-            "text": "Основной водосброс заблокирован. Для уравнивания давления в нижнем бьефе требуется открыть перепускной клапан. Какой сектор задвижки задействовать?",
+            "text": "Основной водосброс заблокирован. Автоматика требует стравить избыточное давление через вспомогательную линию обхода. Какой сектор задвижки задействовать?",
             "options": [
                 ("Левый вспомогательный", True),
                 ("Центральный аварийный", False),
@@ -249,7 +249,7 @@ L2_PUZZLE_BANK = [
         },
         {
             "num_str": "«Вопрос номер три»",
-            "text": "Уровень рабочей жидкости в баке на нижней отметке. До какого сектора допустимо движение моста?",
+            "text": "Аварийный режим допускает однократное перемещение платформы даже при минимальном уровне масла. До какого сектора разрешён довод моста?",
             "options": [
                 ("До промежуточного горизонтального упора", True),
                 ("До крайнего нижнего положения на скорости", False),
@@ -1027,8 +1027,8 @@ def handle_location_2_ruchey(data: str, game, uid: int):
     # 9. Обработка ответа на загадку
     elif data.startswith("l2_p_ans:"):
         parts = data.split(":")
-        attempt = int(parts[1])
-        step = int(parts[2])
+        attempt = int(parts[1]) % len(L2_PUZZLE_BANK)
+        step = max(1, min(3, int(parts[2])))
         idx = int(parts[3])
 
         is_correct = L2_PUZZLE_BANK[attempt][step - 1]["options"][idx][1]
@@ -1111,6 +1111,7 @@ def handle_location_2_ruchey(data: str, game, uid: int):
         if getattr(game, "hp", 100) <= 0 or data in terminal_callbacks:
             game.story_state = None
     elif text is not None:
-        game.active_story_callback = data
+        if not data.startswith("l2_p_ans:"):
+            game.active_story_callback = data
 
     return text, kb

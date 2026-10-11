@@ -87,13 +87,29 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
                     "Что будешь делать?"
                 )
                 kb = get_main_kb(game)
-        else:
+        elif data == "location_enter_3" and not game.is_story_flag_set("l3_entered"):
             text = (
                 "Ты перешагиваешь порог Скромной Лощины. Воздух здесь плотный, прохладный,\n"
                 "запах влажного камня и древней глины. Стены выложены из ровных пластов тёмного сланца.\n\n"
                 "Лощина тянется далеко вперёд, уводя вглубь каменистого ущелья."
             )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏕 Обустроить стоянку", callback_data="l3_enter_camp")]
+            ])
+        else:
+            text = game.get_ui()
             kb = get_main_kb(game)
+
+    elif data == "l3_enter_camp":
+        game.set_story_flag("l3_entered", True)
+        if "l3_entered_day" not in game.story_flags:
+            game.story_flags["l3_entered_day"] = getattr(game, "day", 1)
+        game.active_story_callback = None
+        game.story_state = None
+        game.reset_nav()
+        game.add_log("🏕 Ты разбил временную стоянку среди сланцевых плит.")
+        text = game.get_ui()
+        kb = get_main_kb(game)
 
     elif data == "l3_1_fire_low":
         game.story_state = "l3_1"
@@ -244,7 +260,7 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
         if game.inventory.get("Глина", 0) >= 1:
             buttons.append([InlineKeyboardButton(text="🤲 Оставить глину для следующего", callback_data="l3_6_leave_clay")])
         buttons.append([InlineKeyboardButton(text="✏️ Оставить предупреждение", callback_data="l3_6_warning")])
-        buttons.append([InlineKeyboardButton(text="🚶 Уйти", callback_data="l3_7_morning")])
+        buttons.append([InlineKeyboardButton(text="🚶 Уйти", callback_data="l3_6_finalize")])
         kb = InlineKeyboardMarkup(inline_keyboard=buttons)
 
     elif data == "l3_6_leave_clay":
@@ -261,7 +277,7 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
             "🤲 Отдано: Глина ×1 (+2 Сострадание)"
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🚶 Уйти", callback_data="l3_7_morning")]
+            [InlineKeyboardButton(text="🚶 Уйти", callback_data="l3_6_finalize")]
         ])
 
     elif data == "l3_6_warning":
@@ -279,12 +295,14 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
             "Пыль осыпается под пальцами. Твоя надпись добавлена на каменную плиту у печи."
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🚶 Уйти", callback_data="l3_7_morning")]
+            [InlineKeyboardButton(text="🚶 Уйти", callback_data="l3_6_finalize")]
         ])
 
     elif data == "l3_6_finalize":
         game.set_story_flag("l3_shelter_unlocked", True)
         game.set_story_flag("has_stove", True)
+        if "l3_shelter_day" not in game.story_flags:
+            game.story_flags["l3_shelter_day"] = getattr(game, "day", 1)
         game.campfire_active = True
         game.campfire_max_durability = 30
         game.campfire_durability = max(int(getattr(game, "campfire_durability", 0) or 0), 15)
@@ -615,6 +633,7 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
         kb = get_main_kb(game)
 
     terminal_callbacks = {
+        "l3_enter_camp",
         "l3_6_finalize",
         "l3_11a_win",
         "l3_13_kind",
@@ -633,7 +652,7 @@ def handle_location_3_slate_hollow(data: str, game, uid: int):
     )
     if is_main_menu:
         game.active_story_callback = None
-        if getattr(game, "hp", 100) <= 0 or data in ("l3_6_finalize", "slate_end", "back", "slate_examine", "slate_climb", "slate_rest") or (data in ("location_enter_3", "slate_hollow_start") and game.is_story_flag_set("l3_ridge_completed")):
+        if getattr(game, "hp", 100) <= 0 or data in ("l3_enter_camp", "l3_6_finalize", "slate_end", "back", "slate_examine", "slate_climb", "slate_rest") or (data in ("location_enter_3", "slate_hollow_start") and game.is_story_flag_set("l3_ridge_completed")):
             game.story_state = None
     elif text is not None:
         game.active_story_callback = data

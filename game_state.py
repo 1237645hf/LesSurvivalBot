@@ -387,15 +387,35 @@ class GameState:
         result["delta_hp"] = self.hp - old_hp
 
         # −1 прочность костра за действие С ТРАТОЙ AP (success), кроме сна
-        if self.campfire_active and action_type != "sleep" and cost > 0:
-            self.campfire_durability -= 1
-            if self.campfire_durability <= 0:
-                self.campfire_durability = 0
-                if self.is_stove:
-                    self.add_log("🧱 Печь остыла.")
-                else:
-                    self.campfire_active = False
-                    self.add_log("🔥 Костёр погас.")
+        if action_type != "sleep" and cost > 0:
+            if self.campfire_active:
+                self.campfire_durability -= 1
+                if self.campfire_durability <= 0:
+                    self.campfire_durability = 0
+                    if self.is_stove:
+                        self.add_log("🧱 Печь остыла.")
+                    else:
+                        self.campfire_active = False
+                        self.add_log("🔥 Костёр погас.")
+
+            # Синхронизация и глобальное прогорание костров на всех локациях
+            curr_key = self.get_current_hearth_key()
+            if not hasattr(self, "campfires") or not isinstance(self.campfires, dict):
+                self.campfires = {}
+            self.campfires[curr_key] = {
+                "active": bool(self.campfire_active),
+                "durability": int(self.campfire_durability),
+                "max_durability": int(self.campfire_max_durability),
+            }
+            for k, cf in self.campfires.items():
+                if k == curr_key:
+                    continue
+                if cf.get("active") and cf.get("durability", 0) > 0:
+                    cf["durability"] = max(0, int(cf["durability"]) - 1)
+                    if cf["durability"] <= 0:
+                        cf["durability"] = 0
+                        if "loc_3" not in k:
+                            cf["active"] = False
 
         return result
 
@@ -418,7 +438,8 @@ class GameState:
     @property
     def is_stove(self) -> bool:
         cur_loc = str(getattr(self, "current_location", "") or "").lower()
-        return "лощин" in cur_loc
+        has_shelter = bool(self.is_story_flag_set("has_stove") or self.is_story_flag_set("l3_shelter_unlocked"))
+        return "лощин" in cur_loc and has_shelter
 
     def switch_location_hearth(self, old_loc: str, new_loc: Optional[str] = None):
         """Синхронизирует состояние очагов при смене локации."""
@@ -681,6 +702,25 @@ class GameState:
                     self.campfire_active = False
                     self.add_log("Костёр потух. Ты не уследил за огнём.", "sleep")
 
+        # Синхронизация и глобальное прогорание костров на всех локациях за ночь (-3)
+        curr_key = self.get_current_hearth_key()
+        if not hasattr(self, "campfires") or not isinstance(self.campfires, dict):
+            self.campfires = {}
+        self.campfires[curr_key] = {
+            "active": bool(self.campfire_active),
+            "durability": int(self.campfire_durability),
+            "max_durability": int(self.campfire_max_durability),
+        }
+        for k, cf in self.campfires.items():
+            if k == curr_key:
+                continue
+            if cf.get("active") and cf.get("durability", 0) > 0:
+                cf["durability"] = max(0, int(cf["durability"]) - 3)
+                if cf["durability"] <= 0:
+                    cf["durability"] = 0
+                    if "loc_3" not in k:
+                        cf["active"] = False
+
         # 3. Факел в руке ночью сгорает
         torch_in_hand = (
             self.equipment.get("hand_left") == "Факел"
@@ -711,6 +751,8 @@ class GameState:
         # 8. Смена погоды (ясно/пасмурно/дождь/гроза)
         old_weather = self.weather
         self.weather = self.roll_weather_for_new_day()
+        if hasattr(self, "story_flags") and isinstance(self.story_flags, dict):
+            self.story_flags.pop("rain_sips_count", None)
         weather_icons = {"clear": "☀️", "cloudy": "☁️", "rain": "🌧️", "storm": "⛈️"}
         weather_names = {"clear": "Ясно", "cloudy": "Пасмурно", "rain": "Дождь", "storm": "Гроза"}
         w_icon = weather_icons.get(self.weather, "☀️")
@@ -961,6 +1003,8 @@ class GameState:
         game.l1_post_research_count = int(data.get("l1_post_research_count", 0))
         game.torch_research_count = int(data.get("torch_research_count", 0))
         game.wolf_battle = dict(data["wolf_battle"]) if data.get("wolf_battle") else None
+        game.l2_puzzle_attempt = int(data.get("l2_puzzle_attempt", getattr(game, "l2_puzzle_attempt", 0)) or 0)
+        game.l2_puzzle_step = int(data.get("l2_puzzle_step", getattr(game, "l2_puzzle_step", 1)) or 1)
         game.active_story_callback = data.get("active_story_callback")
         game.header_message_id = data.get("header_message_id")
         game.last_action_time = data.get("last_action_time")

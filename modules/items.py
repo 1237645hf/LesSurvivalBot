@@ -1262,7 +1262,8 @@ def use_consumable(item, game):
 
         if "hp" in effects:
             hp_val = int(effects["hp"])
-            game.hp = max(0, min(100, game.hp + hp_val))
+            max_hp = getattr(game, "max_hp", 100)
+            game.hp = max(0, min(max_hp, game.hp + hp_val))
 
         if "hunger" in effects:
             hunger_mult = get_resource_multiplier(game, "hunger")

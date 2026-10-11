@@ -183,14 +183,27 @@ def has_sturdy_staff(game) -> bool:
     )
 
 
+def has_slate_armor_item(game, name: str) -> bool:
+    """Проверка, есть ли предмет сланцевой брони в инвентаре или надет на персонаже."""
+    return (
+        game.inventory.get(name, 0) > 0
+        or name in (getattr(game, "equipment", {}) or {}).values()
+    )
+
+
 def can_craft(game, recipe_name: str) -> bool:
     ingredients = CRAFT_RECIPES.get(recipe_name, [])
     if not ingredients:
         return False
     if recipe_name == "Крепкий посох" and has_sturdy_staff(game):
         return False
-    if recipe_name in SLATE_ARMOR_RECIPES and not game.is_story_flag_set("l2_thorns_seen"):
-        return False
+    if recipe_name in SLATE_ARMOR_RECIPES:
+        if has_slate_armor_item(game, recipe_name):
+            return False
+        if not game.is_story_flag_set("l2_thorns_seen"):
+            return False
+        if game.is_story_flag_set("l3_ridge_completed") or getattr(game, "location_index", 0) >= 3:
+            return False
     if recipe_name == "Факел" and has_torch(game):
         return False
     if recipe_name == "Костёр" and has_campfire(game):
@@ -231,8 +244,13 @@ def can_craft(game, recipe_name: str) -> bool:
 def craft_mark(game, recipe_name: str) -> str:
     if recipe_name == "Крепкий посох" and has_sturdy_staff(game):
         return "❌ (уже есть)"
-    if recipe_name in SLATE_ARMOR_RECIPES and not game.is_story_flag_set("l2_thorns_seen"):
-        return "❌ (сначала стена терновника)"
+    if recipe_name in SLATE_ARMOR_RECIPES:
+        if has_slate_armor_item(game, recipe_name):
+            return "❌ (уже изготовлено)"
+        if game.is_story_flag_set("l3_ridge_completed") or getattr(game, "location_index", 0) >= 3:
+            return "❌ (недоступно)"
+        if not game.is_story_flag_set("l2_thorns_seen"):
+            return "❌ (сначала стена терновника)"
     if recipe_name in FUR_ARMOR_RECIPES:
         has_fur_unlock = (
             getattr(game, "is_story_flag_set", lambda f: False)("fur_recipes_unlocked")
@@ -283,8 +301,13 @@ def do_craft(game, recipe_name: str):
         return False, "Неизвестный рецепт."
     if recipe_name == "Крепкий посох" and has_sturdy_staff(game):
         return False, "У вас уже есть крепкий посох — второй изготовить нельзя."
-    if recipe_name in SLATE_ARMOR_RECIPES and not game.is_story_flag_set("l2_thorns_seen"):
-        return False, "Рецепт сланцевой брони откроется после встречи со стеной терновника."
+    if recipe_name in SLATE_ARMOR_RECIPES:
+        if has_slate_armor_item(game, recipe_name):
+            return False, f"У вас уже есть {recipe_name} — это уникальный предмет, повторный крафт невозможен."
+        if not game.is_story_flag_set("l2_thorns_seen"):
+            return False, "Рецепт сланцевой брони откроется после встречи со стеной терновника."
+        if game.is_story_flag_set("l3_ridge_completed") or getattr(game, "location_index", 0) >= 3:
+            return False, "Время создания сланцевой брони прошло — рецепт более недоступен."
     if recipe_name == "Факел" and has_torch(game):
         return False, "У вас уже есть факел! Нельзя иметь больше одного факела одновременно."
     if recipe_name == "Костёр" and has_campfire(game):
@@ -524,7 +547,14 @@ def get_craft_menu_text(game) -> str:
     """Формирует текст экрана крафта: показывает сколько есть / сколько надо для каждого ингредиента."""
     if hasattr(game, "check_fur_unlock"):
         game.check_fur_unlock()
-    unlocked = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
+    unlocked_raw = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
+    unlocked = []
+    seen_recipes = set()
+    for u in unlocked_raw:
+        if u not in seen_recipes:
+            seen_recipes.add(u)
+            unlocked.append(u)
+
     has_spear = (
         game.inventory.get("Охотничье сланцевое копьё", 0) > 0
         or game.inventory.get("🔱 Охотничье сланцевое копьё", 0) > 0
@@ -539,8 +569,13 @@ def get_craft_menu_text(game) -> str:
             continue
         if name == "Крепкий посох" and has_sturdy_staff(game):
             continue
-        if name in SLATE_ARMOR_RECIPES and not game.is_story_flag_set("l2_thorns_seen"):
-            continue
+        if name in SLATE_ARMOR_RECIPES:
+            if not game.is_story_flag_set("l2_thorns_seen"):
+                continue
+            if has_slate_armor_item(game, name):
+                continue
+            if game.is_story_flag_set("l3_ridge_completed") or getattr(game, "location_index", 0) >= 3:
+                continue
         if name in FUR_ARMOR_RECIPES:
             has_fur_unlock = (
                 getattr(game, "is_story_flag_set", lambda f: False)("fur_recipes_unlocked")
@@ -622,7 +657,14 @@ def get_craft_menu_kb(game):
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     if hasattr(game, "check_fur_unlock"):
         game.check_fur_unlock()
-    unlocked = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
+    unlocked_raw = list(getattr(game, "unlocked_crafts", ["Костёр", "Факел"]) or ["Костёр", "Факел"])
+    unlocked = []
+    seen_recipes = set()
+    for u in unlocked_raw:
+        if u not in seen_recipes:
+            seen_recipes.add(u)
+            unlocked.append(u)
+
     has_spear = (
         game.inventory.get("Охотничье сланцевое копьё", 0) > 0
         or game.inventory.get("🔱 Охотничье сланцевое копьё", 0) > 0
@@ -636,8 +678,13 @@ def get_craft_menu_kb(game):
             continue
         if name == "Крепкий посох" and has_sturdy_staff(game):
             continue
-        if name in SLATE_ARMOR_RECIPES and not game.is_story_flag_set("l2_thorns_seen"):
-            continue
+        if name in SLATE_ARMOR_RECIPES:
+            if not game.is_story_flag_set("l2_thorns_seen"):
+                continue
+            if has_slate_armor_item(game, name):
+                continue
+            if game.is_story_flag_set("l3_ridge_completed") or getattr(game, "location_index", 0) >= 3:
+                continue
         if name in FUR_ARMOR_RECIPES:
             has_fur_unlock = (
                 getattr(game, "is_story_flag_set", lambda f: False)("fur_recipes_unlocked")

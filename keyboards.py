@@ -257,7 +257,10 @@ def get_main_kb(game):
                 callback_data="flask_transfer_clean_water",
             )
         ])
-    if is_stove or "Лощина" in str(getattr(game, "current_location", "")):
+    has_tablet = is_stove or bool(
+        game.is_story_flag_set("l3_writings_read") or game.is_story_flag_set("l3_shelter_unlocked")
+    )
+    if "лощин" in str(getattr(game, "current_location", "")).lower() and has_tablet:
         kb_rows.append([
             InlineKeyboardButton(text="📜 Каменная плита", callback_data="tablet_notes_view")
         ])
@@ -270,18 +273,26 @@ def get_main_kb(game):
             kb_rows.append([
                 InlineKeyboardButton(text="🍯 Установить приманку", callback_data="use_item_Приманка для слизней")
             ])
-    if game.weather in {"rain", "storm"}:
-        rain_btns = [
-            InlineKeyboardButton(text="🌧️ Пить дождь", callback_data="action_collect_water")
-        ]
+    cur_loc = str(getattr(game, "current_location", ""))
+    is_l6 = (
+        getattr(game, "location_index", None) == 5
+        or any(kw in cur_loc.lower() for kw in ("мохнат", "пещер", "снежн", "пик", "вершин", "гор"))
+    )
+    if game.weather in {"rain", "storm"} and not is_l6:
+        rain_btns = []
+        story_flags = getattr(game, "story_flags", {}) or {}
+        if int(story_flags.get("rain_sips_count", 0)) < 3:
+            rain_btns.append(
+                InlineKeyboardButton(text="🌧️ Пить дождь", callback_data="action_collect_water")
+            )
         has_empty_bottle = game.inventory.get("Пустая бутылка", 0) > 0
         has_partial_rain_bottle = any(w < 20 for w in getattr(game, "rain_bottles", []))
         if has_empty_bottle or has_partial_rain_bottle:
             rain_btns.append(
                 InlineKeyboardButton(text="🧴 Набрать дождь (1 ⚡)", callback_data="action_fill_rain_bottle")
             )
-        kb_rows.append(rain_btns)
-    cur_loc = str(getattr(game, "current_location", ""))
+        if rain_btns:
+            kb_rows.append(rain_btns)
     if "Святилище" in cur_loc:
         kb_rows.append([
             InlineKeyboardButton(text="✨ Прикоснуться к чаше", callback_data="sanctuary_resolve")

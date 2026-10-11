@@ -17,9 +17,10 @@ LOCATION_FINDS: Dict[int, List[Dict[str, Any]]] = {
     1: [
         {"item": "Ветка", "chance": 35},
         {"item": "Лесная ягода", "chance": 20},
-        {"item": "Лесной гриб", "chance": 20},
-        {"item": "Камень", "chance": 15},
-        {"item": "Мох", "chance": 10},
+        {"item": "Лесной гриб", "chance": 18},
+        {"item": "Камень", "chance": 13},
+        {"item": "Мох", "chance": 9},
+        {"item": "Кусок коры", "chance": 5},
     ],
     2: [
         {"item": "Ветка", "chance": 40},
@@ -67,8 +68,8 @@ LOCATION_FINDS: Dict[int, List[Dict[str, Any]]] = {
 # БОНУСНЫЙ ЛУТ
 # ──────────────────────────────────────────────────────────────────────────────
 BONUS_FINDS: Dict[int, List[Dict[str, Any]]] = {
-    1: [{"item": "Кусок коры", "chance": 30}],
-    2: [{"item": "Кусок коры", "chance": 30}],
+    1: [{"item": "Кусок коры", "chance": 30, "count_range": (1, 2)}],
+    2: [{"item": "Кусок коры", "chance": 40}],
     3: [
         {"item": "Глина", "chance": 40},
         {"item": "Кусок коры", "chance": 30},
@@ -88,8 +89,8 @@ BONUS_FINDS: Dict[int, List[Dict[str, Any]]] = {
 RESOURCE_SOFT_CAPS: Dict[str, Tuple[int, int]] = {
     "Ветка": (50, 80),
     "Камень": (15, 25),
-    "Кусок коры": (25, 40),
-    "Кора": (25, 40),
+    "Кусок коры": (6, 15),
+    "Кора": (6, 15),
     "Мох": (15, 30),
     "Сухой мох": (15, 30),
     "Сухая трава": (15, 30),
@@ -498,12 +499,37 @@ async def handle_explore_callback(
                 game.add_log(msg)
             else:
                 game.add_log(msg)
+
+            # На 2-й локации (Ручей со змеями) — 20% шанс наполнить бутылку водой из ручья до краёв (20/20)
+            if loc_id == 2 and random.randint(1, 100) <= 20:
+                bottles = getattr(game, "rain_bottles", [])
+                partial_idx = next((i for i, w in enumerate(bottles) if w < 20), None)
+                if partial_idx is not None:
+                    bottles[partial_idx] = 20
+                    game.rain_bottles = bottles
+                    game.add_log("💧 У ручья ты наполнил начатую бутылку водой до краёв (20/20).")
+                elif game.inventory.get("Пустая бутылка", 0) > 0:
+                    game.inventory["Пустая бутылка"] -= 1
+                    if game.inventory["Пустая бутылка"] <= 0:
+                        del game.inventory["Пустая бутылка"]
+                    game.inventory["Бутылка дождевой воды"] = game.inventory.get("Бутылка дождевой воды", 0) + 1
+                    bottles.append(20)
+                    game.rain_bottles = bottles
+                    game.add_log("💧 На берегу ручья ты зачерпнул воду и наполнил пустую бутылку до краёв (20/20).")
+
             text = game.get_ui()
             kb = get_main_kb(game)
         return text, kb
 
     elif data == "action_fill_rain_bottle":
-        if game.weather not in {"rain", "storm"}:
+        cur_loc = str(getattr(game, "current_location", "")).lower()
+        is_l6 = (
+            getattr(game, "location_index", None) == 5
+            or any(kw in cur_loc for kw in ("мохнат", "пещер", "снежн", "пик", "вершин", "гор"))
+        )
+        if is_l6:
+            game.add_log("⛰️ На обдуваемых ледяным ветром скалах невозможно собрать дождевую воду.")
+        elif game.weather not in {"rain", "storm"}:
             game.add_log("⚠️ Дождь уже закончился.")
         elif game.ap < 1:
             game.add_log("⚠️ Не хватает очков действий (требуется 1 ⚡ AP)!")
@@ -514,14 +540,14 @@ async def handle_explore_callback(
 
             if partial_idx is not None:
                 game.consume_action(1)
-                gained = random.randint(2, 4)
+                gained = random.randint(2, 6)
                 new_val = min(20, bottles[partial_idx] + gained)
                 actual_add = new_val - bottles[partial_idx]
                 bottles[partial_idx] = new_val
                 game.add_log(f"🌧️ Ты подставил бутылку под дождь и набрал +{actual_add} делений влаги ({new_val}/20).")
             elif has_empty:
                 game.consume_action(1)
-                gained = random.randint(2, 4)
+                gained = random.randint(2, 6)
                 game.inventory["Пустая бутылка"] -= 1
                 if game.inventory["Пустая бутылка"] <= 0:
                     del game.inventory["Пустая бутылка"]
@@ -536,9 +562,22 @@ async def handle_explore_callback(
         return text, kb
 
     elif data == "action_collect_water":
-        if game.weather in {"rain", "storm"}:
-            game.thirst = min(100, game.thirst + 20)
-            game.add_log("🌧 Ты подставил ладони, чтобы напиться дождём 💧 +20")
+        cur_loc = str(getattr(game, "current_location", "")).lower()
+        is_l6 = (
+            getattr(game, "location_index", None) == 5
+            or any(kw in cur_loc for kw in ("мохнат", "пещер", "снежн", "пик", "вершин", "гор"))
+        )
+        if is_l6:
+            game.add_log("⛰️ На обдуваемых ледяным ветром скалах невозможно напиться дождём.")
+        elif game.weather in {"rain", "storm"}:
+            sips_done = int(game.story_flags.get("rain_sips_count", 0))
+            if sips_done >= 3:
+                game.add_log("🌧️ Ты уже вдоволь напился дождевой воды.")
+            else:
+                sip_val = random.randint(7, 15)
+                game.thirst = min(100, game.thirst + sip_val)
+                game.story_flags["rain_sips_count"] = sips_done + 1
+                game.add_log(f"🌧 Ты подставил ладони, чтобы напиться дождём 💧 +{sip_val}")
         else:
             game.add_log("⚠️ Дождь уже закончился.")
         text = game.get_ui()

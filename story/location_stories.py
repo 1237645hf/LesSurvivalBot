@@ -255,8 +255,12 @@ def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool)
             and not game.is_story_flag_set("l3_ridge_completed")
             and "Солонец (Секач)" not in (getattr(game, "unlocked_locations", []) or [])
         ):
-            game.set_story_flag("l3_7_triggered", True)
-            return "l3_7_morning", "🐗 С каменистого гребня доносится глухой хруст..."
+            shelter_day = game.story_flags.get("l3_shelter_day")
+            cur_day = getattr(game, "day", 1)
+            # Секач просыпается после сна / отдыха в укрытии (на следующий день)
+            if shelter_day is None or cur_day > shelter_day or game.is_story_flag_set("l3_7_triggered"):
+                game.set_story_flag("l3_7_triggered", True)
+                return "l3_7_morning", "🐗 С каменистого гребня доносится глухой хруст..."
 
         return None, None
 

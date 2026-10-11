@@ -1115,10 +1115,18 @@ async def handle_campfire_callback(
         game.flask_water = new_flask_water
         game.army_flask_water = new_flask_water
 
-        game.campfire_durability = max(0, game.campfire_durability - 1)
-        if game.campfire_durability <= 0 and not getattr(game, "is_stove", False):
-            game.campfire_active = False
+        def _plural_sips(cnt: int) -> str:
+            c = abs(cnt) % 100
+            c10 = c % 10
+            if 11 <= c <= 19:
+                return f"{cnt} глотков"
+            if c10 == 1:
+                return f"{cnt} глоток"
+            if 2 <= c10 <= 4:
+                return f"{cnt} глотка"
+            return f"{cnt} глотков"
 
+        sips_text = _plural_sips(transfer)
         rem = available - transfer
         if rem <= 0:
             bottles.pop(0)
@@ -1127,14 +1135,18 @@ async def handle_campfire_callback(
                 del game.inventory["Бутылка дождевой воды"]
             game.inventory["Пустая бутылка"] = game.inventory.get("Пустая бутылка", 0) + 1
             msg = (
-                f"🔥 Ты перелил {transfer} гл. дождевой воды во флягу и прокипятил на углях. "
-                f"Во фляге теперь {new_flask_water}/20 чистой воды. Пустая бутылка вернулась в инвентарь."
+                f"☕ Ты переливаешь дождевую воду из пластиковой бутылки в армейскую флягу "
+                f"и ставишь её на угли костра. Вода закипает, превращаясь в чистую питьевую.\n\n"
+                f"• Во фляге: {new_flask_water}/20 чистой воды (+{sips_text})\n"
+                f"• Пустая пластиковая бутылка вернулась в рюкзак."
             )
         else:
             bottles[0] = rem
             msg = (
-                f"🔥 Ты перелил {transfer} гл. дождевой воды во флягу до краёв ({new_flask_water}/20) и прокипятил. "
-                f"В бутылке осталось {rem}/20 дождевой воды."
+                f"☕ Ты переливаешь дождевую воду из пластиковой бутылки в армейскую флягу "
+                f"и ставишь её на угли костра. Вода закипает, превращаясь в чистую питьевую.\n\n"
+                f"• Во фляге: {new_flask_water}/20 чистой воды (+{sips_text} до краёв)\n"
+                f"• В пластиковой бутылке осталось {rem}/20 дождевой воды."
             )
         game.add_log(msg)
         text = f"🔥 Прочность костра: {game.campfire_durability}/{game.campfire_max_durability}\n\n{msg}"
