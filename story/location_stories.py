@@ -389,6 +389,24 @@ def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool)
             if cur_prog == 25 and not game.is_story_flag_set("l6_step25_seen"):
                 game.set_story_flag("l6_step25_seen", True)
                 return "l6_step25_main", None
+            if cur_prog == 27 and not game.is_story_flag_set("l6_step27_seen"):
+                game.set_story_flag("l6_step27_seen", True)
+                return "l6_step27_main", None
+            if cur_prog == 30 and not game.is_story_flag_set("l6_step30_seen"):
+                game.set_story_flag("l6_step30_seen", True)
+                return "l6_step30_main", None
+            if cur_prog == 33 and not game.is_story_flag_set("l6_step33_seen"):
+                game.set_story_flag("l6_step33_seen", True)
+                return "l6_step33_main", None
+            if cur_prog == 36 and not game.is_story_flag_set("l6_step36_seen"):
+                game.set_story_flag("l6_step36_seen", True)
+                return "l6_step36_main", None
+            if cur_prog == 38 and not game.is_story_flag_set("l6_step38_seen"):
+                game.set_story_flag("l6_step38_seen", True)
+                return "l6_step38_main", None
+            if cur_prog == 39 and not game.is_story_flag_set("l6_step39_seen"):
+                game.set_story_flag("l6_step39_seen", True)
+                return "l6_step39_main", None
             if cur_prog >= 40 and not game.is_story_flag_set("warm_cave_shelter"):
                 return "l6_ascent_step40", None
         return None, None
