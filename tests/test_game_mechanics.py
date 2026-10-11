@@ -1452,6 +1452,37 @@ def test_survival_no_regen_or_table_damage_in_battle():
     assert res2["delta_hp"] == 0
 
 
+@pytest.mark.smoke
+@pytest.mark.mech
+def test_survival_damage_thresholds_30_and_20():
+    """Тест точных порогов таблицы B: >=30 -> 0; 20–29 -> -2; 1–19 -> -4; 0 -> -6."""
+    from game_math import get_starvation_damage, get_dehydration_damage
+
+    # Порог 30 (норма, 0 урона)
+    assert get_starvation_damage(30) == 0
+    assert get_dehydration_damage(30) == 0
+    assert get_starvation_damage(35) == 0
+    assert get_starvation_damage(69) == 0
+
+    # Порог 20–29 (легкое истощение, 2 урона)
+    assert get_starvation_damage(29) == 2
+    assert get_dehydration_damage(29) == 2
+    assert get_starvation_damage(25) == 2
+    assert get_starvation_damage(20) == 2
+    assert get_dehydration_damage(20) == 2
+
+    # Порог 1–19 (сильное истощение, 4 урона)
+    assert get_starvation_damage(19) == 4
+    assert get_dehydration_damage(19) == 4
+    assert get_starvation_damage(10) == 4
+    assert get_starvation_damage(1) == 4
+    assert get_dehydration_damage(1) == 4
+
+    # Порог 0 (критический ноль, 6 урона)
+    assert get_starvation_damage(0) == 6
+    assert get_dehydration_damage(0) == 6
+
+
 
 
 
