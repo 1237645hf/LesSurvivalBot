@@ -573,6 +573,311 @@ def handle_location_6_furry_cave(data, game, uid):
             game.reset_nav()
         return game.get_ui(), get_main_kb(game)
 
+    # ──────────────────────────────────────────────────────────────────────────
+    # СЮЖЕТНЫЕ ОКНА ПОДЪЁМА (ИССЛЕДОВАНИЯ 11–20 ИЗ 40)
+    # ──────────────────────────────────────────────────────────────────────────
+
+    # ИССЛЕДОВАНИЕ 13: Расколотая арка и камнепад
+    elif data == "l6_step13_main":
+        game.story_state = "l6_step13_main"
+        text = (
+            "Подъём упирается в опасный перешеек: сверху над каменной тропой нависает расколотая ледяная арка. "
+            "От вибрации ветра с неё то и дело срываются тяжёлые острые глыбы, разбиваясь о плиты над чернеющим обрывом. "
+            "Проход завален ледяным крошевом, а трещины в своде ползут всё шире. "
+            "Чтобы продвинуться выше, приходится выбирать: тратить время на поиск скрытого обхода, "
+            "рискнуть здоровьем и силой обрушить завал ради безопасного пути или быстро проскользнуть по самому краю без лишних остановок."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 Найти скрытый обход", callback_data="l6_step13_observe")],
+            [InlineKeyboardButton(text="🔨 Сбить опасные глыбы", callback_data="l6_step13_break")],
+            [InlineKeyboardButton(text="🚶 Быстро пройти по кромке", callback_data="l6_step13_edge")],
+        ])
+
+    elif data == "l6_step13_observe":
+        game.adjust_narrative_karma("observation", 1)
+        game.set_story_flag("l6_step13_choice", "observation")
+        game.story_state = "l6_step13_observe"
+        text = (
+            "Ты опускаешься на колени и внимательно изучаешь слои породы в обход осыпи. "
+            "Взгляд находит надёжный каменный карниз в монолитном базальте, скрытый за слоем инея. "
+            "Неспешный расчёт оправдывает себя: удаётся безопасно обогнуть аварийную арку по крепкому монолиту, "
+            "не потревожив ни единого висящего ледяного обломка. Хладнокровие экономит здоровье, а впереди снова открывается широкий подъём."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
+        ])
+
+    elif data == "l6_step13_break":
+        game.adjust_narrative_karma("intervention", 1)
+        game.set_story_flag("l6_step13_choice", "intervention")
+        game.story_state = "l6_step13_break"
+        game.hp -= 10
+        if game.hp <= 0:
+            game.hp = 0
+            from keyboards import get_death_kb, get_death_text
+            text = get_death_text(game, "Смертельный обвал ледяных глыб в гротах Мохнатой пещеры.", "Мохнатая пещера")
+            return text, get_death_kb()
+        text = (
+            "Ты крепко перехватываешь посох и наносишь акцентированный удар в основание трещины. "
+            "Ледяная арка с оглушительным грохотом рушится в пропасть, открывая чистый коридор. "
+            "Один из осколков рикошетит от скалы и глубоко рассекает плечо сквозь рукав (❤️ -10 HP). "
+            "Боль обжигает тело, но угроза полностью устранена: тропа расчищена, и никто из идущих следом больше не пострадает на этом гибельном перешейке."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
+        ])
+
+    elif data == "l6_step13_edge":
+        game.adjust_narrative_karma("pragmatism", 1)
+        game.set_story_flag("l6_step13_choice", "pragmatism")
+        game.story_state = "l6_step13_edge"
+        text = (
+            "Не тратя времени на расчистку чужой дороги и долгие поиски, ты прижимаешься к скале и быстро проскальзываешь по узкому наружному краю плиты. "
+            "За спиной с сухим треском осыпается ледяная крошка, но ноги уже выносят тело за опасную черту. "
+            "Драгоценные силы и дыхание сбережены, а риск остался позади. Личный практический расчёт позволяет продвигаться к цели без лишних задержек."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
+        ])
+
+    # ИССЛЕДОВАНИЕ 15: Заброшенный грузовой подъёмник
+    elif data == "l6_step15_main":
+        game.story_state = "l6_step15_main"
+        text = (
+            "Широкая терраса упирается в отвесный каменный уступ, разделяющий ярусы пещеры. "
+            "В скалу намертво врублена мощная бревенчатая рама грузового подъёмника с массивным дубовым воротом. "
+            "Сквозь морозную мглу над чернеющим обрывом застыла перекошенная грузовая клеть. "
+            "Вся конструкция скована льдом и занесена инеем, но выглядит удивительно прочной. "
+            "Металлическая ковка барабана не тронута ржавчиной, а в узлах механизма ещё угадывается инженерный расчёт."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 Подойти к механизму", callback_data="l6_step15_detail")]
+        ])
+
+    elif data == "l6_step15_detail":
+        game.story_state = "l6_step15_detail"
+        text = (
+            "Вблизи становятся видны подробности заброшенного узла. "
+            "Сбоку на раме раскачивается сорванный стальной трос: от порывов ветра он угрожающе бьётся о балки и может в любой момент сорвать клеть вниз, завалив проход. "
+            "На барабане намертво заклинило тормозную колодку, оббитую широкой полосой толстой выделанной кожи. "
+            "Сам же сложный механизм шестерней и противовесов цел, но требует внимательного изучения. Предстоит решить, что делать с находкой."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⚙️ Изучить схему передач", callback_data="l6_step15_observe")],
+            [InlineKeyboardButton(text="⛓️ Зафиксировать трос в пазу", callback_data="l6_step15_cable")],
+            [InlineKeyboardButton(text="🎒 Срезать кожу с тормоза", callback_data="l6_step15_leather")],
+        ])
+
+    elif data == "l6_step15_observe":
+        game.adjust_narrative_karma("observation", 1)
+        game.set_story_flag("l6_step15_choice", "observation")
+        game.story_state = "l6_step15_observe"
+        text = (
+            "Взгляд внимательно скользит по зубьям шестерней, противовесам и схеме натяжения тросов. "
+            "Становится ясно, как устроена система балансировки: противовес позволял поднимать огромный вес без лишних усилий. "
+            "Понимание инженерного замысла помогает отыскать скрытую боковую лестницу для рабочих, выбитую прямо в монолите скалы за барабаном. "
+            "Это даёт безопасный путь наверх в обход обледенелых ступеней."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
+        ])
+
+    elif data == "l6_step15_cable":
+        game.adjust_narrative_karma("intervention", 1)
+        game.set_story_flag("l6_step15_choice", "intervention")
+        game.story_state = "l6_step15_cable"
+        text = (
+            "Тяжёлый трос вырывается из замёрзших пальцев, но ты упрямо наваливаешься всем весом и заводишь сорванное кольцо в массивный стальной стопор на раме. "
+            "Замок с сухим щелчком намертво фиксирует груз над бездной. "
+            "Конструкция спасена от неминуемого обрушения: клеть больше не сорвётся вниз, нижний проход останется чистым, "
+            "а прочная дубовая рама послужит надёжным упором для каждого, кто рискнёт подниматься следом."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
+        ])
+
+    elif data == "l6_step15_leather":
+        game.adjust_narrative_karma("pragmatism", 1)
+        game.set_story_flag("l6_step15_choice", "pragmatism")
+        if not game.is_story_flag_set("l6_step15_loot_taken"):
+            game.set_story_flag("l6_step15_loot_taken", True)
+            game.inventory["Кожа"] = game.inventory.get("Кожа", 0) + 1
+            game.add_log("Получено: Кожа ×1")
+        game.story_state = "l6_step15_leather"
+        text = (
+            "Ты не тратишь время на починку мертвого механизма, а подходишь к тормозному ободу ворота. "
+            "Острый нож аккуратно срезает широкую полосу толстой выделанной кожи, служившую обшивкой колодок (+1 Кожа). "
+            "Материал отлично сохранился на морозе: прочный ремень сразу отправляется в рюкзак. "
+            "В условиях выживания практическая польза важнее чужих механизмов — хорошая кожа всегда пойдёт на починку обуви и брони."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
+        ])
+
+    # ИССЛЕДОВАНИЕ 17: Скользкий карниз и переходящая сумка
+    elif data == "l6_step17_main":
+        game.story_state = "l6_step17_main"
+        text = (
+            "Тропа выходит на продуваемый всеми ветрами открытый скальный карниз над пропастью. "
+            "Здесь отчётливо видны следы давнего несчастного случая: расколотый деревянный посох, сорванные камни "
+            "и глубокая царапина на скользком уступе, уходящая прямо в бездну. Кто-то оступился на обледенелом повороте. "
+            "В каменной расщелине у самой кромки обрыва застряла брошенная кожаная сумка путника. "
+            "Этот опасный карниз не прощает спешки и заставляет внимательно оценить каждый свой шаг."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📦 Осмотреть сумку у обрыва", callback_data="l6_step17_bag")],
+            [InlineKeyboardButton(text="👁️ Осмотреть место срыва", callback_data="l6_step17_observe")],
+            [InlineKeyboardButton(text="🔨 Выложить каменный бортик", callback_data="l6_step17_wall")],
+        ])
+
+    elif data == "l6_step17_observe":
+        game.adjust_narrative_karma("observation", 1)
+        game.set_story_flag("l6_step17_choice", "observation")
+        game.story_state = "l6_step17_observe"
+        text = (
+            "Взгляд методично изучает царапины на камне и границы наледи. "
+            "Причина беды очевидна: тонкий, невидимый глазом слой прозрачного льда на самом перегибе карниза. "
+            "Но если присмотреться к рельефу уступов, становится видна безопасная дуга обхода ближе к монолитной стене, "
+            "где порода шероховатая и сухая. Наблюдательность позволяет точно запомнить опасный участок и впредь уверенно проходить поворот без риска сорваться."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
+        ])
+
+    elif data == "l6_step17_wall":
+        game.adjust_narrative_karma("intervention", 1)
+        game.set_story_flag("l6_step17_choice", "intervention")
+        game.story_state = "l6_step17_wall"
+        text = (
+            "Ты находишь вдоль стены тяжёлые обломки базальта и один за другим перетаскиваешь их к открытому обрыву. "
+            "Сильные удары клиньями намертво утрамбовывают камни в расщелины, формируя сплошной защитный бортик вдоль опасного закругления. "
+            "Мышцы ноют от усталости, но гибельный поворот карниза больше не слеп: "
+            "теперь край бездны надёжно отсечён каменной кладкой, которая спасёт от падения каждого, кто пойдёт этой тропой."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
+        ])
+
+    elif data == "l6_step17_bag":
+        game.story_state = "l6_step17_bag"
+        text = (
+            "Пальцы отгибают промёрзший кожаный клапан. На застёжках видны чужие узлы: до тебя здесь уже бывали другие, превратив сумку в дорожный схрон. "
+            "Внутри обнаруживается кусок плотного меха и завёрнутое в бересту жареное мясо. "
+            "Ты достаёшь находку на свет — больше в карманах ничего нет. "
+            "Можно оставить взамен часть своего пайка для тех, кто пойдёт следом, или убрать всё в рюкзак и продолжить путь без лишних сантиментов."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🎁 Положить из инвентаря", callback_data="l6_step17_leave_gift")],
+            [InlineKeyboardButton(text="➡️ Забрать всё и уйти", callback_data="l6_step17_take_all")],
+        ])
+
+    elif data == "l6_step17_leave_gift":
+        game.adjust_narrative_karma("compassion", 1)
+        game.set_story_flag("l6_step17_gift_left", True)
+        if not game.is_story_flag_set("l6_step17_loot_taken"):
+            game.set_story_flag("l6_step17_loot_taken", True)
+            game.inventory["Мех"] = game.inventory.get("Мех", 0) + 1
+            game.inventory["Жареное мясо"] = game.inventory.get("Жареное мясо", 0) + 1
+            game.add_log("Получено: Мех ×1, Жареное мясо ×1")
+        gifted_item = None
+        for item in ["Жареное мясо", "Мясо", "Сырое мясо", "Печёные ягоды", "Жареные грибы", "Ягоды", "Лесная ягода", "Красная ягода"]:
+            if game.inventory.get(item, 0) > 0:
+                game.inventory[item] -= 1
+                if game.inventory[item] <= 0:
+                    del game.inventory[item]
+                gifted_item = item
+                break
+        game.story_state = "l6_step17_leave_gift"
+        text = (
+            "Мех и порция мяса отправляются в глубину мешка, а на сухую бересту взамен ложится сытный припас из собственных запасов. "
+            "Клапан сумки снова плотно застёгивается. Схрон готов поддержать любого, кто выберется на этот опасный карниз на пределе сил. "
+            "От соблюдения закона честной стоянки внутри разливается согревающее спокойствие: даже на краю пропасти удаётся сохранить человечность и заботу о других."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
+        ])
+
+    elif data == "l6_step17_take_all":
+        if not game.is_story_flag_set("l6_step17_gift_left"):
+            game.adjust_narrative_karma("pragmatism", 1)
+            game.set_story_flag("l6_step17_took_all", True)
+        if not game.is_story_flag_set("l6_step17_loot_taken"):
+            game.set_story_flag("l6_step17_loot_taken", True)
+            game.inventory["Мех"] = game.inventory.get("Мех", 0) + 1
+            game.inventory["Жареное мясо"] = game.inventory.get("Жареное мясо", 0) + 1
+            game.add_log("Получено: Мех ×1, Жареное мясо ×1")
+        game.story_state = None
+        game.active_story_callback = None
+        if hasattr(game, "reset_nav"):
+            game.reset_nav()
+        return game.get_ui(), get_main_kb(game)
+
+    # ИССЛЕДОВАНИЕ 20: Извилистые штольни и морозный морок
+    elif data == "l6_step20_main":
+        game.story_state = "l6_step20_main"
+        text = (
+            "По ощущениям и пройденным шагам сквозь эти бесконечные извилистые залы и каменные завалы можно было бы дважды подняться на вершину и спуститься обратно. "
+            "Но петляющие ледяные штольни упрямо кружат в недрах горы, и под ногами лишь середина подъёма. "
+            "Воздух здесь становится разреженным и обжигающе сухим. "
+            "Сквозняк, прорываясь сквозь трещины свода, звучит глухим ритмичным гулом: в шуме ветра чудятся шаги за спиной, звон пряжек и сдавленный шёпот. "
+            "Ледяной морок испытывает рассудок на прочность."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👂 Вслушаться в гул ветра", callback_data="l6_step20_observe")],
+            [InlineKeyboardButton(text="❤️ Согреть мысли о тепле", callback_data="l6_step20_compassion")],
+            [InlineKeyboardButton(text="🚶 Не обращать внимания", callback_data="l6_step20_pragmatism")],
+        ])
+
+    elif data == "l6_step20_observe":
+        game.adjust_narrative_karma("observation", 1)
+        game.set_story_flag("l6_step20_choice", "observation")
+        game.story_state = "l6_step20_observe"
+        text = (
+            "Ты останавливаешься и закрываешь глаза, отрешённо разбирая структуру звуков. "
+            "Голоса и шаги распадаются на простую физику: свист воздуха в каменных трубах, дребезжание тонких ледяных пластин и глухой рокот обвала в нижних штольнях. "
+            "Морок бессилен перед холодным анализом. Иллюзия рассеивается без следа, оставляя в ушах лишь ровный гул горного сквозняка и кристальную ясность ума."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
+        ])
+
+    elif data == "l6_step20_compassion":
+        game.adjust_narrative_karma("compassion", 1)
+        game.set_story_flag("l6_step20_choice", "compassion")
+        game.story_state = "l6_step20_compassion"
+        if game.is_story_flag_set("has_pet"):
+            text = (
+                "Ты прижимаешь ладонь к груди под курткой, где клубится спасительное живое тепло. "
+                "Котёнок тихо шевелится у самого сердца и сонно мурлычет, уткнувшись носом в шерстяную ткань. "
+                "Это крошечное биение жизни мгновенно выдёргивает сознание из ледяной паутины. "
+                "Забота о том, кто полностью зависит от тебя, выжигает навязчивый морок без остатка. "
+                "Внутри разливается ясный покой: здесь нельзя падать духом, пока это маленькое тепло рядом."
+            )
+        else:
+            text = (
+                "Ты прижимаешь онемевшую ладонь к груди, вслушиваясь в собственное ровное, упрямое сердцебиение. "
+                "Память о живом костровом тепле лагеря и спокойное осознание своего пути вытесняют навязчивые слуховые призраки. "
+                "Человечность и тихое сострадание к тем, кто тоже мёрзнет в этих бесконечных горах, оказываются сильнее ледяного наваждения. "
+                "Морок бессильно тает в клубах пара, а внутри разливается согревающая уверенность."
+            )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
+        ])
+
+    elif data == "l6_step20_pragmatism":
+        game.adjust_narrative_karma("pragmatism", 1)
+        game.set_story_flag("l6_step20_choice", "pragmatism")
+        game.story_state = "l6_step20_pragmatism"
+        text = (
+            "Ты стискиваешь челюсти и делаешь резкий шаг вперёд, наотрез отказываясь вслушиваться в бессмысленные звуки. "
+            "Ноги упрямо отсчитывают метр за метром по гранитному полотну. "
+            "Галлюцинации бессильны против непреклонной воли выжить: нет ни прошлого, ни духов, есть лишь крутой подъём и цель впереди. "
+            "Наваждение резко спадает, разбившись о глухую решимость дойти до конца."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
+        ])
+
     elif data in ("l6_ascent_step40", "l6_ascent_step30"):
         unlock_warm_cave_shelter(game)
         game.story_state = "furry_cave_start"

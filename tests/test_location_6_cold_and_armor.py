@@ -494,8 +494,124 @@ def test_l6_ascent_progression_and_milestones():
     handle_location_6_furry_cave("l6_step10_take_all", game, 1001)
     assert game.narrative_karma["pragmatism"] == 1
 
-    # Шаги 11-39: обычный подъём
-    for i in range(11, 40):
+    # Шаги 11-12: обычный подъём
+    for i in range(11, 13):
+        ev, _ = check_forest_research_story_trigger(game, 6, False)
+        assert ev is None
+        assert game.story_flags["l6_ascent_progress"] == i
+
+    # Шаг 13: Веха 13 — Расколотая арка и камнепад
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev == "l6_step13_main"
+    assert game.story_flags["l6_ascent_progress"] == 13
+    text13, kb13 = handle_location_6_furry_cave("l6_step13_main", game, 1001)
+    assert len(text13) >= 380 and len(text13) <= 580
+    assert len(kb13.inline_keyboard) == 3
+
+    # Выбор 13.2а: Наблюдение (+1 Наблюдение)
+    text13_obs, _ = handle_location_6_furry_cave("l6_step13_observe", game, 1001)
+    assert len(text13_obs) >= 350 and len(text13_obs) <= 430
+    assert game.narrative_karma["observation"] == 3
+    handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
+
+    # Проверка урона -10 HP на шаге 13.2б
+    g13 = GameState()
+    g13.hp = 50
+    handle_location_6_furry_cave("l6_step13_break", g13, 1001)
+    assert g13.hp == 40
+    assert g13.narrative_karma["intervention"] == 1
+
+    # Шаг 14:
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev is None
+    assert game.story_flags["l6_ascent_progress"] == 14
+
+    # Шаг 15: Веха 15 — Заброшенный грузовой подъёмник
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev == "l6_step15_main"
+    assert game.story_flags["l6_ascent_progress"] == 15
+    text15, kb15 = handle_location_6_furry_cave("l6_step15_main", game, 1001)
+    assert len(text15) >= 380 and len(text15) <= 580
+    assert len(kb15.inline_keyboard) == 1
+
+    # Экран 15.1б: Детали и развилка
+    text15_b, kb15_b = handle_location_6_furry_cave("l6_step15_detail", game, 1001)
+    assert len(text15_b) >= 380 and len(text15_b) <= 580
+    assert len(kb15_b.inline_keyboard) == 3
+
+    # Срезать кожу (+1 Кожа, +1 Прагматизм)
+    text15_lea, _ = handle_location_6_furry_cave("l6_step15_leather", game, 1001)
+    assert len(text15_lea) >= 350 and len(text15_lea) <= 430
+    assert game.inventory.get("Кожа", 0) == 1
+    assert game.narrative_karma["pragmatism"] == 2
+    handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
+
+    # Шаг 16:
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev is None
+    assert game.story_flags["l6_ascent_progress"] == 16
+
+    # Шаг 17: Веха 17 — Скользкий карниз и переходящая сумка
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev == "l6_step17_main"
+    assert game.story_flags["l6_ascent_progress"] == 17
+    text17, kb17 = handle_location_6_furry_cave("l6_step17_main", game, 1001)
+    assert len(text17) >= 380 and len(text17) <= 580
+    assert len(kb17.inline_keyboard) == 3
+
+    # Проверка осмотра сумки и обмена подарка
+    text17_bag, kb17_bag = handle_location_6_furry_cave("l6_step17_bag", game, 1001)
+    assert len(text17_bag) >= 350 and len(text17_bag) <= 430
+    assert len(kb17_bag.inline_keyboard) == 2
+
+    # Оставить подарок (+1 Сострадание, получение Мех и Жареное мясо, списание еды)
+    game.inventory["Жареное мясо"] = 2
+    text17_gift, _ = handle_location_6_furry_cave("l6_step17_leave_gift", game, 1001)
+    assert len(text17_gift) >= 350 and len(text17_gift) <= 430
+    assert game.narrative_karma["compassion"] == 1
+    assert game.inventory.get("Мех", 0) == 1
+    # Было 2, +1 получено, -1 списано взамен = 2
+    assert game.inventory.get("Жареное мясо", 0) == 2
+    handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
+
+    # Шаги 18-19:
+    for i in range(18, 20):
+        ev, _ = check_forest_research_story_trigger(game, 6, False)
+        assert ev is None
+        assert game.story_flags["l6_ascent_progress"] == i
+
+    # Шаг 20: Веха 20 — Извилистые штольни и морозный морок
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev == "l6_step20_main"
+    assert game.story_flags["l6_ascent_progress"] == 20
+    text20, kb20 = handle_location_6_furry_cave("l6_step20_main", game, 1001)
+    assert len(text20) >= 380 and len(text20) <= 580
+    assert len(kb20.inline_keyboard) == 3
+
+    # 20.2а: Наблюдение
+    text20_obs, _ = handle_location_6_furry_cave("l6_step20_observe", game, 1001)
+    assert len(text20_obs) >= 350 and len(text20_obs) <= 430
+    assert game.narrative_karma["observation"] == 4
+
+    # 20.2б: Сострадание с питомцем и без
+    game.set_story_flag("has_pet", False)
+    text20_no_pet, _ = handle_location_6_furry_cave("l6_step20_compassion", game, 1001)
+    assert len(text20_no_pet) >= 350 and len(text20_no_pet) <= 430
+    assert "Котёнок" not in text20_no_pet
+
+    game.set_story_flag("has_pet", True)
+    text20_pet, _ = handle_location_6_furry_cave("l6_step20_compassion", game, 1001)
+    assert len(text20_pet) >= 350 and len(text20_pet) <= 430
+    assert "Котёнок тихо шевелится" in text20_pet
+
+    # 20.2в: Прагматизм
+    text20_prag, _ = handle_location_6_furry_cave("l6_step20_pragmatism", game, 1001)
+    assert len(text20_prag) >= 350 and len(text20_prag) <= 430
+    assert game.narrative_karma["pragmatism"] == 3
+    handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
+
+    # Шаги 21-39: обычный подъём
+    for i in range(21, 40):
         ev, _ = check_forest_research_story_trigger(game, 6, False)
         assert ev is None
         assert game.story_flags["l6_ascent_progress"] == i
