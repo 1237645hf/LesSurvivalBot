@@ -37,13 +37,43 @@ def unlock_warm_cave_shelter(game):
                 unlocked.append(r)
 
 
+def deduct_story_gift_item(game):
+    """Списать 1 единицу подходящего припаса из инвентаря для сюжетного схрона / подарка взамен.
+
+    Использует стандартный сюжетный инвентарь (modules/items.py), отдавая приоритет
+    сытным припасам и еде без ручного перебора произвольных списков в коде экранов.
+    """
+    from modules.items import is_item_consumable, get_item_type
+
+    # 1. Приоритетные готовые припасы выживания
+    preferred = ("Жареное мясо", "Сухпай", "Мясо на коре", "Печёные ягоды", "Жареные грибы", "Сырое мясо")
+    for it in preferred:
+        if game.inventory.get(it, 0) > 0:
+            game.inventory[it] -= 1
+            if game.inventory[it] <= 0:
+                del game.inventory[it]
+            return it
+
+    # 2. Любые другие съедобные припасы (ягоды, грибы, отвары) через реестр items.py
+    for it, count in list(game.inventory.items()):
+        if count > 0 and is_item_consumable(it):
+            itype = get_item_type(it)
+            if itype in ("food", "berry", "mushroom"):
+                game.inventory[it] -= 1
+                if game.inventory[it] <= 0:
+                    del game.inventory[it]
+                return it
+
+    return None
+
+
 def handle_location_6_furry_cave(data, game, uid):
     """Обработать события на локации 'Мохнатая Пещера' (L6)."""
     text = None
     kb = None
 
     # При взаимодействии с Тёплой пещерой активируем шелтер и рецепты
-    if data.startswith("furry_") or data in ("l6_ascent_step40", "l6_ascent_step30"):
+    if data.startswith("furry_") or data == "l6_ascent_step40":
         unlock_warm_cave_shelter(game)
 
     if data == "location_enter_6":
@@ -83,14 +113,15 @@ def handle_location_6_furry_cave(data, game, uid):
         kb = get_main_kb(game)
 
     elif data == "furry_examine":
-        game.adjust_narrative_karma("observation", 1)
+        if not game.is_story_flag_set("furry_cave_examined"):
+            game.set_story_flag("furry_cave_examined", True)
+            game.adjust_narrative_karma("observation", 1)
         game.story_state = "furry_examine"
         text = (
-            "Ты медленно обходишь пещеру.\n"
-            "Шкуры на стенах разной свежести. В дальнем углу, под нависшим камнем,\n"
-            "лежит небольшой свёрток из той же шкуры. Он аккуратно перевязан тонкой бечёвкой.\n"
-            "Рядом — несколько деревянных игл и обрезки меха.\n\n"
-            "Кто-то здесь работал недавно."
+            "Ты медленно обходишь просторный грот. Шкуры на стенах разной свежести. "
+            "В дальнем углу, под нависшим каменным выступом, лежит аккуратный свёрток из плотной шкуры, "
+            "перевязанный бечёвкой. Рядом на каменном уступе темнеют несколько костяных игл и мелкие обрезки меха.\n\n"
+            "Кто-то регулярно поддерживал здесь порядок."
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📦 Развернуть свёрток", callback_data="furry_bundle")],
@@ -101,32 +132,77 @@ def handle_location_6_furry_cave(data, game, uid):
 
     elif data == "furry_bundle":
         game.story_state = "furry_bundle"
-        text = (
-            "Ты развязываешь бечёвку.\n"
-            "Внутри — три хороших куска выделанного меха, выкройки тёплой одежды и короткая надпись,\n"
-            "нацарапанная углем на внутренней стороне шкуры:\n\n"
-            "«Бери, если нужно.\n"
-            "Оставь, если сможешь.»"
-        )
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🎒 Забрать весь мех (+3)", callback_data="furry_take_all")],
-            [InlineKeyboardButton(text="✂️ Взять часть (+2)", callback_data="furry_take_part")],
-            [InlineKeyboardButton(text="🎁 Положить подарок взамен", callback_data="furry_leave_gift")],
-            [InlineKeyboardButton(text="✋ Оставить всё как есть", callback_data="furry_bundle_leave")],
-        ])
+        if game.is_story_flag_set("furry_bundle_taken"):
+            text = (
+                "Ты снова развязываешь тонкую бечёвку свёртка. Внутри совершенно пусто — лишь сухая шершавая мездра шкуры и нацарапанная углем надпись: "
+                "«Бери, если нужно. Оставь, если сможешь». Ты уже забрал весь найденный здесь мех без остатка. "
+                "В прохладном дальнем углу под каменным навесом больше ничего нет, кроме брошенных деревянных игл и мелких обрезков нитей. "
+                "Пора возвращаться к тёплому очагу или готовиться ко сну."
+            )
+            buttons = []
+            if not game.is_story_flag_set("left_something_in_bundle"):
+                buttons.append([InlineKeyboardButton(text="🎁 Положить подарок взамен", callback_data="furry_leave_gift")])
+            buttons.append([InlineKeyboardButton(text="✋ Отойти от свёртка", callback_data="furry_bundle_leave")])
+            kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        elif game.is_story_flag_set("furry_bundle_part_taken"):
+            text = (
+                "Ты развязываешь бечёвку свёртка. Внутри остался один добротный кусок выделанного меха и берестяные выкройки. "
+                "На шкуре всё так же темнеет нацарапанная углем надпись: «Бери, если нужно. Оставь, если сможешь». "
+                "Ты взял лишь часть, сохранив припас для другого замерзающего путника. "
+                "Ты можешь забрать оставшийся мех в рюкзак, оставить что-то взамен или аккуратно завернуть свёрток обратно и отойти к огню."
+            )
+            buttons = [
+                [InlineKeyboardButton(text="🎒 Забрать остаток (+1)", callback_data="furry_take_remainder")],
+            ]
+            if not game.is_story_flag_set("left_something_in_bundle"):
+                buttons.append([InlineKeyboardButton(text="🎁 Положить подарок взамен", callback_data="furry_leave_gift")])
+            buttons.append([InlineKeyboardButton(text="✋ Оставить всё как есть", callback_data="furry_bundle_leave")])
+            kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        elif game.is_story_flag_set("left_something_in_bundle"):
+            text = (
+                "Ты развязываешь бечёвку. Внутри аккуратно уложены три куска меха, а рядом лежит оставленный тобой припас. "
+                "Никто не тревожил свёрток с твоего последнего визита. Надпись на внутренней стороне шкуры напоминает о неписаном законе гор: "
+                "«Бери, если нужно. Оставь, если сможешь». Приятно видеть, что схрон в полном порядке. "
+                "Ты аккуратно заворачиваешь свёрток и укладываешь его обратно на каменный уступ."
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🎒 Забрать весь мех (+3)", callback_data="furry_take_all")],
+                [InlineKeyboardButton(text="✂️ Взять часть (+2)", callback_data="furry_take_part")],
+                [InlineKeyboardButton(text="✋ Оставить всё как есть", callback_data="furry_bundle_leave")],
+            ])
+        else:
+            text = (
+                "Ты развязываешь тонкую бечёвку свёртка. Внутри лежат три отличных куска плотного выделанного меха, "
+                "берестяные выкройки тёплой одежды и короткая надпись, нацарапанная углем на шкуре: "
+                "«Бери, если нужно. Оставь, если сможешь». Схрон явно оставлен для выживания тех, кто одолел подъём сквозь ледяные гроты. "
+                "Предстоит решить, сколько припасов взять себе, а сколько сберечь для следующих путников."
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🎒 Забрать весь мех (+3)", callback_data="furry_take_all")],
+                [InlineKeyboardButton(text="✂️ Взять часть (+2)", callback_data="furry_take_part")],
+                [InlineKeyboardButton(text="🎁 Положить подарок взамен", callback_data="furry_leave_gift")],
+                [InlineKeyboardButton(text="✋ Оставить всё как есть", callback_data="furry_bundle_leave")],
+            ])
 
     elif data == "furry_take_all":
-        game.adjust_narrative_karma("pragmatism", 2)
         if not game.is_story_flag_set("furry_bundle_taken") and not game.is_story_flag_set("furry_bundle_part_taken"):
+            game.adjust_narrative_karma("pragmatism", 2)
             game.inventory["Мех"] = game.inventory.get("Мех", 0) + 3
             game.set_story_flag("furry_bundle_taken")
+            game.add_log("Получено: Мех ×3")
             text = (
-                "Ты убираешь мех в рюкзак. Свёрток остаётся пустым.\n\n"
-                "──────────\n"
-                "Получено: Мех ×3"
+                "Ты аккуратно убираешь весь выделанный мех на самое дно походного мешка (+3 Мех). "
+                "Внутри свёртка больше ничего не остаётся, кроме старых берестяных выкроек. "
+                "Трезвый прагматизм подсказывает, что в морозных горах ценен каждый тёплый лоскут, и лишних припасов здесь просто не бывает. "
+                "Завязав пустую шкуру и оставив её на скальном уступе, ты с полезной добычей возвращаешься в центр просторной тёплой пещеры."
             )
         else:
-            text = "Свёрток уже пуст."
+            text = (
+                "Свёрток уже абсолютно пуст: весь найденный здесь мех был забран в рюкзак во время прошлого осмотра схрона. "
+                "На шершавом базальте лежат лишь оставленные берестяные выкройки да пара костяных швейных игл. "
+                "Тратить драгоценное время на повторные поиски бессмысленно — здесь больше не осталось ничего полезного. "
+                "Пора вернуться к согревающему пещерному очагу или как следует устроиться на ночлег."
+            )
         game.story_state = "furry_after_bundle"
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔥 Подойти к очагу", callback_data="furry_warm")],
@@ -134,18 +210,49 @@ def handle_location_6_furry_cave(data, game, uid):
         ])
 
     elif data == "furry_take_part":
-        game.adjust_narrative_karma("compassion", 1)
         if not game.is_story_flag_set("furry_bundle_taken") and not game.is_story_flag_set("furry_bundle_part_taken"):
+            game.adjust_narrative_karma("compassion", 1)
             game.inventory["Мех"] = game.inventory.get("Мех", 0) + 2
             game.set_story_flag("furry_bundle_part_taken")
+            game.add_log("Получено: Мех ×2")
             text = (
-                "Ты берёшь два куска, один оставляешь.\n"
-                "Аккуратно заворачиваешь свёрток обратно.\n\n"
-                "──────────\n"
-                "Получено: Мех ×2"
+                "Ты забираешь два куска выделанного меха, а третий бережно оставляешь на месте (+2 Мех). "
+                "Берестяные выкройки аккуратно уложены рядом на плоский камень. "
+                "Забота о тех, кто может прийти следом на пределе сил, приносит тихое душевное спокойствие. "
+                "Ты аккуратно заворачиваешь свёрток бечёвкой, сохранив спасительный припас для чужого выживания в метель, "
+                "и спокойно возвращаешься к мерно потрескивающему каменному очагу."
             )
         else:
-            text = "Ты уже взял свою долю."
+            text = (
+                "Ты уже взял свою справедливую долю припасов из этого свёртка при прошлом осмотре. "
+                "Оставшаяся часть лежит нетронутой ради того, кто придёт в пещеру следом за тобой на исходе последних сил. "
+                "Нарушать собственное слово и отбирать чужой шанс на спасение не имеет никакого смысла. "
+                "Ты аккуратно поправляешь узел на шкуре и спокойно отходишь от каменной ниши обратно к мягкому моховому ковру у согревающего огня."
+            )
+        game.story_state = "furry_after_bundle"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔥 Подойти к очагу", callback_data="furry_warm")],
+            [InlineKeyboardButton(text="💤 Лечь отдохнуть", callback_data="furry_sleep")],
+        ])
+
+    elif data == "furry_take_remainder":
+        if game.is_story_flag_set("furry_bundle_part_taken") and not game.is_story_flag_set("furry_bundle_taken"):
+            game.inventory["Мех"] = game.inventory.get("Мех", 0) + 1
+            game.set_story_flag("furry_bundle_taken")
+            game.add_log("Получено: Мех ×1")
+            text = (
+                "Ты достаёшь из свёртка последний оставшийся кусок выделанного меха и надёжно убираешь его к остальным походным вещам (+1 Мех). "
+                "Теперь схрон окончательно опустел, сохранив лишь берестяные шаблоны одежды. "
+                "В суровых условиях выживания практическая необходимость взяла верх над благородством. "
+                "Завязав пустую шкуру, ты возвращаешься к спасительному печному очагу передохнуть перед новой вылазкой."
+            )
+        else:
+            text = (
+                "Свёрток уже абсолютно пуст: весь найденный здесь мех был забран в рюкзак во время прошлого осмотра схрона. "
+                "На шершавом базальте лежат лишь оставленные берестяные выкройки да пара костяных швейных игл. "
+                "Тратить драгоценное время на повторные поиски бессмысленно — здесь больше не осталось ничего полезного. "
+                "Пора вернуться к согревающему пещерному очагу или как следует устроиться на ночлег."
+            )
         game.story_state = "furry_after_bundle"
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔥 Подойти к очагу", callback_data="furry_warm")],
@@ -153,21 +260,24 @@ def handle_location_6_furry_cave(data, game, uid):
         ])
 
     elif data == "furry_leave_gift":
-        game.adjust_narrative_karma("compassion", 2)
-        game.set_story_flag("left_something_in_bundle")
-        gift_name = None
-        for item in ["Жареное мясо", "Мясо", "Сушёное мясо", "Ягоды", "Палка", "Древесина"]:
-            if game.inventory.get(item, 0) > 0:
-                game.inventory[item] -= 1
-                if game.inventory[item] == 0:
-                    del game.inventory[item]
-                gift_name = item
-                break
-        gift_note = f"\n\nТы оставляешь {gift_name} внутри свёртка." if gift_name else ""
-        text = (
-            "Ты решаешь не брать мех, но оставить что-то взамен.\n"
-            f"Ты кладёшь свой дар внутрь, заворачиваешь свёрток и возвращаешь его на место.{gift_note}"
-        )
+        if not game.is_story_flag_set("left_something_in_bundle"):
+            game.adjust_narrative_karma("compassion", 2)
+            game.set_story_flag("left_something_in_bundle", True)
+            gift_name = deduct_story_gift_item(game)
+            gift_note = f" Внутрь свёртка аккуратно уложен припас: {gift_name}." if gift_name else " В свёрток бережно уложена щепоть сухого пещерного мха."
+            text = (
+                "Ты решаешь не трогать чужой мех без нужды, а вместо этого оставить полезный подарок взамен."
+                f"{gift_note} Узел на кожаном свёртке снова крепко завязан и возвращён на холодный каменный уступ. "
+                "Закон пещерного убежища строго соблюдён: путник не грабит чужое, а поддерживает жизнь в укрытии. "
+                "От этого благородного поступка внутри разливается согревающее спокойствие."
+            )
+        else:
+            text = (
+                "Ты уже оставил полезный дар в этом свёртке во время прошлого осмотра схрона. "
+                "Твой припас надёжно укрыт под шкурой и дожидается того, кому он спасёт жизнь в морозную метель на краю гибели. "
+                "Перегружать маленький схрон лишними вещами нет смысла — закон честной стоянки уже полностью соблюдён. "
+                "Ты аккуратно поправляешь верёвку на свертке и спокойно отходишь от каменного уступа к согревающему очагу."
+            )
         game.story_state = "furry_after_bundle"
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔥 Подойти к очагу", callback_data="furry_warm")],
@@ -175,7 +285,11 @@ def handle_location_6_furry_cave(data, game, uid):
         ])
 
     elif data == "furry_bundle_leave":
-        text = "Ты оставляешь всё как нашёл и отходишь от свёртка."
+        text = (
+            "Ты аккуратно затягиваешь бечёвку на свёртке и оставляешь его в покое на каменном уступе. "
+            "В чужом убежище важно соблюдать порядок и не трогать найденные вещи без крайней нужды. "
+            "Отойдя от прохладного угла пещеры, ты направляешься обратно к сухому очагу, где веет спасительным печным теплом."
+        )
         game.story_state = "furry_after_bundle"
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔥 Подойти к очагу", callback_data="furry_warm")],
@@ -368,51 +482,65 @@ def handle_location_6_furry_cave(data, game, uid):
         ])
 
     elif data == "l6_step4_inspect":
+        game.story_state = "l6_step4_inspect"
         if not game.is_story_flag_set("l6_step4_loot_taken"):
             game.set_story_flag("l6_step4_loot_taken", True)
             game.inventory["Кремень"] = game.inventory.get("Кремень", 0) + 1
             game.inventory["Пещерный мох"] = game.inventory.get("Пещерный мох", 0) + 1
             game.add_log("Получено: Кремень ×1, Пещерный мох ×1")
-        game.story_state = "l6_step4_inspect"
-        text = (
-            "Пальцы выгребают кремень и сухой пещерный мох, убирая находку на самое дно походного мешка. Расщелина в скале остаётся абсолютно голой. "
-            "Ты можешь положить что-то своё взамен для того, кто пойдёт следом и будет замерзать на этой тропе, "
-            "или просто двинуться дальше со всей добычей — всё равно в этих мёртвых ледяных скалах никто не увидит твоего поступка "
-            "и не осудит за расчётливый шаг."
-        )
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🎁 Положить из инвентаря", callback_data="l6_step4_leave_gift")],
-            [InlineKeyboardButton(text="➡️ Идти дальше", callback_data="l6_step4_take_all")],
-        ])
+            text = (
+                "Пальцы выгребают кремень и сухой пещерный мох, убирая находку на самое дно походного мешка. Расщелина в скале остаётся абсолютно голой. "
+                "Ты можешь положить что-то своё взамен для того, кто пойдёт следом и будет замерзать на этой тропе, "
+                "или просто двинуться дальше со всей добычей — всё равно в этих мёртвых ледяных скалах никто не увидит твоего поступка "
+                "и не осудит за расчётливый шаг."
+            )
+        else:
+            text = (
+                "Ты снова заглядываешь в скальную нишу под нависающей сланцевой плиткой. Схрон уже пуст: найденные ранее кремень и сухой пещерный мох давно перекочевали в твой походный мешок. "
+                "На холодном дне расщелины осталась лишь мелкая базальтовая пыль да следы старого инея. "
+                "Ты всё ещё можешь положить сюда что-то из своего пайка для идущих следом либо без задержек продолжить подъём по скользкому ледяному карнизу."
+            )
+        buttons = []
+        if not game.is_story_flag_set("l6_step4_gift_left"):
+            buttons.append([InlineKeyboardButton(text="🎁 Положить из инвентаря", callback_data="l6_step4_leave_gift")])
+        buttons.append([InlineKeyboardButton(text="🎒 Забрать всё и уйти", callback_data="l6_step4_take_all")])
+        buttons.append([InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")])
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
 
     elif data == "l6_step4_leave_gift":
-        game.adjust_narrative_karma("compassion", 1)
-        game.set_story_flag("l6_step4_gift_left", True)
-        gifted_item = None
-        for item in ["Жареное мясо", "Мясо", "Сушёное мясо", "Ягоды", "Лесная ягода", "Красная ягода", "Печёные ягоды", "Жареные грибы"]:
-            if game.inventory.get(item, 0) > 0:
-                game.inventory[item] -= 1
-                if game.inventory[item] <= 0:
-                    del game.inventory[item]
-                gifted_item = item
-                break
         game.story_state = "l6_step4_leave_gift"
-        text = (
-            "Кремень отправляется в карман куртки, а взамен на сухой камень аккуратно ложится сытная порция вяленого пайка из личных запасов. "
-            "Расщелина снова надёжно прикрывается сланцевой плиткой от осыпи. Неписаный закон стоянки соблюдён: путник берёт лишь необходимое, "
-            "оставляя следующему шанс выжить в морозном буране. От этого спокойного поступка внутри разливается тихое, согревающее тепло."
-        )
+        if not game.is_story_flag_set("l6_step4_gift_left"):
+            game.adjust_narrative_karma("compassion", 1)
+            game.set_story_flag("l6_step4_gift_left", True)
+            deduct_story_gift_item(game)
+            text = (
+                "Кремень отправляется в карман куртки, а взамен на сухой камень аккуратно ложится сытная порция вяленого пайка из личных запасов. "
+                "Расщелина снова надёжно прикрывается сланцевой плиткой от осыпи. Неписаный закон стоянки соблюдён: путник берёт лишь необходимое, "
+                "оставляя следующему шанс выжить в морозном буране. От этого спокойного поступка внутри разливается тихое, согревающее тепло."
+            )
+        else:
+            text = (
+                "Ты уже оставил сытную часть своего походного пайка на сухой сланцевой плитке в этой каменной нише. "
+                "Твой припас надёжно укрыт от осыпи и ледяного бурана, дожидаясь того, кто пойдёт следом сквозь морозные перевалы на пределе сил. "
+                "Неписаный закон честной стоянки соблюдён сполна: задерживаться у пустого схрона больше не имеет смысла. "
+                "Пора двигаться дальше по карнизу, пока ветер не усилился."
+            )
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="➡️ Идти дальше", callback_data="l6_ascent_continue")]
+            [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
         ])
 
     elif data == "l6_step4_take_all":
         game.set_story_flag("l6_step4_took_all", True)
-        game.story_state = None
-        game.active_story_callback = None
-        if hasattr(game, "reset_nav"):
-            game.reset_nav()
-        return game.get_ui(), get_main_kb(game)
+        game.story_state = "l6_step4_take_all"
+        text = (
+            "Ты решаешь не задерживаться на опасном повороте скального тракта над пропастью. "
+            "Забрав найденные в нише кремень и сухой мох, ты плотно затягиваешь клапан походного мешка и оставляешь опустевший схрон позади. "
+            "В суровых ледяных горах каждый путник в первую очередь обязан заботиться о собственной жизни, и осуждать за трезвый расчёт здесь попросту некому. "
+            "Пронизывающий морозный ветер подгоняет в спину, требуя не терять концентрации и продолжать путь."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
+        ])
 
     # ИССЛЕДОВАНИЕ 7: Пролом над бездной и стадо
     elif data in ("l6_step7_main", "l6_ascent_step7"):
@@ -524,50 +652,65 @@ def handle_location_6_furry_cave(data, game, uid):
         ])
 
     elif data == "l6_step10_box":
+        game.story_state = "l6_step10_box"
         if not game.is_story_flag_set("l6_step10_loot_taken"):
             game.set_story_flag("l6_step10_loot_taken", True)
             game.inventory["Древесный уголь"] = game.inventory.get("Древесный уголь", 0) + 1
             game.inventory["Бинт"] = game.inventory.get("Бинт", 0) + 1
             game.add_log("Получено: Древесный уголь ×1, Бинт ×1")
-        game.story_state = "l6_step10_box"
-        text = (
-            "Крышка ларчика поддаётся с сухим треском. Внутри лежат брусок сухого древесного угля и чистые походные бинты, "
-            "аккуратно завёрнутые в промасленную ткань. Ты забираешь находку в рюкзак. "
-            "Рядом в золе лежит сломанная игла и обрывок ремня: тот, кто ночевал здесь, перевязывал глубокую рану перед тем, как двинуться дальше во тьму. "
-            "Холод сохранил его вещи в полной неприкосновенности. Пора продолжать подъём."
-        )
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
-        ])
+            text = (
+                "Крышка ларчика поддаётся с сухим треском. Внутри лежат брусок сухого древесного угля и чистые походные бинты, "
+                "аккуратно завёрнутые в промасленную ткань. Ты забираешь находку в рюкзак. "
+                "Рядом в золе лежит сломанная игла и обрывок ремня: тот, кто ночевал здесь, перевязывал глубокую рану перед тем, как двинуться дальше во тьму. "
+                "Холод сохранил его вещи в полной неприкосновенности. Пора продолжать подъём."
+            )
+        else:
+            text = (
+                "Ты открываешь потемневшую крышку костяного ларчика. Внутри пусто: сухой древесный уголь и чистые походные бинты "
+                "уже давно перекочевали в твой инвентарь при первом осмотре стоянки. В углах шкатулки осталась лишь труха от истлевшей ткани да старая копоть. "
+                "Больше ничего полезного заброшенный привал предложить не может — следы стоянки изучены, и задерживаться на ледяном сквозняке больше нет никакого смысла."
+            )
+        buttons = []
+        if not game.is_story_flag_set("l6_step10_gift_left"):
+            buttons.append([InlineKeyboardButton(text="🎁 Оставить припас взамен", callback_data="l6_step10_leave_gift")])
+        buttons.append([InlineKeyboardButton(text="🎒 Забрать всё и уйти", callback_data="l6_step10_take_all")])
+        buttons.append([InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")])
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
 
     elif data == "l6_step10_leave_gift":
-        game.adjust_narrative_karma("compassion", 1)
-        game.set_story_flag("l6_step10_gift_left", True)
-        gifted_item = None
-        for item in ["Жареное мясо", "Мясо", "Сушёное мясо", "Ягоды", "Лесная ягода", "Красная ягода", "Печёные ягоды", "Жареные грибы"]:
-            if game.inventory.get(item, 0) > 0:
-                game.inventory[item] -= 1
-                if game.inventory[item] <= 0:
-                    del game.inventory[item]
-                gifted_item = item
-                break
         game.story_state = "l6_step10_leave_gift"
-        text = (
-            "Брусок древесного угля отправляется в карман куртки, а взамен на сухую ткань ложится сытная порция вяленого пайка из собственных запасов. "
-            "Крышка ларчика плотно встаёт на место. Неписаный закон честной стоянки соблюдён: если кто-то выберется сюда на грани истощения, "
-            "этот тайник спасёт ему жизнь. От осознания правильного выбора внутри разливается спокойное, согревающее чувство человечности."
-        )
+        if not game.is_story_flag_set("l6_step10_gift_left"):
+            game.adjust_narrative_karma("compassion", 1)
+            game.set_story_flag("l6_step10_gift_left", True)
+            deduct_story_gift_item(game)
+            text = (
+                "Брусок древесного угля отправляется в карман куртки, а взамен на сухую ткань ложится сытная порция вяленого пайка из собственных запасов. "
+                "Крышка ларчика плотно встаёт на место. Неписаный закон честной стоянки соблюдён: если кто-то выберется сюда на грани истощения, "
+                "этот тайник спасёт ему жизнь. От осознания правильного выбора внутри разливается спокойное, согревающее чувство человечности."
+            )
+        else:
+            text = (
+                "Ты уже оставил полезный припас в костяном ларчике на этой заброшенной стоянке. "
+                "Твой дар аккуратно завёрнут в сухую ткань и надёжно укрыт от морозного сквозняка, дожидаясь замерзающего путника. "
+                "Неписаный закон честной горной стоянки уже полностью соблюдён сполна, и перегружать маленькую шкатулку больше нет никакого смысла. "
+                "Пора продолжать путь наверх сквозь ледяные штольни или вернуться в лагерь."
+            )
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
         ])
 
     elif data == "l6_step10_take_all":
         game.set_story_flag("l6_step10_took_all", True)
-        game.story_state = None
-        game.active_story_callback = None
-        if hasattr(game, "reset_nav"):
-            game.reset_nav()
-        return game.get_ui(), get_main_kb(game)
+        game.story_state = "l6_step10_take_all"
+        text = (
+            "Ты захлопываешь пустую костяную шкатулку и поднимаешься на ноги у заброшенного очага. "
+            "Забрав сухой древесный уголь и чистые бинты, ты ничего не оставляешь взамен: в морозных штольнях выживает тот, кто расчётливо копит ресурсы для собственного спасения. "
+            "Прошлое этого привала остаётся погребённым под вековым льдом, а тебе предстоит двигаться дальше. "
+            "Задержавшись на мгновение, чтобы перевести дыхание, ты продолжаешь трудный подъём."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
+        ])
 
     # ──────────────────────────────────────────────────────────────────────────
     # СЮЖЕТНЫЕ ОКНА ПОДЪЁМА (ИССЛЕДОВАНИЯ 11–20 ИЗ 40)
@@ -693,17 +836,24 @@ def handle_location_6_furry_cave(data, game, uid):
     elif data == "l6_step15_leather":
         game.adjust_narrative_karma("pragmatism", 1)
         game.set_story_flag("l6_step15_choice", "pragmatism")
+        game.story_state = "l6_step15_leather"
         if not game.is_story_flag_set("l6_step15_loot_taken"):
             game.set_story_flag("l6_step15_loot_taken", True)
             game.inventory["Кожа"] = game.inventory.get("Кожа", 0) + 1
             game.add_log("Получено: Кожа ×1")
-        game.story_state = "l6_step15_leather"
-        text = (
-            "Ты не тратишь время на починку мертвого механизма, а подходишь к тормозному ободу ворота. "
-            "Острый нож аккуратно срезает широкую полосу толстой выделанной кожи, служившую обшивкой колодок (+1 Кожа). "
-            "Материал отлично сохранился на морозе: прочный ремень сразу отправляется в рюкзак. "
-            "В условиях выживания практическая польза важнее чужих механизмов — хорошая кожа всегда пойдёт на починку обуви и одежды."
-        )
+            text = (
+                "Ты не тратишь время на починку мертвого механизма, а подходишь к тормозному ободу ворота. "
+                "Острый нож аккуратно срезает широкую полосу толстой выделанной кожи, служившую обшивкой колодок (+1 Кожа). "
+                "Материал отлично сохранился на морозе: прочный ремень сразу отправляется в рюкзак. "
+                "В условиях выживания практическая польза важнее чужих механизмов — хорошая кожа всегда пойдёт на починку обуви и одежды."
+            )
+        else:
+            text = (
+                "Ты подходишь к тормозному ободу ворота. Широкая полоса толстой выделанной кожи уже срезана с колодок во время твоего первого осмотра грузового подъёмника. "
+                "На промёрзшей дубовой раме остались лишь шляпки медных заклёпок и глубокие задиры от старого троса. "
+                "Ничего полезного здесь больше не осталось — отличный кожаный ремень давно надёжно убран в твой рюкзак. "
+                "Пора продолжать подъём по вырубленной в скале лестнице."
+            )
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
         ])
@@ -758,54 +908,58 @@ def handle_location_6_furry_cave(data, game, uid):
             game.inventory["Мех"] = game.inventory.get("Мех", 0) + 1
             game.inventory["Жареное мясо"] = game.inventory.get("Жареное мясо", 0) + 1
             game.add_log("Получено: Мех ×1, Жареное мясо ×1")
-        text = (
-            "Пальцы отгибают промёрзший кожаный клапан. Внутри сумки обнаруживается кусок плотного меха и завёрнутое в бересту жареное мясо (+1 Мех, +1 Жареное мясо). "
-            "Еда замёрзла в камень, но пригодна в пищу. Больше в карманах ничего нет — лишь пустой медный котелок. "
-            "Глядя в чернеющую под карнизом пропасть, откуда доносится глухой свист ветра, ты прячешь находку в рюкзак. "
-            "Гора забрала одного, но отдала его припасы другому."
-        )
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
-        ])
+            text = (
+                "Пальцы отгибают промёрзший кожаный клапан. Внутри сумки обнаруживается кусок плотного меха и завёрнутое в бересту жареное мясо (+1 Мех, +1 Жареное мясо). "
+                "Еда замёрзла в камень, но пригодна в пищу. Больше в карманах ничего нет — лишь пустой медный котелок. "
+                "Глядя в чернеющую под карнизом пропасть, откуда доносится глухой свист ветра, ты прячешь находку в рюкзак. "
+                "Гора забрала одного, но отдала его припасы другому."
+            )
+        else:
+            text = (
+                "Ты снова заглядываешь в расстёгнутую сумку у обрыва. Внутри абсолютно пусто: найденные ранее кусок меха и порция жареного мяса уже убраны в твой рюкзак. "
+                "На дне расщелины остался лишь помятый медный котелок со следами давней копоти. Холодный ветер заунывно гудит над кромкой карниза, подгоняя двигаться дальше. "
+                "Здесь больше нечего искать — пора возвращаться к штурму перевала или перевести дух в лагере."
+            )
+        buttons = []
+        if not game.is_story_flag_set("l6_step17_gift_left"):
+            buttons.append([InlineKeyboardButton(text="🎁 Оставить припас взамен", callback_data="l6_step17_leave_gift")])
+        buttons.append([InlineKeyboardButton(text="🎒 Забрать всё и уйти", callback_data="l6_step17_take_all")])
+        buttons.append([InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")])
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
 
     elif data == "l6_step17_leave_gift":
-        game.adjust_narrative_karma("compassion", 1)
-        game.set_story_flag("l6_step17_gift_left", True)
-        if not game.is_story_flag_set("l6_step17_loot_taken"):
-            game.set_story_flag("l6_step17_loot_taken", True)
-            game.inventory["Мех"] = game.inventory.get("Мех", 0) + 1
-            game.inventory["Жареное мясо"] = game.inventory.get("Жареное мясо", 0) + 1
-            game.add_log("Получено: Мех ×1, Жареное мясо ×1")
-        gifted_item = None
-        for item in ["Жареное мясо", "Мясо", "Сырое мясо", "Печёные ягоды", "Жареные грибы", "Ягоды", "Лесная ягода", "Красная ягода"]:
-            if game.inventory.get(item, 0) > 0:
-                game.inventory[item] -= 1
-                if game.inventory[item] <= 0:
-                    del game.inventory[item]
-                gifted_item = item
-                break
         game.story_state = "l6_step17_leave_gift"
-        text = (
-            "Мех и порция мяса отправляются в глубину мешка, а на сухую бересту взамен ложится сытный припас из собственных запасов. "
-            "Клапан сумки снова плотно застёгивается. Схрон готов поддержать любого, кто выберется на этот опасный карниз на пределе сил. "
-            "От соблюдения закона честной стоянки внутри разливается согревающее спокойствие: даже на краю пропасти удаётся сохранить человечность и заботу о других."
-        )
+        if not game.is_story_flag_set("l6_step17_gift_left"):
+            game.adjust_narrative_karma("compassion", 1)
+            game.set_story_flag("l6_step17_gift_left", True)
+            deduct_story_gift_item(game)
+            text = (
+                "Мех и порция мяса отправляются в глубину мешка, а на сухую бересту взамен ложится сытный припас из собственных запасов. "
+                "Клапан сумки снова плотно застёгивается. Схрон готов поддержать любого, кто выберется на этот опасный карниз на пределе сил. "
+                "От соблюдения закона честной стоянки внутри разливается согревающее спокойствие: даже на краю пропасти удаётся сохранить человечность и заботу о других."
+            )
+        else:
+            text = (
+                "Ты уже оставил сытный припас в сумке на карнизе во время своего первого осмотра. Замёрзшая еда надёжно прикрыта кожаным клапаном от ледяного бурана "
+                "и дожидается следующего путника. Неписаный закон честной горной стоянки уже соблюдён сполна, и задерживаться на пронизывающем сквозняке над чернеющей бездной больше нет смысла. "
+                "Пора возвращаться к подъёму или спокойно восстановить силы в лагере."
+            )
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
         ])
 
     elif data == "l6_step17_take_all":
         game.set_story_flag("l6_step17_took_all", True)
-        if not game.is_story_flag_set("l6_step17_loot_taken"):
-            game.set_story_flag("l6_step17_loot_taken", True)
-            game.inventory["Мех"] = game.inventory.get("Мех", 0) + 1
-            game.inventory["Жареное мясо"] = game.inventory.get("Жареное мясо", 0) + 1
-            game.add_log("Получено: Мех ×1, Жареное мясо ×1")
-        game.story_state = None
-        game.active_story_callback = None
-        if hasattr(game, "reset_nav"):
-            game.reset_nav()
-        return game.get_ui(), get_main_kb(game)
+        game.story_state = "l6_step17_take_all"
+        text = (
+            "Ты застёгиваешь опустевшую сумку у обрыва и плотнее перехватываешь лямки рюкзака. "
+            "Кусок меха и порция мяса надёжно спрятаны в вещах, а пустой медный котелок остаётся лежать в расщелине скалы. "
+            "Суровый закон высоты прост: гора не прощает излишней сентиментальности тем, кто рискует жизнью над пропастью. "
+            "Оставив опасный край карниза позади, ты делаешь глубокий вдох морозного воздуха и готовишься к следующему отрезку пути."
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
+        ])
 
     # ИССЛЕДОВАНИЕ 20: Извилистые штольни и морозный морок
     elif data == "l6_step20_main":
@@ -1213,16 +1367,23 @@ def handle_location_6_furry_cave(data, game, uid):
     elif data == "l6_step33_search":
         game.adjust_narrative_karma("observation", 1)
         game.set_story_flag("l6_step33_choice", "observation")
+        game.story_state = "l6_step33_search"
         if not game.is_story_flag_set("l6_step33_loot_taken"):
             game.set_story_flag("l6_step33_loot_taken", True)
             game.inventory["Кремень"] = game.inventory.get("Кремень", 0) + 1
             game.add_log("Получено: Кремень ×1")
-        game.story_state = "l6_step33_search"
-        text = (
-            "Ты подходишь к стене и внимательно осматриваешь трещину вокруг старого страховочного крюка. "
-            "Тщательный поиск приносит плоды: в скрытом углублении за скальным выступом обнаруживается завернутый в грубую холстину отличный осколок минерала (+1 Кремень). "
-            "Находка сразу отправляется в рюкзак: в горах огонь решает всё. Аккуратно перешагнув разлом по настилу, ты с полезной добычей продолжаешь восхождение."
-        )
+            text = (
+                "Ты подходишь к стене и внимательно осматриваешь трещину вокруг старого страховочного крюка. "
+                "Тщательный поиск приносит плоды: в скрытом углублении за скальным выступом обнаруживается завернутый в грубую холстину отличный осколок минерала (+1 Кремень). "
+                "Находка сразу отправляется в рюкзак: в горах огонь решает всё. Аккуратно перешагнув разлом по настилу, ты с полезной добычей продолжаешь восхождение."
+            )
+        else:
+            text = (
+                "Ты снова внимательно осматриваешь трещину вокруг старого страховочного крюка. "
+                "В каменной нише пусто: отличный осколок кремня уже был извлечён и надёжно убран в твой походный рюкзак при первом осмотре. "
+                "В глубокой расселине осталась лишь базальтовая крошка да сухая ржавчина от старого крепежа. "
+                "Разлом благополучно преодолён по настилу, и задерживаться над бездной больше незачем — путь наверх открыт."
+            )
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
         ])
@@ -1259,17 +1420,24 @@ def handle_location_6_furry_cave(data, game, uid):
     elif data == "l6_step36_investigate":
         game.adjust_narrative_karma("intervention", 1)
         game.set_story_flag("l6_step36_choice", "intervention")
+        game.story_state = "l6_step36_investigate"
         if not game.is_story_flag_set("l6_step36_loot_taken"):
             game.set_story_flag("l6_step36_loot_taken", True)
             game.inventory["Пещерный мох"] = game.inventory.get("Пещерный мох", 0) + 1
             game.add_log("Получено: Пещерный мох ×1")
-        game.story_state = "l6_step36_investigate"
-        text = (
-            "Ты упрямо направляешься к источнику потрескивающего звука в боковом ответвлении. "
-            "Раздвинув звенящие ледяные сосульки, ты обнаруживаешь не костёр, а удивительное природное чудо: "
-            "сквозь промороженную корку скалы пробивается живой зеленоватый нарост (+1 Пещерный мох). "
-            "Нежное растение источает едва заметное тепло. Заботливо убрав мох в мешок, ты возвращаешься на основной путь с ценной находкой."
-        )
+            text = (
+                "Ты упрямо направляешься к источнику потрескивающего звука в боковом ответвлении. "
+                "Раздвинув звенящие ледяные сосульки, ты обнаруживаешь не костёр, а удивительное природное чудо: "
+                "сквозь промороженную корку скалы пробивается живой зеленоватый нарост (+1 Пещерный мох). "
+                "Нежное растение источает едва заметное тепло. Заботливо убрав мох в мешок, ты возвращаешься на основной путь с ценной находкой."
+            )
+        else:
+            text = (
+                "Ты повторно подходишь к ледяной расщелине в боковом ответвлении штольни. "
+                "Редкий живой нарост пещерного мха уже был аккуратно собран и убран в твой походный мешок при первом исследовании. "
+                "На промёрзшей базальтовой породе остался лишь тонкий влажный след, защищённый от стужи. "
+                "Больше здесь ничего нет — ценный природный припас добыт, и пора уверенно продолжать восхождение по основному каменному тракту."
+            )
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
         ])
@@ -1368,25 +1536,40 @@ def handle_location_6_furry_cave(data, game, uid):
     elif data == "l6_step39_moss":
         game.adjust_narrative_karma("compassion", 1)
         game.set_story_flag("l6_step39_choice", "compassion")
+        game.story_state = "l6_step39_moss"
         if not game.is_story_flag_set("l6_step39_loot_taken"):
             game.set_story_flag("l6_step39_loot_taken", True)
             game.inventory["Пещерный мох"] = game.inventory.get("Пещерный мох", 0) + 1
             game.add_log("Получено: Пещерный мох ×1")
-        game.story_state = "l6_step39_moss"
-        if game.is_story_flag_set("has_pet"):
-            text = (
-                "Ты опускаешься на колени на мягкий тёплый мох и аккуратно выпускаешь котёнка на подстилку. "
-                "Малыш с восторгом трётся щекой о рыжие стебли, мурлычет на всю пещеру и катается по тёплой зелени, опьянённый спасительным уютом. "
-                "Ты осторожно срываешь пучок сухого целебного сбора про запас (+1 Пещерный мох). "
-                "Сердце переполняет глубокое сострадание и благодарность за то, что вы оба выжили в этом ледяном аду."
-            )
+            if game.is_story_flag_set("has_pet"):
+                text = (
+                    "Ты опускаешься на колени на мягкий тёплый мох и аккуратно выпускаешь котёнка на подстилку. "
+                    "Малыш с восторгом трётся щекой о рыжие стебли, мурлычет на всю пещеру и катается по тёплой зелени, опьянённый спасительным уютом. "
+                    "Ты осторожно срываешь пучок сухого целебного сбора про запас (+1 Пещерный мох). "
+                    "Сердце переполняет глубокое сострадание и благодарность за то, что вы оба выжили в этом ледяном аду."
+                )
+            else:
+                text = (
+                    "Ты опускаешься на колени на мягкий тёплый моховой ковёр и касаешься его ладонями. "
+                    "Упругая зелень пружинит под пальцами, отдавая накопленное нутряное тепло. Не веря своему спасению, "
+                    "ты осторожно срываешь пышный пучок сухого целебного сбора себе в запас (+1 Пещерный мох). "
+                    "Чувство глубокого покоя и благодарности недрам разливается внутри: бесконечная битва со смертельным морозом высоты наконец-то завершена."
+                )
         else:
-            text = (
-                "Ты опускаешься на колени на мягкий тёплый моховой ковёр и касаешься его ладонями. "
-                "Упругая зелень пружинит под пальцами, отдавая накопленное нутряное тепло. Не веря своему спасению, "
-                "ты осторожно срываешь пышный пучок сухого целебного сбора себе в запас (+1 Пещерный мох). "
-                "Чувство глубокого покоя и благодарности недрам разливается внутри: бесконечная битва со смертельным морозом высоты наконец-то завершена."
-            )
+            if game.is_story_flag_set("has_pet"):
+                text = (
+                    "Ты снова опускаешься на мягкий моховой ковёр у порога пещеры. "
+                    "Целебный сбор сухого мха про запас уже убран в твой рюкзак, но котёнка просто невозможно оторвать от спасительного уюта. "
+                    "Маленький рыжий котёнок с неизменным восторгом катается по зелени и громко мурлычет, подставляя тёплое брюшко мягким стеблям. "
+                    "Убежище уже перед вами: до спасительного порога остаётся лишь шаг, и холодная тьма пройденного пути больше не имеет над вами власти."
+                )
+            else:
+                text = (
+                    "Ты снова касаешься ладонями густого мохового ковра у входа в пещеру. "
+                    "Запас целебного мха уже надёжно уложен в твой походный мешок. Тёплая пружинящая зелень отдаёт накопленный жар недр, окончательно согревая онемевшие пальцы. "
+                    "До спасительного очага остаётся лишь один шаг сквозь каменный лаз. "
+                    "Долгая и опасная битва с ледяной горой осталась позади — надёжный кров ждёт прямо впереди."
+                )
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
         ])
@@ -1405,8 +1588,7 @@ def handle_location_6_furry_cave(data, game, uid):
             [InlineKeyboardButton(text="⛺ Вернуться в лагерь", callback_data="l6_ascent_continue")]
         ])
 
-    elif data in ("l6_ascent_step40", "l6_ascent_step30"):
-        unlock_warm_cave_shelter(game)
+    elif data == "l6_ascent_step40":
         game.story_state = "furry_cave_start"
         text = (
             "Ты протискиваешься сквозь низкий свод и выпрямляешься во весь рост. "

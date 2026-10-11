@@ -559,20 +559,26 @@ def test_l6_ascent_progression_and_milestones():
     assert len(text17) >= 380 and len(text17) <= 580
     assert len(kb17.inline_keyboard) == 3
 
-    # Проверка сумки (прямое взятие припасов и возврат в лагерь)
+    # Проверка сумки (прямое взятие припасов и выбор действий)
     text17_bag, kb17_bag = handle_location_6_furry_cave("l6_step17_bag", game, 1001)
-    assert len(text17_bag) >= 350 and len(text17_bag) <= 430
-    assert len(kb17_bag.inline_keyboard) == 1
+    assert len(text17_bag) >= 380 and len(text17_bag) <= 580
+    assert len(kb17_bag.inline_keyboard) == 3
+    assert any(b.callback_data == "l6_step17_take_all" for row in kb17_bag.inline_keyboard for b in row)
+    assert game.inventory.get("Мех", 0) >= 1
+    assert game.inventory.get("Жареное мясо", 0) >= 1
 
-    # Оставить подарок (+1 Сострадание, получение Мех и Жареное мясо, списание еды)
+    # Повторная проверка сумки (пустая сумка)
+    text17_empty, kb17_empty = handle_location_6_furry_cave("l6_step17_bag", game, 1001)
+    assert len(text17_empty) >= 380 and len(text17_empty) <= 580
+    assert "пусто" in text17_empty.lower()
+
+    # Оставить подарок (+1 Сострадание, списание еды без дублирования лута)
     g17 = GameState()
     g17.inventory["Жареное мясо"] = 2
     text17_gift, _ = handle_location_6_furry_cave("l6_step17_leave_gift", g17, 1001)
-    assert len(text17_gift) >= 350 and len(text17_gift) <= 430
+    assert len(text17_gift) >= 380 and len(text17_gift) <= 580
     assert g17.narrative_karma["compassion"] == 1
-    assert g17.inventory.get("Мех", 0) == 1
-    # Было 2, +1 получено, -1 списано взамен = 2
-    assert g17.inventory.get("Жареное мясо", 0) == 2
+    assert g17.inventory.get("Жареное мясо", 0) == 1
     handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
 
     # Шаги 18-19:
@@ -1065,6 +1071,129 @@ def test_l6_ascent_leave_and_reenter_no_duplicate_stories():
     assert ev10 == "l6_step10_main"
     assert game.story_flags["l6_ascent_progress"] == 10
     assert game.is_story_flag_set("l6_step10_seen")
+
+
+@pytest.mark.l6
+def test_bundle_and_cache_duplication_prevented():
+    """Проверка устранения бесконечного дюпа и дублирования лута в furry_bundle, step 17, step 4, step 10."""
+    game = GameState()
+    game.inventory.clear()
+
+    # 1. Свёрток в Тёплой пещере (furry_bundle)
+    from story.locations.loc6_furry_cave import handle_location_6_furry_cave, unlock_warm_cave_shelter
+    unlock_warm_cave_shelter(game)
+
+    # Первый осмотр свёртка
+    text_b1, kb_b1 = handle_location_6_furry_cave("furry_bundle", game, 1001)
+    assert len(text_b1) >= 380 and len(text_b1) <= 580
+    btn_callbacks_1 = [b.callback_data for row in kb_b1.inline_keyboard for b in row]
+    assert "furry_take_all" in btn_callbacks_1
+    assert "furry_take_part" in btn_callbacks_1
+
+    # Забираем весь мех (+3 Мех)
+    text_ta, _ = handle_location_6_furry_cave("furry_take_all", game, 1001)
+    assert len(text_ta) >= 380 and len(text_ta) <= 580
+    assert game.inventory.get("Мех", 0) == 3
+    assert game.is_story_flag_set("furry_bundle_taken")
+
+    # Повторный вызов furry_take_all НЕ увеличивает мех и не ломает игру
+    handle_location_6_furry_cave("furry_take_all", game, 1001)
+    assert game.inventory.get("Мех", 0) == 3
+
+    # Возврат в furry_bundle: кнопки взятия меха исчезли! Текст описывает пустой свёрток
+    text_b2, kb_b2 = handle_location_6_furry_cave("furry_bundle", game, 1001)
+    assert len(text_b2) >= 380 and len(text_b2) <= 580
+    assert "пуст" in text_b2.lower()
+    btn_callbacks_2 = [b.callback_data for row in kb_b2.inline_keyboard for b in row]
+    assert "furry_take_all" not in btn_callbacks_2
+    assert "furry_take_part" not in btn_callbacks_2
+    assert "furry_take_remainder" not in btn_callbacks_2
+
+    # Первый осмотр пещеры начисляет карму наблюдения (+1)
+    obs_before = game.narrative_karma["observation"]
+    handle_location_6_furry_cave("furry_examine", game, 1001)
+    assert game.narrative_karma["observation"] == obs_before + 1
+    # Повторный осмотр пещеры НЕ начисляет карму повторно
+    handle_location_6_furry_cave("furry_examine", game, 1001)
+    assert game.narrative_karma["observation"] == obs_before + 1
+
+    # 2. Сумка у обрыва (l6_step17_bag)
+    game.inventory.clear()
+    text_bag1, kb_bag1 = handle_location_6_furry_cave("l6_step17_bag", game, 1001)
+    assert len(text_bag1) >= 380 and len(text_bag1) <= 580
+    assert game.inventory.get("Мех", 0) == 1
+    assert game.inventory.get("Жареное мясо", 0) == 1
+    assert game.is_story_flag_set("l6_step17_loot_taken")
+
+    # Повторный осмотр сумки: предметы НЕ дублируются, текст сообщает о пустоте
+    text_bag2, kb_bag2 = handle_location_6_furry_cave("l6_step17_bag", game, 1001)
+    assert len(text_bag2) >= 380 and len(text_bag2) <= 580
+    assert "пуст" in text_bag2.lower()
+    assert game.inventory.get("Мех", 0) == 1
+    assert game.inventory.get("Жареное мясо", 0) == 1
+
+    # Ветка l6_step17_leave_gift не дублирует мех и мясо, а списывает еду и дает карму
+    comp_before = game.narrative_karma["compassion"]
+    text_gift1, _ = handle_location_6_furry_cave("l6_step17_leave_gift", game, 1001)
+    assert len(text_gift1) >= 380 and len(text_gift1) <= 580
+    assert game.inventory.get("Мех", 0) == 1
+    assert game.inventory.get("Жареное мясо", 0) == 0  # Списано взамен
+    assert game.narrative_karma["compassion"] == comp_before + 1
+    assert game.is_story_flag_set("l6_step17_gift_left")
+
+    # Повторный клик l6_step17_leave_gift не спамит карму
+    handle_location_6_furry_cave("l6_step17_leave_gift", game, 1001)
+    assert game.narrative_karma["compassion"] == comp_before + 1
+
+    # 3. Тайник на шаге 4 (l6_step4_inspect)
+    game.inventory.clear()
+    text_s4_1, _ = handle_location_6_furry_cave("l6_step4_inspect", game, 1001)
+    assert len(text_s4_1) >= 380 and len(text_s4_1) <= 580
+    assert game.inventory.get("Кремень", 0) == 1
+
+    text_s4_2, _ = handle_location_6_furry_cave("l6_step4_inspect", game, 1001)
+    assert len(text_s4_2) >= 380 and len(text_s4_2) <= 580
+    assert "пуст" in text_s4_2.lower()
+    assert game.inventory.get("Кремень", 0) == 1  # Не за дюпался
+
+    # 4. Ларчик на шаге 10 (l6_step10_box)
+    game.inventory.clear()
+    text_s10_1, _ = handle_location_6_furry_cave("l6_step10_box", game, 1001)
+    assert len(text_s10_1) >= 380 and len(text_s10_1) <= 580
+    assert game.inventory.get("Древесный уголь", 0) == 1
+    assert game.inventory.get("Бинт", 0) == 1
+
+    text_s10_2, _ = handle_location_6_furry_cave("l6_step10_box", game, 1001)
+    assert len(text_s10_2) >= 380 and len(text_s10_2) <= 580
+    assert "пуст" in text_s10_2.lower()
+    assert game.inventory.get("Древесный уголь", 0) == 1
+    assert game.inventory.get("Бинт", 0) == 1  # Не за дюпался
+
+    # 5. Проверка кнопок и экранов take_all (шаги 4, 10, 17)
+    # Шаг 4: take_all отдаёт нарративный экран и кнопку l6_ascent_continue
+    text_s4_ta, kb_s4_ta = handle_location_6_furry_cave("l6_step4_take_all", game, 1001)
+    assert len(text_s4_ta) >= 380 and len(text_s4_ta) <= 580
+    assert any(b.callback_data == "l6_ascent_continue" for row in kb_s4_ta.inline_keyboard for b in row)
+
+    # Шаг 10: box содержит кнопки перехода на l6_step10_leave_gift и l6_step10_take_all
+    _, kb_s10_btns = handle_location_6_furry_cave("l6_step10_box", game, 1001)
+    callbacks_10 = [b.callback_data for row in kb_s10_btns.inline_keyboard for b in row]
+    assert "l6_step10_leave_gift" in callbacks_10
+    assert "l6_step10_take_all" in callbacks_10
+    text_s10_ta, kb_s10_ta = handle_location_6_furry_cave("l6_step10_take_all", game, 1001)
+    assert len(text_s10_ta) >= 380 and len(text_s10_ta) <= 580
+    assert any(b.callback_data == "l6_ascent_continue" for row in kb_s10_ta.inline_keyboard for b in row)
+
+    # Шаг 17: bag содержит кнопки l6_step17_leave_gift и l6_step17_take_all
+    g_fresh = GameState()
+    _, kb_s17_btns = handle_location_6_furry_cave("l6_step17_bag", g_fresh, 1001)
+    callbacks_17 = [b.callback_data for row in kb_s17_btns.inline_keyboard for b in row]
+    assert "l6_step17_leave_gift" in callbacks_17
+    assert "l6_step17_take_all" in callbacks_17
+    text_s17_ta, kb_s17_ta = handle_location_6_furry_cave("l6_step17_take_all", game, 1001)
+    assert len(text_s17_ta) >= 380 and len(text_s17_ta) <= 580
+    assert any(b.callback_data == "l6_ascent_continue" for row in kb_s17_ta.inline_keyboard for b in row)
+
 
 
 
