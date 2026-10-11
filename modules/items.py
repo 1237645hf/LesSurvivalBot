@@ -1360,6 +1360,7 @@ def is_inventory_callback(data: str) -> bool:
             "use_consumable_",
             "drop_item_",
             "drop_qty:",
+            "inv_page_",
         ))
     )
 
@@ -1389,10 +1390,16 @@ async def handle_inventory_callback(
     text = None
     kb = None
 
-    if data == "action_2":
-        game.push_screen("inventory")
-        text = game.get_inventory_text()
-        kb = inventory_inline_kb
+    if data == "action_2" or data.startswith("inv_page_"):
+        if data.startswith("inv_page_"):
+            page_str = data.removeprefix("inv_page_")
+            page = int(page_str) if page_str.isdigit() else 0
+            game.inventory_page = page
+        else:
+            game.push_screen("inventory")
+            page = getattr(game, "inventory_page", 0)
+        text = game.get_inventory_text(page=page)
+        kb = get_inventory_kb(game=game, page=page)
 
     elif data == "inv_inspect":
         items_in_inv = [item for item, c in game.inventory.items() if c > 0]

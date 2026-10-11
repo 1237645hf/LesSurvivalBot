@@ -195,6 +195,8 @@ def can_craft(game, recipe_name: str) -> bool:
     ingredients = CRAFT_RECIPES.get(recipe_name, [])
     if not ingredients:
         return False
+    if getattr(game, "is_test_mode", False):
+        return True
     if recipe_name == "Крепкий посох" and has_sturdy_staff(game):
         return False
     if recipe_name in SLATE_ARMOR_RECIPES:
@@ -299,19 +301,33 @@ def do_craft(game, recipe_name: str):
     ingredients = CRAFT_RECIPES.get(recipe_name)
     if not ingredients:
         return False, "Неизвестный рецепт."
-    if recipe_name == "Крепкий посох" and has_sturdy_staff(game):
-        return False, "У вас уже есть крепкий посох — второй изготовить нельзя."
-    if recipe_name in SLATE_ARMOR_RECIPES:
-        if has_slate_armor_item(game, recipe_name):
-            return False, f"У вас уже есть {recipe_name} — это уникальный предмет, повторный крафт невозможен."
-        if not game.is_story_flag_set("l2_thorns_seen"):
-            return False, "Рецепт сланцевой брони откроется после встречи со стеной терновника."
-        if game.is_story_flag_set("l3_ridge_completed") or getattr(game, "location_index", 0) >= 3:
-            return False, "Время создания сланцевой брони прошло — рецепт более недоступен."
-    if recipe_name == "Факел" and has_torch(game):
-        return False, "У вас уже есть факел! Нельзя иметь больше одного факела одновременно."
-    if recipe_name == "Костёр" and has_campfire(game):
-        return False, "У вас уже есть костёр! Нельзя создать второй."
+    if not getattr(game, "is_test_mode", False):
+        if recipe_name == "Крепкий посох" and has_sturdy_staff(game):
+            return False, "У вас уже есть крепкий посох — второй изготовить нельзя."
+        if recipe_name in SLATE_ARMOR_RECIPES:
+            if has_slate_armor_item(game, recipe_name):
+                return False, f"У вас уже есть {recipe_name} — это уникальный предмет, повторный крафт невозможен."
+            if not game.is_story_flag_set("l2_thorns_seen"):
+                return False, "Рецепт сланцевой брони откроется после встречи со стеной терновника."
+            if game.is_story_flag_set("l3_ridge_completed") or getattr(game, "location_index", 0) >= 3:
+                return False, "Время создания сланцевой брони прошло — рецепт более недоступен."
+        if recipe_name == "Факел" and has_torch(game):
+            return False, "У вас уже есть факел! Нельзя иметь больше одного факела одновременно."
+        if recipe_name == "Костёр" and has_campfire(game):
+            return False, "У вас уже есть костёр! Нельзя создать второй."
+        if recipe_name == "Приманка для слизней":
+            if getattr(game, "current_location", None) not in ("Яр Слаймов", "Яр Слизней"):
+                return False, "Приманку для слизней можно изготовить только находясь в Яру Слаймов!"
+        if recipe_name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
+            has_spear = (
+                game.inventory.get("Охотничье сланцевое копьё", 0) > 0
+                or game.inventory.get("🔱 Охотничье сланцевое копьё", 0) > 0
+                or game.equipment.get("hand_right") in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё")
+            )
+            if has_spear:
+                return False, "У вас уже есть охотничье сланцевое копьё! Нельзя создать второе."
+            if not (game.is_story_flag_set("l5_boss_defeated") or game.is_story_flag_set("boss_giant_slime_defeated")):
+                return False, "Рецепт заблокирован! Победите Исполинского слайма."
     if recipe_name == "Зарядить фонарь":
         has_lantern = (
             game.equipment.get("hand_left") == "Старый фонарь"
@@ -328,19 +344,6 @@ def do_craft(game, recipe_name: str):
             del game.inventory["Янтарное ядро"]
         game.lantern_durability = 20
         return True, "Заправлен янтарным маслом."
-    if recipe_name == "Приманка для слизней":
-        if getattr(game, "current_location", None) not in ("Яр Слаймов", "Яр Слизней"):
-            return False, "Приманку для слизней можно изготовить только находясь в Яру Слаймов!"
-    if recipe_name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё"):
-        has_spear = (
-            game.inventory.get("Охотничье сланцевое копьё", 0) > 0
-            or game.inventory.get("🔱 Охотничье сланцевое копьё", 0) > 0
-            or game.equipment.get("hand_right") in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё")
-        )
-        if has_spear:
-            return False, "У вас уже есть охотничье сланцевое копьё! Нельзя создать второе."
-        if not (game.is_story_flag_set("l5_boss_defeated") or game.is_story_flag_set("boss_giant_slime_defeated")):
-            return False, "Рецепт заблокирован! Победите Исполинского слайма."
     if not can_craft(game, recipe_name):
         missing = []
         for n, q in ingredients:
@@ -562,48 +565,51 @@ def get_craft_menu_text(game) -> str:
     )
     if (game.is_story_flag_set("l5_boss_defeated") or game.is_story_flag_set("boss_giant_slime_defeated")) and not has_spear and "Охотничье сланцевое копьё" not in unlocked:
         unlocked.append("Охотничье сланцевое копьё")
+    if getattr(game, "is_test_mode", False):
+        unlocked = list(CRAFT_RECIPES.keys())
     lines = ["🔨 Крафт (только открытые рецепты):", ""]
     has_any = False
     for name in unlocked:
         if name not in CRAFT_RECIPES:
             continue
-        if name == "Крепкий посох" and has_sturdy_staff(game):
-            continue
-        if name in SLATE_ARMOR_RECIPES:
-            if not game.is_story_flag_set("l2_thorns_seen"):
+        if not getattr(game, "is_test_mode", False):
+            if name == "Крепкий посох" and has_sturdy_staff(game):
                 continue
-            if has_slate_armor_item(game, name):
+            if name in SLATE_ARMOR_RECIPES:
+                if not game.is_story_flag_set("l2_thorns_seen"):
+                    continue
+                if has_slate_armor_item(game, name):
+                    continue
+                if game.is_story_flag_set("l3_ridge_completed") or getattr(game, "location_index", 0) >= 3:
+                    continue
+            if name in FUR_ARMOR_RECIPES:
+                has_fur_unlock = (
+                    getattr(game, "is_story_flag_set", lambda f: False)("fur_recipes_unlocked")
+                    or getattr(game, "story_flags", {}).get("fur_recipes_unlocked")
+                    or is_warm_cave_active(game)
+                    or getattr(game, "inventory", {}).get("Мех", 0) > 0
+                )
+                if not has_fur_unlock:
+                    continue
+                has_fur_item = (
+                    game.inventory.get(name, 0) > 0
+                    or name in (getattr(game, "equipment", {}) or {}).values()
+                )
+                if has_fur_item:
+                    continue
+            if name == "Факел" and has_torch(game):
                 continue
-            if game.is_story_flag_set("l3_ridge_completed") or getattr(game, "location_index", 0) >= 3:
+            if name == "Костёр" and has_campfire(game):
                 continue
-        if name in FUR_ARMOR_RECIPES:
-            has_fur_unlock = (
-                getattr(game, "is_story_flag_set", lambda f: False)("fur_recipes_unlocked")
-                or getattr(game, "story_flags", {}).get("fur_recipes_unlocked")
-                or is_warm_cave_active(game)
-                or getattr(game, "inventory", {}).get("Мех", 0) > 0
-            )
-            if not has_fur_unlock:
+            if name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё") and has_spear:
                 continue
-            has_fur_item = (
-                game.inventory.get(name, 0) > 0
-                or name in (getattr(game, "equipment", {}) or {}).values()
-            )
-            if has_fur_item:
-                continue
-        if name == "Факел" and has_torch(game):
-            continue
-        if name == "Костёр" and has_campfire(game):
-            continue
-        if name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё") and has_spear:
-            continue
-        if name == "Зарядить фонарь":
-            has_lantern = (
-                game.equipment.get("hand_left") == "Старый фонарь"
-                or game.inventory.get("Старый фонарь", 0) > 0
-            )
-            if not has_lantern:
-                continue
+            if name == "Зарядить фонарь":
+                has_lantern = (
+                    game.equipment.get("hand_left") == "Старый фонарь"
+                    or game.inventory.get("Старый фонарь", 0) > 0
+                )
+                if not has_lantern:
+                    continue
         has_any = True
         icon = CRAFT_ICONS.get(name, "📦")
         ingredients = CRAFT_RECIPES[name]
@@ -672,47 +678,50 @@ def get_craft_menu_kb(game):
     )
     if (game.is_story_flag_set("l5_boss_defeated") or game.is_story_flag_set("boss_giant_slime_defeated")) and not has_spear and "Охотничье сланцевое копьё" not in unlocked:
         unlocked.append("Охотничье сланцевое копьё")
+    if getattr(game, "is_test_mode", False):
+        unlocked = list(CRAFT_RECIPES.keys())
     keyboard = []
     for name in unlocked:
         if name not in CRAFT_RECIPES:
             continue
-        if name == "Крепкий посох" and has_sturdy_staff(game):
-            continue
-        if name in SLATE_ARMOR_RECIPES:
-            if not game.is_story_flag_set("l2_thorns_seen"):
+        if not getattr(game, "is_test_mode", False):
+            if name == "Крепкий посох" and has_sturdy_staff(game):
                 continue
-            if has_slate_armor_item(game, name):
+            if name in SLATE_ARMOR_RECIPES:
+                if not game.is_story_flag_set("l2_thorns_seen"):
+                    continue
+                if has_slate_armor_item(game, name):
+                    continue
+                if game.is_story_flag_set("l3_ridge_completed") or getattr(game, "location_index", 0) >= 3:
+                    continue
+            if name in FUR_ARMOR_RECIPES:
+                has_fur_unlock = (
+                    getattr(game, "is_story_flag_set", lambda f: False)("fur_recipes_unlocked")
+                    or getattr(game, "story_flags", {}).get("fur_recipes_unlocked")
+                    or is_warm_cave_active(game)
+                    or getattr(game, "inventory", {}).get("Мех", 0) > 0
+                )
+                if not has_fur_unlock:
+                    continue
+                has_fur_item = (
+                    game.inventory.get(name, 0) > 0
+                    or name in (getattr(game, "equipment", {}) or {}).values()
+                )
+                if has_fur_item:
+                    continue
+            if name == "Факел" and has_torch(game):
                 continue
-            if game.is_story_flag_set("l3_ridge_completed") or getattr(game, "location_index", 0) >= 3:
+            if name == "Костёр" and has_campfire(game):
                 continue
-        if name in FUR_ARMOR_RECIPES:
-            has_fur_unlock = (
-                getattr(game, "is_story_flag_set", lambda f: False)("fur_recipes_unlocked")
-                or getattr(game, "story_flags", {}).get("fur_recipes_unlocked")
-                or is_warm_cave_active(game)
-                or getattr(game, "inventory", {}).get("Мех", 0) > 0
-            )
-            if not has_fur_unlock:
+            if name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё") and has_spear:
                 continue
-            has_fur_item = (
-                game.inventory.get(name, 0) > 0
-                or name in (getattr(game, "equipment", {}) or {}).values()
-            )
-            if has_fur_item:
-                continue
-        if name == "Факел" and has_torch(game):
-            continue
-        if name == "Костёр" and has_campfire(game):
-            continue
-        if name in ("Охотничье сланцевое копьё", "🔱 Охотничье сланцевое копьё") and has_spear:
-            continue
-        if name == "Зарядить фонарь":
-            has_lantern = (
-                game.equipment.get("hand_left") == "Старый фонарь"
-                or game.inventory.get("Старый фонарь", 0) > 0
-            )
-            if not has_lantern:
-                continue
+            if name == "Зарядить фонарь":
+                has_lantern = (
+                    game.equipment.get("hand_left") == "Старый фонарь"
+                    or game.inventory.get("Старый фонарь", 0) > 0
+                )
+                if not has_lantern:
+                    continue
         icon = CRAFT_ICONS.get(name, "📦")
         mark = craft_mark(game, name)
         keyboard.append([

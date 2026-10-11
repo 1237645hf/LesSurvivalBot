@@ -282,6 +282,8 @@ def load_game(uid: int) -> Game | None:
 
 def save_game(uid: int, game: Game) -> bool:
     """Сохранить текущее состояние игрока в БД. Возвращает True при успехе."""
+    if getattr(game, "is_test_mode", False):
+        return True
     _ensure_mongo_connection()
     try:
         data = game.to_document()

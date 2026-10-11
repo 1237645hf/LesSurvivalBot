@@ -1124,6 +1124,8 @@ class GameState:
         recent_logs = self.event_log[-10:] if self.event_log else []
         clean_logs = [re.sub(r"^\[\d{2}:\d{2}\]\s*", "", line) for line in recent_logs]
         status = self.get_status_bar()
+        if getattr(self, "is_test_mode", False):
+            status = "🧪 **[РЕЖИМ ТЕСТИРОВАНИЯ: RAM-ONLY]**\n" + status
         if clean_logs:
             log_part = "\n".join(f"> {line}" for line in clean_logs)
             return (
@@ -1134,7 +1136,14 @@ class GameState:
             )
         return status
 
-    def get_inventory_text(self) -> str:
+    def get_inventory_total_pages(self, per_page: int = 15) -> int:
+        """Возвращает общее количество страниц инвентаря."""
+        items_count = sum(1 for _, c in self.inventory.items() if c > 0) + len(getattr(self, "clean_bottles_charges", []))
+        if items_count == 0:
+            return 1
+        return max(1, (items_count + per_page - 1) // per_page)
+
+    def get_inventory_text(self, page: int = 0, per_page: int = 15) -> str:
         """Текст инвентаря: еда с маркерами ранга (🟡) и дикоросов (🌿), остальные предметы с каноническими эмодзи."""
         from modules.items import get_item_rank, get_item_rank_marker, get_item_emoji, is_item_consumable
 
@@ -1175,7 +1184,18 @@ class GameState:
         for charge in getattr(self, "clean_bottles_charges", []):
             marker = get_item_emoji("Бутылка воды")
             lines.append(f"• {marker} Бутылка воды ({charge}/20)")
-        content = "Инвентарь:\n" + "\n".join(lines) if lines else "Инвентарь пуст"
+
+        total_items = len(lines)
+        total_pages = max(1, (total_items + per_page - 1) // per_page)
+        curr_page = max(0, min(page, total_pages - 1))
+
+        if not lines:
+            content = "Инвентарь пуст"
+        else:
+            page_slice = lines[curr_page * per_page : (curr_page + 1) * per_page]
+            header = f"Инвентарь (Стр. {curr_page + 1}/{total_pages}):\n" if total_pages > 1 else "Инвентарь:\n"
+            content = header + "\n".join(page_slice)
+
         return f"━━━━━━━━━━━━━━━━━━━\n{content}\n━━━━━━━━━━━━━━━━━━━"
     
     def get_character_text(self) -> str:
@@ -1801,7 +1821,7 @@ def handle_back_navigation(game: Any, uid: int) -> Tuple[Optional[str], Optional
         text, kb = handle_l1_wolf_lair("wolf_lair_enter", game, uid)
     elif target == "settings":
         text = get_settings_text(game)
-        kb = get_settings_kb(game)
+        kb = get_settings_kb(game, uid)
     else:
         text = game.get_ui()
         kb = get_main_kb(game)

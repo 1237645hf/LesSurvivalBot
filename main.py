@@ -211,6 +211,17 @@ from story.location_stories import (
     resolve_ending,
     ENDING_TITLES,
 )
+from services.tester import (
+    is_tester,
+    enable_test_mode,
+    apply_equipment_set,
+    toggle_pet_status,
+    get_tester_main_menu_kb,
+    get_tester_loc_stories_kb,
+    get_tester_combat_menu_kb,
+    get_tester_sets_menu_kb,
+    LOCATION_STORIES,
+)
 # ──────────────────────────────────────────────────────────────────────────────
 # НАСТРОЙКИ
 # ──────────────────────────────────────────────────────────────────────────────
@@ -864,7 +875,7 @@ async def cmd_settings(message: Message):
             return
         game.push_screen("settings")
 
-        await update_or_send_message(chat_id, uid, get_settings_text(game), get_settings_kb(game))
+        await update_or_send_message(chat_id, uid, get_settings_text(game), get_settings_kb(game, uid))
         save_game(uid, game)
     finally:
         user_lock.release()
@@ -1052,13 +1063,17 @@ async def process_callback(callback: types.CallbackQuery):
             return
 
         if getattr(game, "hp", 100) <= 0:
-            game.hp = 0
-            game.active_story_callback = None
-            save_game(uid, game)
-            text = get_death_text(game)
-            kb = get_death_kb()
-            await update_or_send_message(chat_id, uid, text, kb)
-            return
+            if getattr(game, "is_test_mode", False):
+                game.hp = 100
+                game.add_log("🛡️ [Тест-режим: Смертельный урон заблокирован, HP = 100%]")
+            else:
+                game.hp = 0
+                game.active_story_callback = None
+                save_game(uid, game)
+                text = get_death_text(game)
+                kb = get_death_kb()
+                await update_or_send_message(chat_id, uid, text, kb)
+                return
 
         text = None
         kb = None
@@ -1138,6 +1153,143 @@ async def process_callback(callback: types.CallbackQuery):
                 game.story_state = "karma_stuck"
             text = game.get_ui()
             kb = get_main_kb(game)
+
+        elif data.startswith("tester_"):
+            if not is_tester(uid):
+                await callback.answer("У вас нет прав тестировщика.", show_alert=True)
+                return
+
+            if data == "tester_toggle_mode":
+                if getattr(game, "is_test_mode", False):
+                    data = "tester_exit_mode"
+                else:
+                    enable_test_mode(game)
+                    text = game.get_ui()
+                    kb = get_main_kb(game)
+                    await callback.answer("🧪 Тестовый режим включён! Все предметы x1000, локации открыты.", show_alert=True)
+
+            if data == "tester_exit_mode":
+                games.pop(uid, None)
+                real_game = load_game(uid)
+                if real_game:
+                    games[uid] = real_game
+                    h_name = getattr(real_game, "character_name", None) or getattr(real_game, "player_name", "Выживший")
+                    text = (
+                        "🚪 **Выход из режима тестирования**\n\n"
+                        "Тестовые данные выгружены из оперативной памяти. Сохранение в базе данных не изменено.\n\n"
+                        f"Продолжить игру за персонажа **{h_name}** или начать с чистого листа?"
+                    )
+                    kb = get_start_resume_kb(h_name)
+                else:
+                    text = "🚪 **Выход из режима тестирования**\n\nТестовые данные выгружены. Начни выживание с чистого листа:"
+                    kb = get_start_new_game_kb()
+                await update_or_send_message(chat_id, uid, text, kb)
+                return
+
+            elif data == "tester_main_menu":
+                text = (
+                    "🛠️ **Панель тестировщика (Sandbox Hub)**\n\n"
+                    f"Текущая локация: **{getattr(game, 'current_location', 'Стартовый лес')}**\n"
+                    f"Здоровье: **{game.hp}/100** | AP: **{game.ap}/5**\n\n"
+                    "Выбери нужный раздел:"
+                )
+                kb = get_tester_main_menu_kb()
+
+            elif data == "tester_loc_stories":
+                cur_loc = getattr(game, "current_location", "Стартовый лес")
+                has_p = game.is_story_flag_set("has_pet")
+                p_status = "взят (с котёнком)" if has_p else "отсутствует (в одиночку)"
+                text = (
+                    f"🎭 **Сюжетные ветки локации: {cur_loc}**\n\n"
+                    f"🐾 Статус питомца: **{p_status}**\n"
+                    "Нажми кнопку нужной сцены, чтобы запустить её:"
+                )
+                kb = get_tester_loc_stories_kb(game)
+
+            elif data == "tester_pet_toggle":
+                toggle_pet_status(game)
+                cur_loc = getattr(game, "current_location", "Стартовый лес")
+                has_p = game.is_story_flag_set("has_pet")
+                p_status = "взят (с котёнком)" if has_p else "отсутствует (в одиночку)"
+                text = (
+                    f"🎭 **Сюжетные ветки локации: {cur_loc}**\n\n"
+                    f"🐾 Статус питомца обновлён: **{p_status}**\n"
+                    "Нажми кнопку нужной сцены для запуска:"
+                )
+                kb = get_tester_loc_stories_kb(game)
+
+            elif data.startswith("tester_story_"):
+                scene_key = data.removeprefix("tester_story_")
+                for loc_scenes in LOCATION_STORIES.values():
+                    for title, cb_key, flags in loc_scenes:
+                        if cb_key == scene_key:
+                            for fk, fv in flags.items():
+                                game.story_flags[fk] = fv
+                            break
+                text, kb = handle_story(scene_key, game, uid)
+
+            elif data == "tester_combat_menu":
+                text = "⚔️ **Симулятор боёв**\n\nВыбери противника для немедленного поединка:"
+                kb = get_tester_combat_menu_kb()
+
+            elif data.startswith("tester_combat_"):
+                enemy_id = data.removeprefix("tester_combat_")
+                game.hp = 100
+                game.wolf_battle = None
+                game.story_state = None
+                if enemy_id == "slug_pack":
+                    text, kb = start_slug_pack_battle(game, uid)
+                else:
+                    from modules.combat import start_battle
+                    text, kb = start_battle(enemy_id, game, uid)
+
+            elif data == "tester_sets_menu":
+                text = "🛡️ **Сеты экипировки**\n\nВыбери комплект для мгновенного надевания:"
+                kb = get_tester_sets_menu_kb()
+
+            elif data.startswith("tester_set_"):
+                set_key = data.removeprefix("tester_set_")
+                set_title = apply_equipment_set(game, set_key)
+                await callback.answer(f"Надет сет: {set_title}!", show_alert=True)
+                text = f"✅ Комплект **{set_title}** успешно экипирован!\n\n{game.get_character_text()}"
+                kb = get_tester_sets_menu_kb()
+
+            elif data == "tester_refill_items":
+                from modules.items import ITEMS
+                for k in ITEMS.keys():
+                    game.inventory[k] = 1000
+                game.add_log("📦 Все предметы игры пополнены по 1 000 шт.")
+                text = "📦 **Все предметы игры (80+ шт.) пополнены по 1 000 шт.!**\n\n" + game.get_ui()
+                kb = get_tester_main_menu_kb()
+
+            elif data == "tester_clear_inv":
+                game.inventory.clear()
+                game.add_log("🗑️ Инвентарь очищен.")
+                text = "🗑️ **Инвентарь очищен!**\n\n" + game.get_ui()
+                kb = get_tester_main_menu_kb()
+
+            elif data == "tester_heal_max":
+                game.hp = 100
+                game.hunger = 100
+                game.thirst = 100
+                game.warmth = 100
+                game.poison = 0
+                game.hypothermia = 0
+                game.ap = 5
+                game.add_log("❤️ Все характеристики восстановлены на 100%.")
+                text = "❤️ **Все характеристики персонажа восстановлены на максимум!**\n\n" + game.get_ui()
+                kb = get_tester_main_menu_kb()
+
+        elif data == "back_to_main":
+            text = game.get_ui()
+            kb = get_main_kb(game)
+
+        if getattr(game, "is_test_mode", False) and getattr(game, "hp", 100) <= 0:
+            game.hp = 100
+            game.add_log("🛡️ [Тест-режим: Смертельный урон предотвращен, HP = 100%]")
+            if kb and any(getattr(b, "callback_data", "") == "start_new_game" for row in getattr(kb, "inline_keyboard", []) for b in row):
+                text = game.get_ui()
+                kb = get_main_kb(game)
 
         if text is not None:
             game.record_route(data)

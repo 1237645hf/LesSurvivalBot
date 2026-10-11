@@ -12,10 +12,15 @@ from modules.items import (
 )
 
 
-def get_settings_kb(game=None):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
-    ])
+def get_settings_kb(game=None, uid=None):
+    from services.tester import is_tester
+    rows = []
+    if uid is not None and is_tester(uid):
+        is_active = getattr(game, "is_test_mode", False) if game else False
+        status_icon = "🟢 ВКЛ" if is_active else "🔴 ВЫКЛ"
+        rows.append([InlineKeyboardButton(text=f"🧪 Режим тестировщика: {status_icon}", callback_data="tester_toggle_mode")])
+    rows.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def get_start_resume_kb(hero_name: str) -> InlineKeyboardMarkup:
@@ -304,6 +309,11 @@ def get_main_kb(game):
     if getattr(game, "locations_unlocked", False):
         kb_rows.append([
             InlineKeyboardButton(text="🗺️ Локации", callback_data="locations_menu")
+        ])
+    if getattr(game, "is_test_mode", False):
+        kb_rows.append([
+            InlineKeyboardButton(text="🎭 Сюжетки локации", callback_data="tester_loc_stories"),
+            InlineKeyboardButton(text="🛠️ Меню тестера", callback_data="tester_main_menu"),
         ])
     return InlineKeyboardMarkup(inline_keyboard=kb_rows)
 
@@ -712,14 +722,26 @@ inventory_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
 
 
 def get_inventory_kb(game=None, page: int = 0) -> InlineKeyboardMarkup:
-    """Клавиатура инвентаря."""
-    return InlineKeyboardMarkup(inline_keyboard=[
+    """Клавиатура инвентаря с пагинацией при большом количестве предметов."""
+    rows = [
         [InlineKeyboardButton(text="✋ Осмотреть", callback_data="inv_inspect"),
          InlineKeyboardButton(text="🔨 Крафт", callback_data="inv_craft")],
         [InlineKeyboardButton(text="🗑 Выкинуть", callback_data="inv_drop"),
          InlineKeyboardButton(text="👤 Персонаж", callback_data="menu_character")],
-        [InlineKeyboardButton(text="↩️ Назад", callback_data="back")],
-    ])
+    ]
+    if game is not None and hasattr(game, "get_inventory_total_pages"):
+        total_pages = game.get_inventory_total_pages(per_page=15)
+        if total_pages > 1:
+            curr_page = max(0, min(page, total_pages - 1))
+            nav_row = []
+            if curr_page > 0:
+                nav_row.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"inv_page_{curr_page - 1}"))
+            nav_row.append(InlineKeyboardButton(text=f"📄 {curr_page + 1}/{total_pages}", callback_data="noop"))
+            if curr_page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton(text="Вперёд ➡️", callback_data=f"inv_page_{curr_page + 1}"))
+            rows.append(nav_row)
+    rows.append([InlineKeyboardButton(text="↩️ Назад", callback_data="back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 character_inline_kb = InlineKeyboardMarkup(inline_keyboard=[
