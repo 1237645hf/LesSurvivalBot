@@ -610,8 +610,96 @@ def test_l6_ascent_progression_and_milestones():
     assert game.narrative_karma["pragmatism"] == 3
     handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
 
-    # Шаги 21-39: обычный подъём
-    for i in range(21, 40):
+    # Шаги 21-22: обычный подъём
+    for i in range(21, 23):
+        ev, _ = check_forest_research_story_trigger(game, 6, False)
+        assert ev is None
+        assert game.story_flags["l6_ascent_progress"] == i
+
+    # Шаг 23: Шёпот из толщи монолита
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev == "l6_step23_main"
+    assert game.story_flags["l6_ascent_progress"] == 23
+
+    text23, kb23 = handle_location_6_furry_cave("l6_step23_main", game, 1001)
+    assert len(text23) >= 380 and len(text23) <= 580
+    assert len(kb23.inline_keyboard) == 1
+
+    text23_b, kb23_b = handle_location_6_furry_cave("l6_step23_detail", game, 1001)
+    assert len(text23_b) >= 380 and len(text23_b) <= 580
+    assert len(kb23_b.inline_keyboard) == 3
+
+    # 23.2а: Вмешательство
+    text23_int, _ = handle_location_6_furry_cave("l6_step23_intervene", game, 1001)
+    assert len(text23_int) >= 380 and len(text23_int) <= 580
+    assert game.narrative_karma["intervention"] == 2
+
+    # 23.2б: Разум (соло и с питомцем)
+    obs_before = game.narrative_karma["observation"]
+    game.set_story_flag("has_pet", False)
+    text23_solo, _ = handle_location_6_furry_cave("l6_step23_mind", game, 1001)
+    assert len(text23_solo) >= 380 and len(text23_solo) <= 580
+    assert "Котёнок" not in text23_solo
+
+    game.set_story_flag("has_pet", True)
+    text23_pet, _ = handle_location_6_furry_cave("l6_step23_mind", game, 1001)
+    assert len(text23_pet) >= 380 and len(text23_pet) <= 580
+    assert "Котёнок тихо шевелится" in text23_pet
+    assert game.narrative_karma["observation"] == obs_before + 2
+
+    # 23.2в: Прагматизм
+    prag_before = game.narrative_karma["pragmatism"]
+    text23_prag, _ = handle_location_6_furry_cave("l6_step23_pragmatism", game, 1001)
+    assert len(text23_prag) >= 380 and len(text23_prag) <= 580
+    assert game.narrative_karma["pragmatism"] == prag_before + 1
+    handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
+
+    # Шаг 24: обычный подъём
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev is None
+    assert game.story_flags["l6_ascent_progress"] == 24
+
+    # Шаг 25: Снежный баран в расщелине
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev == "l6_step25_main"
+    assert game.story_flags["l6_ascent_progress"] == 25
+
+    text25, kb25 = handle_location_6_furry_cave("l6_step25_main", game, 1001)
+    assert len(text25) >= 380 and len(text25) <= 580
+    assert len(kb25.inline_keyboard) == 1
+
+    text25_b, kb25_b = handle_location_6_furry_cave("l6_step25_detail", game, 1001)
+    assert len(text25_b) >= 380 and len(text25_b) <= 580
+    assert len(kb25_b.inline_keyboard) == 3
+
+    # 25.2а: Силовое спасение (+1 Вмешательство)
+    int_before = game.narrative_karma["intervention"]
+    text25_int, _ = handle_location_6_furry_cave("l6_step25_intervene", game, 1001)
+    assert len(text25_int) >= 380 and len(text25_int) <= 580
+    assert game.narrative_karma["intervention"] == int_before + 1
+
+    # 25.2б: Забота (соло и с питомцем)
+    comp_before = game.narrative_karma["compassion"]
+    game.set_story_flag("has_pet", False)
+    text25_solo, _ = handle_location_6_furry_cave("l6_step25_compassion", game, 1001)
+    assert len(text25_solo) >= 380 and len(text25_solo) <= 580
+    assert "Котёнок" not in text25_solo
+
+    game.set_story_flag("has_pet", True)
+    text25_pet, _ = handle_location_6_furry_cave("l6_step25_compassion", game, 1001)
+    assert len(text25_pet) >= 380 and len(text25_pet) <= 580
+    assert "котёнок у груди начинает тихо" in text25_pet
+    assert game.narrative_karma["compassion"] == comp_before + 2
+
+    # 25.2в: Прагматизм
+    prag_before25 = game.narrative_karma["pragmatism"]
+    text25_prag, _ = handle_location_6_furry_cave("l6_step25_pragmatism", game, 1001)
+    assert len(text25_prag) >= 380 and len(text25_prag) <= 580
+    assert game.narrative_karma["pragmatism"] == prag_before25 + 1
+    handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
+
+    # Шаги 26-39: обычный подъём
+    for i in range(26, 40):
         ev, _ = check_forest_research_story_trigger(game, 6, False)
         assert ev is None
         assert game.story_flags["l6_ascent_progress"] == i
