@@ -409,6 +409,23 @@ def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool)
                 return "l6_step39_main", None
             if cur_prog >= 40 and not game.is_story_flag_set("warm_cave_shelter"):
                 return "l6_ascent_step40", None
+        elif not game.is_story_flag_set("l6_giant_defeated"):
+            # Штурм Верхнего перевала к Каменному Гиганту
+            cur_ridge = game.story_flags.get("l6_ridge_progress", 0) + 1
+            game.story_flags["l6_ridge_progress"] = cur_ridge
+            game.add_log(f"Штурм Верхнего перевала... [Рубеж: {min(5, cur_ridge)}/5]")
+
+            if cur_ridge == 1 and not game.is_story_flag_set("l6_ridge_step1_seen"):
+                game.set_story_flag("l6_ridge_step1_seen", True)
+                return "l6_ridge_step1", None
+            if cur_ridge == 2 and not game.is_story_flag_set("l6_ridge_step2_seen"):
+                game.set_story_flag("l6_ridge_step2_seen", True)
+                return "l6_ridge_step2", None
+            if cur_ridge == 3 and not game.is_story_flag_set("l6_ridge_step3_seen"):
+                game.set_story_flag("l6_ridge_step3_seen", True)
+                return "l6_ridge_step3", None
+            if cur_ridge >= 4 and not game.is_story_flag_set("l6_giant_defeated"):
+                return "l6_ridge_step4", None
         return None, None
 
     if loc_id != 1:

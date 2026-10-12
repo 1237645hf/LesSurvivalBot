@@ -78,6 +78,25 @@ ENEMIES: Dict[str, Dict[str, Any]] = {
         ),
         "screen_callback": "trash_slime_battle_screen",
     },
+    "stone_giant": {
+        "id": "stone_giant",
+        "name": "Каменный Исполин",
+        "title": "🗿 СТРАЖ ВЕРХНЕГО ПЕРЕВАЛА",
+        "max_hp": 650,
+        "attack_min": 18,
+        "attack_max": 25,
+        "defended_min": 8,
+        "defended_max": 12,
+        "charge_damage": 40,
+        "start_log": "Исполин со скрежетом поднимает базальтовую десницу. Сверху сыплются ледяные глыбы!",
+        "victory_callback": "l6_giant_victory",
+        "flee_callback": "l6_ascent_continue",
+        "flee_text": (
+            "Ты отскакиваешь назад из-под падающей каменной глыбы и укрываешься в расщелине перевала. "
+            "Исполин тяжело опускает руку, преграждая проход."
+        ),
+        "screen_callback": "giant_battle_screen",
+    },
 }
 
 

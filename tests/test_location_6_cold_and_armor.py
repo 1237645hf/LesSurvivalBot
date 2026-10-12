@@ -1293,6 +1293,131 @@ def test_l6_gift_deduction_validation_and_death_resets():
     assert "furry_bundle_leave" in cb_gb
 
 
+@pytest.mark.l6
+def test_l6_upper_ridge_and_stone_giant_obstacle():
+    """Тест второй фазы L6: Верхний перевал, Каменный Исполин и разблокировка Святилища."""
+    from story.locations.loc6_furry_cave import handle_location_6_furry_cave
+    from story.location_stories import check_forest_research_story_trigger
+
+    game = GameState()
+    game.current_location = "Мохнатая пещера"
+    game.location_index = 5
+    game.set_story_flag("warm_cave_shelter", True)
+    game.set_story_flag("visited_furry_cave", True)
+
+    # 1. Проверка цепочки исследований перевала через триггер
+    t1, _ = check_forest_research_story_trigger(game, 6, False)
+    assert t1 == "l6_ridge_step1"
+    assert game.story_flags["l6_ridge_progress"] == 1
+
+    t2, _ = check_forest_research_story_trigger(game, 6, False)
+    assert t2 == "l6_ridge_step2"
+    assert game.story_flags["l6_ridge_progress"] == 2
+
+    t3, _ = check_forest_research_story_trigger(game, 6, False)
+    assert t3 == "l6_ridge_step3"
+    assert game.story_flags["l6_ridge_progress"] == 3
+
+    t4, _ = check_forest_research_story_trigger(game, 6, False)
+    assert t4 == "l6_ridge_step4"
+    assert game.story_flags["l6_ridge_progress"] == 4
+
+    # 2. Проверка текстов и кнопок шагов перевала
+    text1, kb1 = handle_location_6_furry_cave("l6_ridge_step1", game, 1001)
+    assert 380 <= len(text1) <= 580
+    assert all(len(b.text) <= 28 for row in kb1.inline_keyboard for b in row)
+
+    text2, kb2 = handle_location_6_furry_cave("l6_ridge_step2", game, 1001)
+    assert 380 <= len(text2) <= 580
+    assert all(len(b.text) <= 28 for row in kb2.inline_keyboard for b in row)
+
+    text3, kb3 = handle_location_6_furry_cave("l6_ridge_step3", game, 1001)
+    assert 380 <= len(text3) <= 580
+    assert all(len(b.text) <= 28 for row in kb3.inline_keyboard for b in row)
+
+    text4, kb4 = handle_location_6_furry_cave("l6_ridge_step4", game, 1001)
+    assert 380 <= len(text4) <= 580
+    assert all(len(b.text) <= 28 for row in kb4.inline_keyboard for b in row)
+    cb4 = [b.callback_data for row in kb4.inline_keyboard for b in row]
+    assert "l6_giant_fight" in cb4
+    assert "l6_giant_gift" in cb4
+    assert "l6_giant_edge" in cb4
+
+    # 3. Ветка боя (l6_giant_fight)
+    g_fight = GameState()
+    g_fight.hp = 50
+    inter_before = g_fight.narrative_karma["intervention"]
+    prag_before = g_fight.narrative_karma["pragmatism"]
+    text_f, kb_f = handle_location_6_furry_cave("l6_giant_fight", g_fight, 1001)
+    assert 380 <= len(text_f) <= 580
+    assert g_fight.hp == 32  # 50 - 18
+    assert g_fight.narrative_karma["intervention"] == inter_before + 2
+    assert g_fight.narrative_karma["pragmatism"] == prag_before + 1
+    assert all(len(b.text) <= 28 for row in kb_f.inline_keyboard for b in row)
+
+    # 4. Ветка дара с едой (l6_giant_gift)
+    g_gift = GameState()
+    g_gift.inventory["Жареное мясо"] = 1
+    comp_before = g_gift.narrative_karma["compassion"]
+    obs_before = g_gift.narrative_karma["observation"]
+    text_g, kb_g = handle_location_6_furry_cave("l6_giant_gift", g_gift, 1001)
+    assert 380 <= len(text_g) <= 580
+    assert g_gift.inventory.get("Жареное мясо", 0) == 0
+    assert g_gift.narrative_karma["compassion"] == comp_before + 2
+    assert g_gift.narrative_karma["observation"] == obs_before + 1
+    assert all(len(b.text) <= 28 for row in kb_g.inline_keyboard for b in row)
+
+    # Ветка дара без еды (жертва HP)
+    g_gift_empty = GameState()
+    g_gift_empty.hp = 40
+    g_gift_empty.inventory.clear()
+    text_ge, _ = handle_location_6_furry_cave("l6_giant_gift", g_gift_empty, 1001)
+    assert 380 <= len(text_ge) <= 580
+    assert g_gift_empty.hp == 30  # 40 - 10
+
+    # 5. Ветка обхода по кромке (l6_giant_edge)
+    g_edge = GameState()
+    g_edge.hp = 50
+    text_e, kb_e = handle_location_6_furry_cave("l6_giant_edge", g_edge, 1001)
+    assert 380 <= len(text_e) <= 580
+    assert g_edge.hp == 35  # 50 - 15
+    assert all(len(b.text) <= 28 for row in kb_e.inline_keyboard for b in row)
+
+    # 6. Финал победы и разблокировка Святилища (l6_giant_victory)
+    g_vic = GameState()
+    text_v, kb_v = handle_location_6_furry_cave("l6_giant_victory", g_vic, 1001)
+    assert 380 <= len(text_v) <= 580
+    assert all(len(b.text) <= 28 for row in kb_v.inline_keyboard for b in row)
+    assert g_vic.is_story_flag_set("l6_giant_defeated") is True
+    assert g_vic.is_story_flag_set("l6_completed") is True
+    assert "Святилище" in g_vic.unlocked_locations
+    cb_v = [b.callback_data for row in kb_v.inline_keyboard for b in row]
+    assert "location_enter_7" in cb_v
+    assert "l6_ascent_continue" in cb_v
+
+    # 7. Честная смерть при бое и обходе
+    g_dead_f = GameState()
+    g_dead_f.hp = 10
+    g_dead_f.story_state = "fight"
+    g_dead_f.active_story_callback = "fight"
+    t_df, _ = handle_location_6_furry_cave("l6_giant_fight", g_dead_f, 1001)
+    assert g_dead_f.hp == 0
+    assert g_dead_f.story_state is None
+    assert g_dead_f.active_story_callback is None
+    assert "Смертельный удар" in t_df
+
+    g_dead_e = GameState()
+    g_dead_e.hp = 10
+    g_dead_e.story_state = "edge"
+    g_dead_e.active_story_callback = "edge"
+    t_de, _ = handle_location_6_furry_cave("l6_giant_edge", g_dead_e, 1001)
+    assert g_dead_e.hp == 0
+    assert g_dead_e.story_state is None
+    assert g_dead_e.active_story_callback is None
+    assert "Падение с ледяного карниза" in t_de
+
+
+
 
 
 
