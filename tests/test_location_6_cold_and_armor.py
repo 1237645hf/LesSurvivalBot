@@ -421,9 +421,10 @@ def test_l6_ascent_progression_and_milestones():
 
     # Тестируем схрон шага 4 на отдельном состоянии
     g4 = GameState()
+    g4.inventory.clear()
     g4.inventory["Жареное мясо"] = 2
     text4_i, kb4_i = handle_location_6_furry_cave("l6_step4_inspect", g4, 1001)
-    assert g4.inventory.get("Кремень", 0) == 1
+    assert g4.inventory.get("Спички", 0) == 1
     assert g4.inventory.get("Пещерный мох", 0) == 1
     # Положить подарок взамен (+1 сострадание)
     handle_location_6_furry_cave("l6_step4_leave_gift", g4, 1001)
@@ -485,10 +486,10 @@ def test_l6_ascent_progression_and_milestones():
     handle_location_6_furry_cave("l6_step10_behind", game, 1001)
     assert game.narrative_karma["observation"] == obs_b10
 
-    # Забрать ларчик (+1 Древесный уголь, +1 Бинт)
+    # Забрать ларчик (+1 Древесный уголь, +1 Зелье здоровья)
     handle_location_6_furry_cave("l6_step10_box", game, 1001)
     assert game.inventory.get("Древесный уголь", 0) >= 1
-    assert game.inventory.get("Бинт", 0) >= 1
+    assert game.inventory.get("Зелье здоровья", 0) >= 1
 
     # Забрать всё / продолжить (без кармы за уход)
     handle_location_6_furry_cave("l6_step10_take_all", game, 1001)
@@ -806,12 +807,12 @@ def test_l6_ascent_progression_and_milestones():
     assert len(text33_br) >= 380 and len(text33_br) <= 580
     assert game.narrative_karma["intervention"] == int_b33 + 1
 
-    # 33.2в: Поиск в нише (+1 Наблюдение, +1 Кремень)
+    # 33.2в: Поиск в нише (+1 Наблюдение, +1 Спички)
     obs_b33 = game.narrative_karma["observation"]
     text33_sr, _ = handle_location_6_furry_cave("l6_step33_search", game, 1001)
     assert len(text33_sr) >= 380 and len(text33_sr) <= 580
     assert game.narrative_karma["observation"] == obs_b33 + 1
-    assert game.inventory.get("Кремень", 0) >= 1
+    assert game.inventory.get("Спички", 0) >= 1
     handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
 
     # Шаги 34-35: обычный подъём
@@ -996,8 +997,9 @@ def test_l6_ascent_leave_and_reenter_no_duplicate_stories():
     assert game.story_flags["l6_ascent_progress"] == 4
     assert game.is_story_flag_set("l6_step4_seen")
     # Берём лут
+    m_before = game.inventory.get("Спички", 0)
     handle_location_6_furry_cave("l6_step4_inspect", game, 1001)
-    assert game.inventory.get("Кремень") == 1
+    assert game.inventory.get("Спички") == m_before + 1
     handle_location_6_furry_cave("l6_step4_take_all", game, 1001)
 
     # Доходим до шага 8
@@ -1041,11 +1043,11 @@ def test_l6_ascent_leave_and_reenter_no_duplicate_stories():
     assert ev is None
 
     # Шаг 4: РАНЕЕ ПРОЙДЕН! Не должен вызываться повторно и дублировать лут!
-    flint_count = game.inventory.get("Кремень", 0)
+    matches_count = game.inventory.get("Спички", 0)
     ev, _ = check_forest_research_story_trigger(game, 6, False)
     assert ev is None  # Не вызывается!
     assert game.story_flags["l6_ascent_progress"] == 4
-    assert game.inventory.get("Кремень", 0) == flint_count  # Лут не удвоился!
+    assert game.inventory.get("Спички", 0) == matches_count  # Лут не удвоился!
 
     # Шаги 5, 6:
     for i in range(5, 7):
@@ -1149,25 +1151,25 @@ def test_bundle_and_cache_duplication_prevented():
     game.inventory.clear()
     text_s4_1, _ = handle_location_6_furry_cave("l6_step4_inspect", game, 1001)
     assert len(text_s4_1) >= 380 and len(text_s4_1) <= 580
-    assert game.inventory.get("Кремень", 0) == 1
+    assert game.inventory.get("Спички", 0) == 1
 
     text_s4_2, _ = handle_location_6_furry_cave("l6_step4_inspect", game, 1001)
     assert len(text_s4_2) >= 380 and len(text_s4_2) <= 580
     assert "пуст" in text_s4_2.lower()
-    assert game.inventory.get("Кремень", 0) == 1  # Не за дюпался
+    assert game.inventory.get("Спички", 0) == 1  # Не за дюпался
 
     # 4. Ларчик на шаге 10 (l6_step10_box)
     game.inventory.clear()
     text_s10_1, _ = handle_location_6_furry_cave("l6_step10_box", game, 1001)
     assert len(text_s10_1) >= 380 and len(text_s10_1) <= 580
     assert game.inventory.get("Древесный уголь", 0) == 1
-    assert game.inventory.get("Бинт", 0) == 1
+    assert game.inventory.get("Зелье здоровья", 0) == 1
 
     text_s10_2, _ = handle_location_6_furry_cave("l6_step10_box", game, 1001)
     assert len(text_s10_2) >= 380 and len(text_s10_2) <= 580
     assert "пуст" in text_s10_2.lower()
     assert game.inventory.get("Древесный уголь", 0) == 1
-    assert game.inventory.get("Бинт", 0) == 1  # Не за дюпался
+    assert game.inventory.get("Зелье здоровья", 0) == 1  # Не за дюпался
 
     # 5. Проверка кнопок и экранов take_all (шаги 4, 10, 17)
     # Шаг 4: take_all отдаёт нарративный экран и кнопку l6_ascent_continue
