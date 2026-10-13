@@ -464,7 +464,7 @@ def test_l6_ascent_progression_and_milestones():
     game.set_story_flag("has_pet", True)
     text8_pet, _ = handle_location_6_furry_cave("l6_step8_main", game, 1001)
     assert len(text8_pet) >= 380 and len(text8_pet) <= 580
-    assert "Котёнок забился глубоко под куртку" in text8_pet
+    assert "Котёнок забился глубоко под одежду за пазухой" in text8_pet
     handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
 
     # Шаг 9:
