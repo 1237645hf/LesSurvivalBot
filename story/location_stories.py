@@ -410,7 +410,19 @@ def check_forest_research_story_trigger(game, loc_id: int, torch_equipped: bool)
             if cur_prog >= 40 and not game.is_story_flag_set("warm_cave_shelter"):
                 return "l6_ascent_step40", None
         elif not game.is_story_flag_set("l6_giant_defeated"):
-            # Штурм Верхнего перевала к Каменному Гиганту
+            # Штурм Верхнего перевала к Каменному Исполину:
+            # Запускается на 5-й день после достижения Тёплой пещеры (day >= warm_cave_reached_day + 4) на 2-е исследование
+            base_day = game.story_flags.get("warm_cave_reached_day")
+            cur_day = getattr(game, "day", 1)
+            if base_day is not None and cur_day < base_day + 4:
+                return None, None
+
+            if not game.is_story_flag_set("l6_ridge_step1_seen"):
+                r_count = game.story_flags.get("l6_post_cave_res_count", 0) + 1
+                game.story_flags["l6_post_cave_res_count"] = r_count
+                if base_day is not None and r_count < 2:
+                    return None, None
+
             cur_ridge = game.story_flags.get("l6_ridge_progress", 0) + 1
             game.story_flags["l6_ridge_progress"] = cur_ridge
             game.add_log(f"Штурм Верхнего перевала... [Рубеж: {min(5, cur_ridge)}/5]")

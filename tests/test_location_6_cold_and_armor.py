@@ -598,23 +598,23 @@ def test_l6_ascent_progression_and_milestones():
 
     # 20.2а: Наблюдение (+1 Наблюдение)
     text20_obs, _ = handle_location_6_furry_cave("l6_step20_observe", game, 1001)
-    assert len(text20_obs) >= 350 and len(text20_obs) <= 430
+    assert len(text20_obs) >= 380 and len(text20_obs) <= 580
     assert game.narrative_karma["observation"] == 2
 
     # 20.2б: Сострадание с питомцем и без
     game.set_story_flag("has_pet", False)
     text20_no_pet, _ = handle_location_6_furry_cave("l6_step20_compassion", game, 1001)
-    assert len(text20_no_pet) >= 350 and len(text20_no_pet) <= 430
+    assert len(text20_no_pet) >= 380 and len(text20_no_pet) <= 580
     assert "Котёнок" not in text20_no_pet
 
     game.set_story_flag("has_pet", True)
     text20_pet, _ = handle_location_6_furry_cave("l6_step20_compassion", game, 1001)
-    assert len(text20_pet) >= 350 and len(text20_pet) <= 430
-    assert "Котёнок тихо шевелится" in text20_pet
+    assert len(text20_pet) >= 380 and len(text20_pet) <= 580
+    assert "Котёнок забился глубоко" in text20_pet
 
     # 20.2в: Прагматизм (+1 Прагматизм)
     text20_prag, _ = handle_location_6_furry_cave("l6_step20_pragmatism", game, 1001)
-    assert len(text20_prag) >= 350 and len(text20_prag) <= 430
+    assert len(text20_prag) >= 380 and len(text20_prag) <= 580
     assert game.narrative_karma["pragmatism"] == 2
     handle_location_6_furry_cave("l6_ascent_continue", game, 1001)
 
@@ -652,7 +652,7 @@ def test_l6_ascent_progression_and_milestones():
     game.set_story_flag("has_pet", True)
     text23_pet, _ = handle_location_6_furry_cave("l6_step23_mind", game, 1001)
     assert len(text23_pet) >= 380 and len(text23_pet) <= 580
-    assert "Котёнок тихо шевелится" in text23_pet
+    assert "Котёнок шевелится" in text23_pet
     assert game.narrative_karma["observation"] == obs_before + 2
 
     # 23.2в: Прагматизм
@@ -696,7 +696,7 @@ def test_l6_ascent_progression_and_milestones():
     game.set_story_flag("has_pet", True)
     text25_pet, _ = handle_location_6_furry_cave("l6_step25_compassion", game, 1001)
     assert len(text25_pet) >= 380 and len(text25_pet) <= 580
-    assert "котёнок у груди начинает тихо" in text25_pet
+    assert "котёнок под одеждой за пазухой" in text25_pet
     assert game.narrative_karma["compassion"] == comp_before + 2
 
     # 25.2в: Прагматизм
@@ -1419,7 +1419,95 @@ def test_l6_upper_ridge_and_stone_giant_obstacle():
     assert "Падение с ледяного карниза" in t_de
 
 
+@pytest.mark.l6
+def test_warm_cave_hub_extinguishing_and_ridge_delay():
+    """Проверка логики Тёплой пещеры:
+    1. При входе на локацию 6 не открывается сюжетный экран.
+    2. Внутри пещеры кнопки гаснут по мере прохождения, остаётся только [В лагерь].
+    3. Верхний хребет запускается на 5-й день после открытия пещеры на 2-е исследование.
+    """
+    from story.locations.loc6_furry_cave import handle_location_6_furry_cave
+    from story.location_stories import check_forest_research_story_trigger
 
+    game = GameState()
+    game.day = 10
+    game.current_location = "Мохнатая пещера"
+    game.location_index = 5
+    game.set_story_flag("warm_cave_shelter", True)
 
+    # 1. Вход на локацию 6 НЕ открывает сюжетный экран
+    ui_text, _ = handle_location_6_furry_cave("location_enter_6", game, 1001)
+    assert game.story_state is None
 
+    # 2. Хаб Тёплой пещеры (Экран 2.0)
+    t0, kb0 = handle_location_6_furry_cave("furry_cave_start", game, 1001)
+    assert 380 <= len(t0) <= 580
+    cbs0 = [b.callback_data for row in kb0.inline_keyboard for b in row]
+    assert "furry_examine" in cbs0
+    assert "furry_warm" in cbs0
+    assert "furry_sleep" in cbs0
+    assert "furry_leave" in cbs0
 
+    # Проходим осмотр и свёрток
+    t_ex, kb_ex = handle_location_6_furry_cave("furry_examine", game, 1001)
+    assert 380 <= len(t_ex) <= 580
+    assert any(b.text == "↩️ Назад" and b.callback_data == "furry_cave_start" for row in kb_ex.inline_keyboard for b in row)
+    handle_location_6_furry_cave("furry_take_all", game, 1001)
+
+    # Проверяем, что на Экране 2.0 кнопка осмотра погасла
+    _, kb_after_ex = handle_location_6_furry_cave("furry_cave_start", game, 1001)
+    cbs_after_ex = [b.callback_data for row in kb_after_ex.inline_keyboard for b in row]
+    assert "furry_examine" not in cbs_after_ex
+    assert "furry_warm" in cbs_after_ex
+    assert "furry_sleep" in cbs_after_ex
+
+    # Проходим очаг
+    t_w, kb_w = handle_location_6_furry_cave("furry_warm", game, 1001)
+    assert 380 <= len(t_w) <= 580
+    assert any(b.text == "↩️ Назад" and b.callback_data == "furry_cave_start" for row in kb_w.inline_keyboard for b in row)
+    t_fr, kb_fr = handle_location_6_furry_cave("furry_fire_rest", game, 1001)
+    assert 380 <= len(t_fr) <= 580
+
+    # Проверяем, что кнопка очага погасла
+    _, kb_after_w = handle_location_6_furry_cave("furry_cave_start", game, 1001)
+    cbs_after_w = [b.callback_data for row in kb_after_w.inline_keyboard for b in row]
+    assert "furry_examine" not in cbs_after_w
+    assert "furry_warm" not in cbs_after_w
+    assert "furry_sleep" in cbs_after_w
+
+    # Проходим сон
+    t_sl, kb_sl = handle_location_6_furry_cave("furry_sleep", game, 1001)
+    assert 380 <= len(t_sl) <= 580
+    t_loss, kb_loss = handle_location_6_furry_cave("furry_loss", game, 1001)
+    assert 380 <= len(t_loss) <= 580
+    assert any(b.text == "↩️ Назад" and b.callback_data == "furry_cave_start" for row in kb_loss.inline_keyboard for b in row)
+
+    # Все три действия сделаны — осталась только кнопка [⛺ В лагерь]
+    _, kb_final = handle_location_6_furry_cave("furry_cave_start", game, 1001)
+    cbs_final = [b.callback_data for row in kb_final.inline_keyboard for b in row]
+    assert "furry_examine" not in cbs_final
+    assert "furry_warm" not in cbs_final
+    assert "furry_sleep" not in cbs_final
+    assert cbs_final == ["furry_leave"]
+
+    # Нажатие [⛺ В лагерь] фиксирует день и возвращает в лагерь
+    handle_location_6_furry_cave("furry_leave", game, 1001)
+    assert game.story_flags["warm_cave_reached_day"] == 10
+    assert game.is_story_flag_set("visited_furry_cave")
+
+    # 3. Проверка запуска Верхнего хребта:
+    # День 10..13 (до 5-го дня): сюжетка перевала НЕ стартует
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev is None
+    game.day = 13
+    ev, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev is None
+
+    # День 14 (5-й день со дня 10):
+    game.day = 14
+    # 1-е исследование на 5-й день: ещё не запускается
+    ev1, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev1 is None
+    # 2-е исследование на 5-й день: запускает l6_ridge_step1!
+    ev2, _ = check_forest_research_story_trigger(game, 6, False)
+    assert ev2 == "l6_ridge_step1"
